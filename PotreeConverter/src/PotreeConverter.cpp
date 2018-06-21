@@ -342,6 +342,7 @@ void writeSources(string path, vector<string> sourceFilenames, vector<int> numPo
 }
 
 void PotreeConverter::convert(){
+	//TODO_LG This is where the main conversion happens
 	auto start = high_resolution_clock::now();
 
 	prepare();
@@ -363,6 +364,7 @@ void PotreeConverter::convert(){
 		workDir = workDir + "/pointclouds/" + pageName;
 	}
 
+	//TODO_LG You would create a 3DTilesWriter here that writes 3dTiles data instead of potree data
 	PotreeWriter *writer = NULL;
 	if(fs::exists(fs::path(this->workDir + "/cloud.js"))){
 
@@ -413,6 +415,7 @@ void PotreeConverter::convert(){
 			continue;
 		}
 
+		//TODO_LG Points from the source file(s) are read here
 		while(reader->readNextPoint()){
 			pointsProcessed++;
 

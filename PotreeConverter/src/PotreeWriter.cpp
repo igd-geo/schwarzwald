@@ -163,6 +163,7 @@ void PWNode ::split(){
 }
 
 PWNode *PWNode::add(Point &point){
+	//TODO_LG This adds a single point to a node in the octree
 	addCalledSinceLastFlush = true;
 
 	if(!isInMemory){
@@ -240,6 +241,7 @@ PWNode *PWNode::add(Point &point){
 		//	}
 		//}*/
 
+		//TODO_LG If the point fits in this cell, it is added, otherwise check cells with a higher level (i.e. smaller cells)
 		if(accepted){
 			cache.push_back(point);
 			acceptedAABB.update(point.position);
@@ -276,7 +278,7 @@ PWNode *PWNode::add(Point &point){
 }
 
 void PWNode::flush(){
-
+	//TODO_LG This writes all current data to the disk
 	std::function<void(vector<Point> &points, bool append)> writeToDisk = [&](vector<Point> &points, bool append){
 		string filepath = workDir() + "/data/" + path();
 		PointWriter *writer = NULL;

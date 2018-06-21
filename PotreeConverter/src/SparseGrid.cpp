@@ -149,6 +149,8 @@ bool SparseGrid::willBeAccepted(const Vector3<double> &p){
 }
 
 bool SparseGrid::add(Vector3<double> &p){
+	//TODO_LG This checks if a point 'belongs' to a certain grid cell. Each node in the octree built by potree has 
+	//one SparseGrid associated with it
 	int nx = (int)(width*(p.x - aabb.min.x) / aabb.size.x);
 	int ny = (int)(height*(p.y - aabb.min.y) / aabb.size.y);
 	int nz = (int)(depth*(p.z - aabb.min.z) / aabb.size.z);
@@ -164,6 +166,9 @@ bool SparseGrid::add(Vector3<double> &p){
 		it = this->insert(value_type(key, new GridCell(this, index))).first;
 	}
 
+	//TODO_LG isDistant checks the distance of the current point to all points in the grid cell identified by 'key'
+	//If the distance to any point is below a threshold value, the point can't be inserted into that grid cell because
+	//it is too close to other points
 	if(isDistant(p, it->second)){
 		this->operator[](key)->add(p);
 		numAccepted++;
