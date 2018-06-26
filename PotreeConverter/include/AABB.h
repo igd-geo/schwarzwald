@@ -15,6 +15,8 @@ using std::endl;
 
 namespace Potree{
 
+
+// Axis Aligned Bounding Box
 class AABB{
 
 public:
