@@ -113,6 +113,8 @@ PointWriter *PWNode::createWriter(string path){
 	}else if(outputFormat == OutputFormat::BINARY){
 		writer = new BINPointWriter(path, aabb, potreeWriter->scale, this->potreeWriter->pointAttributes);
 	}
+	// Create tilsetwriter
+	// Link Tileset with pnt file
 
 	return writer;
 
@@ -138,7 +140,7 @@ void PWNode::loadFromDisk(){
 	isInMemory = true;
 }
 
-PWNode *PWNode::createChild(int childIndex ){
+PWNode *PWNode::createChild(int childIndex ){// Update tileset.json children
 	AABB cAABB = childAABB(aabb, childIndex);
 	PWNode *child = new PWNode(potreeWriter, childIndex, cAABB, level+1);
 	child->parent = this;
@@ -147,7 +149,7 @@ PWNode *PWNode::createChild(int childIndex ){
 	return child;
 }
 
-void PWNode ::split(){
+void PWNode ::split(){ // Update tileset.json children
 	children.resize(8, NULL);
 
 	string filepath = workDir() + "/data/" + path();
@@ -309,7 +311,7 @@ void PWNode::flush(){
 			}
 			writer = createWriter(filepath);
 		}
-
+		// write tileset.json
 		for(const auto &e_c : points){
 			writer->write(e_c);
 		}

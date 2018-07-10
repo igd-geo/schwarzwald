@@ -9,9 +9,12 @@
 #include "AABB.h"
 #include "PotreeConverter.h"
 #include "PotreeException.h"
-#include "TileMetaWriter.h"
+#include "TileSetWriter.h"
 #include "arguments.hpp"
 #include <experimental/filesystem>
+#include "Tileset.h"
+#include "Vector3.h"
+
 
 namespace fs = std::experimental::filesystem;
 
@@ -286,7 +289,6 @@ int main(int argc, char **argv){
 		printArguments(a);
         PotreeConverter pc(a.executablePath, a.outdir, a.source);
 
-		//TileMetaWriter tmw;
 
 		pc.spacing = a.spacing;
 		pc.diagonalFraction = a.diagonalFraction;

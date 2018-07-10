@@ -26,6 +26,8 @@
 #include <math.h>
 #include <fstream>
 
+#include "TileSetWriter.h"
+
 
 
 
@@ -345,7 +347,7 @@ void PotreeConverter::convert(){
 	//TODO_LG This is where the main conversion happens
 	auto start = high_resolution_clock::now();
 
-	prepare();
+	prepare(); 
 
 	long long pointsProcessed = 0;
 
@@ -364,7 +366,9 @@ void PotreeConverter::convert(){
 		workDir = workDir + "/pointclouds/" + pageName;
 	}
 
+	
 	//TODO_LG You would create a 3DTilesWriter here that writes 3dTiles data instead of potree data
+	
 	PotreeWriter *writer = NULL;
 	if(fs::exists(fs::path(this->workDir + "/cloud.js"))){
 
@@ -379,6 +383,7 @@ void PotreeConverter::convert(){
 			fs::remove_all(workDir + "/data");
 			fs::remove_all(workDir + "/temp");
 			fs::remove(workDir + "/cloud.js");
+			// Create Potree(tileset)writer
 			writer = new PotreeWriter(this->workDir, aabb, spacing, maxDepth, scale, outputFormat, pointAttributes, quality);
 			writer->setProjection(this->projection);
 		}else if(storeOption == StoreOption::INCREMENTAL){
@@ -407,6 +412,7 @@ void PotreeConverter::convert(){
 		numPoints.push_back(reader->numPoints());
 		sourceFilenames.push_back(fs::path(source).filename().string());
 
+		// Write sources.json
 		writeSources(this->workDir, sourceFilenames, numPoints, boundingBoxes, this->projection);
 		if(this->sourceListingOnly){
 			reader->close();
@@ -460,8 +466,8 @@ void PotreeConverter::convert(){
 		}
 		reader->close();
 		delete reader;
-
 		
+		// END
 	}
 	
 	cout << "closing writer" << endl;
@@ -482,6 +488,7 @@ void PotreeConverter::convert(){
 	cout << pointsProcessed << " points were processed and " << writer->numAccepted << " points ( " << percent << "% ) were written to the output. " << endl;
 
 	cout << "duration: " << (duration / 1000.0f) << "s" << endl;
+	
 }
 
 }

@@ -1,5 +1,3 @@
-
-
 #ifndef POTREEWRITER_H
 #define POTREEWRITER_H
 

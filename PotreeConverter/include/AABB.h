@@ -70,6 +70,14 @@ public:
 		size = max - min;
 	}
 
+	// not tested
+	Vector3<double> getCenter()
+	{
+		Vector3<double> center;
+		center = min + size / 2;
+		return center;
+	}
+
 	friend ostream &operator<<( ostream &output,  const AABB &value ){ 
 		output << "min: " << value.min << endl;
 		output << "max: " << value.max << endl;
