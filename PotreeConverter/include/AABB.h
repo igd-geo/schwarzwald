@@ -71,7 +71,7 @@ public:
 	}
 
 	// not tested
-	Vector3<double> getCenter()
+	Vector3<double> getCenter() const
 	{
 		Vector3<double> center;
 		center = min + size / 2;

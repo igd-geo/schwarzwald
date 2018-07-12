@@ -7,6 +7,10 @@
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include <cstdio>
+#include <iostream>
+#include <fstream>
+
+#include "PointWriter.hpp"
 
 #include "Tileset.h"
 #include "Point.h"
@@ -21,18 +25,25 @@ using rapidjson::StringBuffer;
 using rapidjson::PrettyWriter;
 using Potree::AABB;
 using Potree::Point;
+using std::ofstream;
+using std::ios;
 
-class TileSetWriter
+class TileSetWriter : public Potree::PointWriter
 {
 public:
 	Document document;
-	
+	ofstream *writer;
 	
 
-	TileSetWriter(string workDir, AABB aabb, float spacing, int maxDepth, double scale);
+	TileSetWriter();
 	~TileSetWriter();
 
-	bool createTileset(string workDir, Tileset); // add working dir
+	void write(const Point &point);
+
+
+	void close();
+
+	bool writeJSON(const string& workDir, const Tileset& tileset); // add working dir
 };
 
 #endif

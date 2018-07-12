@@ -22,6 +22,8 @@
 #include "BINPointWriter.hpp"
 #include "PotreeException.h"
 
+
+#include "TileSetWriter.h"
 #include "PotreeWriter.h"
 
 using std::ifstream;
@@ -35,13 +37,13 @@ namespace fs = std::experimental::filesystem;
 
 namespace Potree{
 
-PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb){
+PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb) : tileset(aabb, "123"){
 	this->potreeWriter = potreeWriter;
 	this->aabb = aabb;
 	this->grid = new SparseGrid(aabb, spacing());
 }
 
-PWNode::PWNode(PotreeWriter* potreeWriter, int index, AABB aabb, int level){
+PWNode::PWNode(PotreeWriter* potreeWriter, int index, AABB aabb, int level) : tileset(aabb, "123"){
 	this->index = index;
 	this->aabb = aabb;
 	this->level = level;
@@ -77,7 +79,7 @@ string PWNode::workDir(){
 string PWNode::hierarchyPath(){
 	string path = "r/";
 
-	int hierarchyStepSize = potreeWriter->hierarchyStepSize;
+	int hierarchyStepSize = potreeWriter->hierarchyStepSize; // Maybe change potreeWriter
 	string indices = name().substr(1);
 
 	int numParts = (int)floor((float)indices.size() / (float)hierarchyStepSize);
@@ -89,11 +91,13 @@ string PWNode::hierarchyPath(){
 }
 
 string PWNode::path(){
-	string path = hierarchyPath() + name() + potreeWriter->getExtension();
+	//string path = hierarchyPath() + name() + potreeWriter->getExtension();
+	string path = hierarchyPath() + name() + ".json";
 	return path;
 }
 
-PointReader *PWNode::createReader(string path){
+
+PointReader *PWNode::createReader(string path){ 
 	PointReader *reader = NULL;
 	OutputFormat outputFormat = this->potreeWriter->outputFormat;
 	if(outputFormat == OutputFormat::LAS || outputFormat == OutputFormat::LAZ){
@@ -106,19 +110,8 @@ PointReader *PWNode::createReader(string path){
 }
 
 PointWriter *PWNode::createWriter(string path){
-	PointWriter *writer = NULL;
-	OutputFormat outputFormat = this->potreeWriter->outputFormat;
-	if(outputFormat == OutputFormat::LAS || outputFormat == OutputFormat::LAZ){
-		writer = new LASPointWriter(path, aabb, potreeWriter->scale);
-	}else if(outputFormat == OutputFormat::BINARY){
-		writer = new BINPointWriter(path, aabb, potreeWriter->scale, this->potreeWriter->pointAttributes);
-	}
-	// Create tilsetwriter
-	// Link Tileset with pnt file
-
-	return writer;
-
-
+	
+	return new TileSetWriter();
 }
 
 void PWNode::loadFromDisk(){
@@ -140,17 +133,29 @@ void PWNode::loadFromDisk(){
 	isInMemory = true;
 }
 
-PWNode *PWNode::createChild(int childIndex ){// Update tileset.json children
+PWNode *PWNode::createChild(int childIndex ){//TODO: Update tileset.json children
 	AABB cAABB = childAABB(aabb, childIndex);
 	PWNode *child = new PWNode(potreeWriter, childIndex, cAABB, level+1);
 	child->parent = this;
 	children[childIndex] = child;
 
+	// Update childs properties
+	
+	child->tileset.box = cAABB;
+	child->tileset.geometricError -= 20;
+	if (child->tileset.geometricError < 0) {
+		child->tileset.geometricError = 0;
+	}
+	this->tileset.children.push_back(&child->tileset); // This must be written to the json at the end
+	
+	// set child urls
+
+
 	return child;
 }
 
-void PWNode ::split(){ // Update tileset.json children
-	children.resize(8, NULL);
+void PWNode::split(){ // Update tileset.json children 
+	children.resize(8, NULL); 
 
 	string filepath = workDir() + "/data/" + path();
 	if(fs::exists(filepath)){
@@ -172,7 +177,7 @@ PWNode *PWNode::add(Point &point){
 		loadFromDisk();
 	}
 
-	if(isLeafNode()){
+	if(isLeafNode()){ // If the node is a leaf node just append the point (split)
 		store.push_back(point);
 		if(int(store.size()) >= storeLimit){
 			split();
@@ -290,7 +295,7 @@ void PWNode::flush(){
 		}
 
 		if(append){
-			string temppath = workDir() + "/temp/prepend" + potreeWriter->getExtension();
+			string temppath = workDir() + "/temp/prepend" + potreeWriter->getExtension(); // change ?? 
 			if(fs::exists(filepath)){
 				fs::rename(fs::path(filepath), fs::path(temppath));
 			}
@@ -311,15 +316,20 @@ void PWNode::flush(){
 			}
 			writer = createWriter(filepath);
 		}
-		// write tileset.json
+
+		
+		writer->writeJSON(filepath, this->tileset);
+
+
 		for(const auto &e_c : points){
 			writer->write(e_c);
 		}
-
-		if(append && (writer->numPoints != this->numAccepted)){
+		/*
+		if(append && (writer->numPoints != this->numAccepted)){ // !!
 			cout << "writeToDisk " << writer->numPoints  << " != " << this->numAccepted << endl;
 			exit(1);
 		}
+		*/
 
 		writer->close();
 		delete writer;

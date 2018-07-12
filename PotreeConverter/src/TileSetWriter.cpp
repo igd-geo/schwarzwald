@@ -1,18 +1,24 @@
 #include "TileSetWriter.h"
 
-TileSetWriter::TileSetWriter(string workDir, AABB aabb, float spacing, int maxDepth, double scale)
+TileSetWriter::TileSetWriter()
 {
-	
+
+
+	writer = new ofstream(file, ios::out | ios::binary);
 }
+
+
 
 /*
 Write to workDir + url of Tileset
 */
-bool TileSetWriter::createTileset(string WorkDir, Tileset ts)
+bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 {
 	document.SetObject();
 	
 	rapidjson::Document::AllocatorType& alloc = document.GetAllocator();
+
+
 	Value assetobj(kObjectType); 
 	Value propertiesobj(kObjectType);
 	Value heightobj(kObjectType);
@@ -223,7 +229,10 @@ bool TileSetWriter::createTileset(string WorkDir, Tileset ts)
 		box.PushBack(0, alloc);
 		box.PushBack(1, alloc);
 		
-		bvObj.AddMember("box", box, alloc);
+		bvObj.AddMember("box", box, alloc); // bounding volume object
+		childObj.SetObject();
+		assert(childObj.IsObject());
+		
 		childObj.AddMember("boundingVolume", bvObj, alloc);
 
 		childObj.AddMember("geometricError", child->geometricError, alloc);
@@ -237,7 +246,7 @@ bool TileSetWriter::createTileset(string WorkDir, Tileset ts)
 	}
 
 
-
+	rootobj.AddMember("children", childrenArr, alloc);
 
 
 
@@ -250,18 +259,10 @@ bool TileSetWriter::createTileset(string WorkDir, Tileset ts)
 		root.boundingVolume === tile.content.boundingVolume
 		root.viewerRequestVolume === tile.viewerRequestVolume
 		geometricError from child is generally less than its parent tiles geometricError
+		tile.children must be undefined or empty array
 	*/
 
-
-
-
-
-
-
-	//change to workDir
-
-
-	FILE* fp = fopen(ts.name.c_str(), "wb");
+	FILE* fp = fopen(WorkDir.c_str(), "wb");
 	char writeBuffer[65536];
 	
 	FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
@@ -278,7 +279,17 @@ TileSetWriter::~TileSetWriter()
 {
 }
 
-/*
- external tileset -> tile.children must be undefined or empty array
+void TileSetWriter::write(const Point & point)
+{
+}
 
-*/
+void TileSetWriter::close()
+{
+	
+	if (writer != NULL) {
+		writer->close();
+		delete writer;
+		writer = NULL;
+	}
+	
+}

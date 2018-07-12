@@ -10,6 +10,7 @@
 #include "SparseGrid.h"
 #include "CloudJS.hpp"
 #include "PointAttributes.hpp"
+#include "Tileset.h"
 
 using std::string;
 using std::thread;
@@ -37,8 +38,11 @@ public:
 	PotreeWriter *potreeWriter;
 	vector<Point> cache;
 	int storeLimit = 20'000;
+	//int storeLimit = 10;
 	vector<Point> store;
 	bool isInMemory = true;
+
+	Tileset tileset;
 
 	PWNode(PotreeWriter* potreeWriter, AABB aabb);
 

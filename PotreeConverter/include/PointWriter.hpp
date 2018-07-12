@@ -8,6 +8,7 @@
 #include "Point.h"
 
 using std::string;
+class Tileset;
 
 namespace Potree{
 
@@ -20,6 +21,8 @@ public:
 	virtual ~PointWriter(){};
 
 	virtual void write(const Point &point) = 0;
+
+	virtual bool writeJSON(const string& workDir, const Tileset& tileset) { return false; }
 
 	virtual void close() = 0;
 

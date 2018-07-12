@@ -27,16 +27,16 @@ class Tileset {
 public:
 	string url = ""; //url of this Tileset e.g r/tileset.json
 	string name = ""; // e.g tileset.json
-	//asset - required
+	
 	string version = "0.0";
 	string tilesetVersion = ""; // not required
 	GltAxis gltfUpAxis = Y;
 
 	//properties
-	double height_min = 0; // weakness if its really 0 optionals would be great
+	double height_min = 0;
 	double height_max = 0;
 
-	//geometricError -required
+	//geometricError - required
 	double geometricError = 500; // This should be set up and be less or eq in child tilesets
 
 	//root - required
@@ -66,8 +66,8 @@ public:
 		this->requestVolumeSet = true;
 	}
 
-	AABB getRequestVolume() { return viewerRequestVolume; }
-	bool requestVolumeIsSet() { return requestVolumeSet; }
+	AABB getRequestVolume() const { return viewerRequestVolume; }
+	bool requestVolumeIsSet() const { return requestVolumeSet; }
 
 private:
 	AABB viewerRequestVolume; // Viewer must be inside of it before the tiles content will be refined based on geometric error
