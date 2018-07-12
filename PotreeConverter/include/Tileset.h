@@ -37,7 +37,7 @@ public:
 	double height_max = 0;
 
 	//geometricError - required
-	double geometricError = 500; // This should be set up and be less or eq in child tilesets
+	double geometricError = 500; // This should be set up and be less or eq in the child tilesets
 
 	//root - required
 	AABB box; // root.boundingVolume
@@ -51,8 +51,7 @@ public:
 	
 	vector<Tileset*> children; // Get aabb geometricError and url
 	
-
-	string contentUrl; // Points to another Tileset File
+	string child_url; // Points to another Tileset File
 
 	Tileset(AABB box, string name) 
 		: box(box), name(name)

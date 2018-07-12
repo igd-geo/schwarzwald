@@ -79,7 +79,7 @@ string PWNode::workDir(){
 string PWNode::hierarchyPath(){
 	string path = "r/";
 
-	int hierarchyStepSize = potreeWriter->hierarchyStepSize; // Maybe change potreeWriter
+	int hierarchyStepSize = potreeWriter->hierarchyStepSize;
 	string indices = name().substr(1);
 
 	int numParts = (int)floor((float)indices.size() / (float)hierarchyStepSize);
@@ -133,24 +133,29 @@ void PWNode::loadFromDisk(){
 	isInMemory = true;
 }
 
-PWNode *PWNode::createChild(int childIndex ){//TODO: Update tileset.json children
+PWNode *PWNode::createChild(int childIndex ){
 	AABB cAABB = childAABB(aabb, childIndex);
 	PWNode *child = new PWNode(potreeWriter, childIndex, cAABB, level+1);
 	child->parent = this;
 	children[childIndex] = child;
 
-	// Update childs properties
+	// Write childs properties
+	//TODO: correct geometric errors
 	
 	child->tileset.box = cAABB;
-	child->tileset.geometricError -= 20;
+	child->tileset.url = hierarchyPath() + name() + std::to_string(childIndex) + ".json";
+	
+	child->tileset.geometricError = this->tileset.geometricError - 20;
+	child->tileset.r_geometricError = this->tileset.geometricError - 20;
+
+	child->tileset.content_url = "sample.pnt"; //TODO: set content url + set it up for root
+
 	if (child->tileset.geometricError < 0) {
 		child->tileset.geometricError = 0;
 	}
-	this->tileset.children.push_back(&child->tileset); // This must be written to the json at the end
+
+	this->tileset.children.push_back(&child->tileset);
 	
-	// set child urls
-
-
 	return child;
 }
 
@@ -324,7 +329,7 @@ void PWNode::flush(){
 		for(const auto &e_c : points){
 			writer->write(e_c);
 		}
-		/*
+		/* ?? what is this
 		if(append && (writer->numPoints != this->numAccepted)){ // !!
 			cout << "writeToDisk " << writer->numPoints  << " != " << this->numAccepted << endl;
 			exit(1);

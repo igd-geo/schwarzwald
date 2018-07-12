@@ -38,7 +38,6 @@ public:
 	PotreeWriter *potreeWriter;
 	vector<Point> cache;
 	int storeLimit = 20'000;
-	//int storeLimit = 10;
 	vector<Point> store;
 	bool isInMemory = true;
 

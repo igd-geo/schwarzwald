@@ -190,8 +190,8 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 	// content
 	Value contentObj(kObjectType);
 	// optional: add bounding box for that object
-	Value url(ts.url.c_str(), (rapidjson::SizeType)ts.url.size());
-	contentObj.AddMember("url", url, alloc);
+	Value co_url(ts.content_url.c_str(), (rapidjson::SizeType)ts.content_url.size());
+	contentObj.AddMember("url", co_url, alloc);
 
 	rootobj.AddMember("content", contentObj, alloc);
 
@@ -238,8 +238,8 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 		childObj.AddMember("geometricError", child->geometricError, alloc);
 
 		Value cObj(kObjectType);
-		Value c_url(child->url.c_str(), (rapidjson::SizeType)child->url.size());
-		cObj.AddMember("url", c_url, alloc);
+		Value ch_url(child->url.c_str(), (rapidjson::SizeType)child->url.size());
+		cObj.AddMember("url", ch_url, alloc);
 		childObj.AddMember("content", cObj, alloc);
 
 		childrenArr.PushBack(childObj, alloc);
