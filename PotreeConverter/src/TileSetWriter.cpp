@@ -1,9 +1,8 @@
 #include "TileSetWriter.h"
 
-TileSetWriter::TileSetWriter()
+TileSetWriter::TileSetWriter(string file, AABB aabb, double scale, PointAttributes pointattributes) 
+	: file(file), aabb(aabb), scale(scale), p_attributes(pointattributes)
 {
-
-
 	writer = new ofstream(file, ios::out | ios::binary);
 }
 
@@ -279,9 +278,29 @@ TileSetWriter::~TileSetWriter()
 {
 }
 
+// Point Cloud tile format
 void TileSetWriter::write(const Point & point)
 {
+
+
 }
+
+// Content of the pnt file:
+/*
+
+*/
+
+// Header of pnt file:
+/*
+magic 
+version
+byteLenght
+featureTableJSONByteLength
+featureTableBinaryByteLength
+batchTableJSONByteLength
+batchTableBinaryByteLength
+*/
+
 
 void TileSetWriter::close()
 {

@@ -11,6 +11,7 @@
 #include <fstream>
 
 #include "PointWriter.hpp"
+#include "PointAttributes.hpp"
 
 #include "Tileset.h"
 #include "Point.h"
@@ -27,19 +28,23 @@ using Potree::AABB;
 using Potree::Point;
 using std::ofstream;
 using std::ios;
+using Potree::PointAttributes;
 
 class TileSetWriter : public Potree::PointWriter
 {
 public:
 	Document document;
+	string file;
 	ofstream *writer;
-	
+	PointAttributes p_attributes;
+	AABB aabb;
+	double scale;
 
-	TileSetWriter();
+	TileSetWriter(string file, AABB aabb, double scale, PointAttributes pointattributes);
 	~TileSetWriter();
 
 	void write(const Point &point);
-
+	
 
 	void close();
 

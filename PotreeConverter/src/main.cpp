@@ -279,10 +279,17 @@ void printArguments(PotreeArguments &a){
 
 #include "Vector3.h"
 #include <random>
-
+#include "PNTWriter.h"
 
 int main(int argc, char **argv){
 	cout.imbue(std::locale(""));
+
+	float_t pos[3] = { 9.2, 9.3, 1.2 };
+	FeatureTable je(pos);
+
+
+
+	cout << "float size:" << sizeof(float) << std::endl;
 	
 	try{
 		PotreeArguments a = parseArguments(argc, argv);

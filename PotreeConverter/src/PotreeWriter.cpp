@@ -111,7 +111,7 @@ PointReader *PWNode::createReader(string path){
 
 PointWriter *PWNode::createWriter(string path){
 	
-	return new TileSetWriter();
+	return new TileSetWriter(path, aabb, potreeWriter->scale, this->potreeWriter->pointAttributes);
 }
 
 void PWNode::loadFromDisk(){
@@ -159,7 +159,7 @@ PWNode *PWNode::createChild(int childIndex ){
 	return child;
 }
 
-void PWNode::split(){ // Update tileset.json children 
+void PWNode::split(){ // Update tileset.json children ??
 	children.resize(8, NULL); 
 
 	string filepath = workDir() + "/data/" + path();
@@ -329,7 +329,7 @@ void PWNode::flush(){
 		for(const auto &e_c : points){
 			writer->write(e_c);
 		}
-		/* ?? what is this
+		/* 
 		if(append && (writer->numPoints != this->numAccepted)){ // !!
 			cout << "writeToDisk " << writer->numPoints  << " != " << this->numAccepted << endl;
 			exit(1);
