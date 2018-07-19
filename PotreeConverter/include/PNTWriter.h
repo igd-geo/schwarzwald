@@ -2,53 +2,106 @@
 
 #include <iostream>
 #include <fstream>
-#include <iostream>
 #include <vector>
 #include <algorithm>
 #include <iterator>
+#include <optional>
+#include <variant>
 
 #include "PointWriter.hpp"
 #include "Point.h"
 #include "PointAttributes.hpp"
 #include "AABB.h"
+#include "Vector3.h"
 
+#include "rapidjson/document.h"
+#include <rapidjson/filewritestream.h>
+#include <rapidjson/writer.h>
+#include "rapidjson/prettywriter.h"
+#include "rapidjson/stringbuffer.h"
+
+using std::optional;
+using std::nullopt;
+using std::variant;
 
 using Potree::Point;
 using Potree::AABB;
+using Potree::Vector3;
+using rapidjson::Document;
+using rapidjson::FileWriteStream;
+
+using rapidjson::Value;
+using rapidjson::kObjectType;
 
 using std::ios;
 struct BatchTable
 {
-
+	// caontains metadata for points
 };
 
-struct FeatureTable
+// https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/TileFormats/PointCloud/README.md
+
+struct RGBA
 {
-	FeatureTable(float_t position[3]){ // you can define both but have to define one
-		for (int i = 0; i < 3; i++) {
-			POSITION[i] = position[i];
-		}
-	}
-	FeatureTable(uint16_t position_quantized[3]) {
-		for (int i = 0; i < 3; i++) {
-			POSITION_QUANTIZED[i] = position_quantized[i];
-		}
-	}
-	float_t POSITION[3] = {}; // x, y, z;
-	uint16_t POSITION_QUANTIZED[3] = {}; // x, y, z;
-	uint8_t RGBA[4] = {};
-	uint8_t RGB[3] = {};
-	uint16_t RGB565 = 0;
-	float_t NORMAL[3] = {};
-	uint8_t NORMAL_OCT16P[2] = {};
-	uint16_t BATCH_ID = 0;
+	RGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a)
+		:R(r), G(g), B(b), A(a) {}
+	uint8_t R;
+	uint8_t G;
+	uint8_t B;
+	uint8_t A;
+};
+struct RGB
+{
+	RGB(uint8_t r, uint8_t g, uint8_t b)
+		: R(r), G(g), B(b) {}
+	uint8_t R;
+	uint8_t G;
+	uint8_t B;
+};
+struct NORMAL_OCT16P {
+	NORMAL_OCT16P(uint8_t x, uint8_t y) : x(x), y(y) {}
+	uint8_t x;
+	uint8_t y;
+};
+
+// create this struct as soon as all points are written
+struct Features
+{
+	// Global semantics
+	uint32_t POINTS_LENGTH = 0; // total number of points
+
+	optional<Vector3<float>> RTC_CENTER; // float or float_t
+	optional<Vector3<float>> QUANTIZED_VOLUME_OFFSET;
+	optional<Vector3<float>> QUANTIZED_VOLUME_SCALE;
+	optional<RGBA> CONSTANT_RGBA; 
+	optional<uint32_t> BATCH_LENGTH; // The number of unique batch_id values
+
+	// Point semantics
+	/*
+	optional<Vector3<float>> POSITION; // x, y, z;
+	optional<Vector3<uint16_t>> POSITION_QUANTIZED; // x, y, z;
+	optional<RGBA> RGBA;
+	optional<RGB> RGB;
+	optional<uint16_t> RGB565;
+	optional<Vector3<float>> NORMAL;
+	optional<NORMAL_OCT16P> NORMAL_OCT16P;
+	optional<uint16_t> BATCH_ID;
+	*/
+	optional<int> POSITION_byteOffset; // x, y, z;
+	optional<int> POSITION_QUANTIZED_byteOffset; // x, y, z;
+	optional<int> RGBA_byteOffset;
+	optional<int> RGB_byteOffset;
+	optional<int> RGB565_byteOffset;
+	optional<int> NORMAL_byteOffset;
+	optional<int> NORMAL_OCT16P_byteOffset;
+	optional<int> BATCH_ID_byteOffset;
 };
 
 static_assert(sizeof(char) == 1, "char has to be 1 byte");
 static_assert(sizeof(float) == 4, "float has to be 4 bytes");
 
 /*
-Writes a .pnt file
+Create a .pnt file / add points to it with write() / create it with writePNT()
 */
 class PNTWriter : public Potree::PointWriter
 {
@@ -57,50 +110,49 @@ public:
 	std::ofstream *writer;
 	AABB aabb;
 	double scale;
+	Features featuretable;
+	BatchTable batchtable;
 
 
 	// header 
+	
 	const char magic[4] = {'p','n','t','s'};
 	const uint32_t version = 1;
-	uint32_t t_byteLength = 0;
+	uint32_t t_byteLength = 0; // length of the entire tile including header
+	uint32_t ftJSON_byteLength = 0; //if this equals zero the tile does not need to be rendered
 	uint32_t ft_byteLength = 0;
-	uint32_t ftJSON_byteLength = 0;
-	uint32_t bt_byteLength = 0;
 	uint32_t btJSON_byteLength = 0;
-
+	uint32_t bt_byteLength = 0;
 	
+	int position_byteLength = 0; // This is necessary for byte offset in feature table
+	int position_quantized_byteLength = 0;
+	int rgba_byteLength = 0;
+	int rgb__byteLength = 0;
+	int rgb565_byteLength = 0;
+	int normal_byteLength = 0;
+	int normal_oct_byteLength = 0;
+	int batchid_byteLength = 0;
 
-	// feature table JSON
-	int32_t points_length = 0; // The number of points to render. The length of each array value for a point semantic should be equal to this.
-	float rtc_center[3] = {}; // A 3-component array of numbers defining the center position when point positions are defined relative-to-center.
-	float quantized_volume_offset[3] = {}; // A 3-component array of numbers defining the offset for the quantized volume. - not required, unless POSITION_QUANTIZED is defined.
-	float quantized_volume_scale[3] = {}; // A 3-component array of numbers defining the scale for the quantized volume. - not required, unless POSITION_QUANTIZED is defined.
-	uint8_t constant_rgba[4];  // A 4-component array of values defining a constant RGBA color for all points in the tile.
-	uint32_t batch_length = -1; // The number of unique BATCH_ID values. - not required, unless BATCH_ID is defined.
 
-	PNTWriter(string file, AABB, double scale, BatchTable bt, FeatureTable ft);
+	vector<float> positions;
+	vector<uint8_t> colors;
+
+	PNTWriter(string file, AABB aabb, double scale);
 	~PNTWriter();
 
 	void write(const Point &point);
-
-	
-
-	
 
 	void writePNT();
 	
 	void close();
 
 private:
-	// header components	
-	uint32_t getbyteLength() const; //returns total length of the tile includung the header length
-	uint32_t getfeatureTableJSONByteLength() const;
-	uint32_t getfeatureTableBINByteLength() const;
-	uint32_t getbatchTableJSONByteLength() const;
-	uint32_t getbatchTableBinaryByteLength() const;
-
-	std::vector<char> createHeader() const;
+	
+	std::vector<std::byte> createFeatureBIN(); // with this function we have the right size for ft_byteLenght
+	
+	void createfeatureTableJSON(); //creates a json withe the name featuretable.json
 
 
+	void writeHeader();
 };
 

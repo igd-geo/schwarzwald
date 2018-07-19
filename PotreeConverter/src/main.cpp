@@ -23,7 +23,6 @@ using std::cout;
 using std::cerr;
 using std::endl;
 using std::vector;
-using std::binary_function;
 using std::map;
 using std::chrono::high_resolution_clock;
 using std::chrono::milliseconds;
@@ -284,10 +283,6 @@ void printArguments(PotreeArguments &a){
 int main(int argc, char **argv){
 	cout.imbue(std::locale(""));
 
-	float_t pos[3] = { 9.2, 9.3, 1.2 };
-	FeatureTable je(pos);
-
-
 
 	cout << "float size:" << sizeof(float) << std::endl;
 	
@@ -296,7 +291,24 @@ int main(int argc, char **argv){
 		printArguments(a);
         PotreeConverter pc(a.executablePath, a.outdir, a.source);
 
-
+		// testing zone
+		Point p1(0, 0, 0);
+		Point p2(0.5, 0.5, 0.5);
+		Point p3(1.0, 1.0, 1.0);
+		/*
+		std::byte x = (std::byte)10;
+		std::byte y = (std::byte)'a';
+		std::cout << (int)x << std::endl;
+		std::cout << (char)y << std::endl;
+		*/
+		AABB aabb(Vector3<double>(0, 0, 0), Vector3<double>(1, 1, 1));
+		PNTWriter pntwriter("file", aabb, 1.0);
+		pntwriter.write(p1);
+		pntwriter.write(p2);
+		pntwriter.write(p3);
+		pntwriter.writePNT();
+		
+		
 		pc.spacing = a.spacing;
 		pc.diagonalFraction = a.diagonalFraction;
 		pc.maxDepth = a.levels;
@@ -319,7 +331,7 @@ int main(int argc, char **argv){
 		pc.material = a.material;
 		pc.showSkybox = a.showSkybox;
 
-		pc.convert();
+		//pc.convert();
 	}catch(exception &e){
 		cout << "ERROR: " << e.what() << endl;
 		return 1;
