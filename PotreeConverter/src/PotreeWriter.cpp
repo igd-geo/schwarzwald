@@ -37,18 +37,22 @@ namespace fs = std::experimental::filesystem;
 
 namespace Potree{
 
-PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb) : tileset(aabb, "123"){
+PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb) : tileset(aabb, "nottheactualname"){
 	this->potreeWriter = potreeWriter;
 	this->aabb = aabb;
 	this->grid = new SparseGrid(aabb, spacing());
+	//this->tileset.content_url = hierarchyPath() + name() + ".pnt";
+	this->tileset.content_url =  name() + ".pnt";
 }
 
-PWNode::PWNode(PotreeWriter* potreeWriter, int index, AABB aabb, int level) : tileset(aabb, "123"){
+PWNode::PWNode(PotreeWriter* potreeWriter, int index, AABB aabb, int level) : tileset(aabb, "nottheactualname"){
 	this->index = index;
 	this->aabb = aabb;
 	this->level = level;
 	this->potreeWriter = potreeWriter;
 	this->grid = new SparseGrid(aabb, spacing());
+	//this->tileset.content_url = hierarchyPath() + name() + ".pnt";
+	this->tileset.content_url =  name() + ".pnt";
 }
 
 PWNode::~PWNode(){
@@ -143,13 +147,16 @@ PWNode *PWNode::createChild(int childIndex ){
 	//TODO: correct geometric errors
 	
 	child->tileset.box = cAABB;
-	child->tileset.url = hierarchyPath() + name() + std::to_string(childIndex) + ".json";
-	
+	//child->tileset.url = hierarchyPath() + name() + std::to_string(childIndex) + ".json";
+	child->tileset.url = name() + std::to_string(childIndex) + ".json";
+
 	child->tileset.geometricError = this->tileset.geometricError - 20;
 	child->tileset.r_geometricError = this->tileset.geometricError - 20;
 
-	child->tileset.content_url = "sample.pnt"; //TODO: set content url + set it up for root
-
+	
+	//child->tileset.content_url = hierarchyPath() + name() + std::to_string(childIndex) + ".pnt"; //TODO: set content url + set it up for root
+	child->tileset.content_url = name() + std::to_string(childIndex) + ".pnt";
+	
 	if (child->tileset.geometricError < 0) {
 		child->tileset.geometricError = 0;
 	}
@@ -323,12 +330,18 @@ void PWNode::flush(){
 		}
 
 		
-		writer->writeJSON(filepath, this->tileset);
+		
 
 
 		for(const auto &e_c : points){
 			writer->write(e_c);
 		}
+
+		
+		writer->writeTileset(filepath, this->tileset);
+
+
+
 		/* 
 		if(append && (writer->numPoints != this->numAccepted)){ // !!
 			cout << "writeToDisk " << writer->numPoints  << " != " << this->numAccepted << endl;
@@ -337,7 +350,7 @@ void PWNode::flush(){
 		*/
 
 		writer->close();
-		delete writer;
+		//delete writer;
 	};
 
 
@@ -554,6 +567,9 @@ void PotreeWriter::add(Point &p){
 	}
 }
 
+/*
+
+*/
 void PotreeWriter::processStore(){
 	vector<Point> st = store;
 	store = vector<Point>();

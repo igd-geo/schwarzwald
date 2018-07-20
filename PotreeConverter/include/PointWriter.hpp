@@ -22,7 +22,7 @@ public:
 
 	virtual void write(const Point &point) = 0;
 
-	virtual bool writeJSON(const string& workDir, const Tileset& tileset) { return false; }
+	virtual bool writeTileset(const string& workDir, const Tileset& tileset) { return false; }
 
 	virtual void close() = 0;
 

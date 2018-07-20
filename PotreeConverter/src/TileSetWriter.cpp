@@ -4,6 +4,13 @@ TileSetWriter::TileSetWriter(string file, AABB aabb, double scale, PointAttribut
 	: file(file), aabb(aabb), scale(scale), p_attributes(pointattributes)
 {
 	writer = new ofstream(file, ios::out | ios::binary);
+	
+	
+	size_t pos = file.find(".");
+	string pntfile = file.substr(0, pos);
+	pntfile += ".pnt";
+	pntwriter = new PNTWriter(pntfile, aabb, scale);
+	
 }
 
 
@@ -11,14 +18,23 @@ TileSetWriter::TileSetWriter(string file, AABB aabb, double scale, PointAttribut
 /*
 Write to workDir + url of Tileset
 */
-bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
+bool TileSetWriter::writeTileset(const string& WorkDir, const Tileset& ts)
+{
+	writeTilesetJSON(WorkDir, ts);
+	
+	pntwriter->writePNT();
+
+	return true;
+}
+
+bool TileSetWriter::writeTilesetJSON(const string & WorkDir, const Tileset & ts)
 {
 	document.SetObject();
-	
+
 	rapidjson::Document::AllocatorType& alloc = document.GetAllocator();
 
 
-	Value assetobj(kObjectType); 
+	Value assetobj(kObjectType);
 	Value propertiesobj(kObjectType);
 	Value heightobj(kObjectType);
 	Value rootobj(kObjectType);
@@ -26,8 +42,8 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 	Value rootboundingvolumeobj(kObjectType);
 	Value rootboundingvolumregionarr(kArrayType);
 
-	
-	
+
+
 	// Tileset https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/schema/tileset.schema.json
 	/*
 	-asset required
@@ -35,7 +51,7 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 	-geometricError required
 	-root required
 	*/
-	
+
 
 
 	//asset https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/schema/asset.schema.json
@@ -50,7 +66,7 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 	if (!ts.tilesetVersion.empty())
 	{
 		Value v(ts.tilesetVersion.c_str(), (rapidjson::SizeType)ts.version.size());
-		assetobj.AddMember("tilesetVersion", v, alloc); 
+		assetobj.AddMember("tilesetVersion", v, alloc);
 	}
 	if (ts.gltfUpAxis == X || ts.gltfUpAxis == Z) //Y is deafult in schema
 	{
@@ -65,7 +81,7 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 	}
 
 	document.AddMember("asset", assetobj, alloc);
-	
+
 
 
 
@@ -83,15 +99,15 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 
 		document.AddMember("properties", propertiesobj, alloc);
 	}
-	
+
 	//geometricError
 	/*
-	The error, in meters, introduced if this tileset is not rendered. 
+	The error, in meters, introduced if this tileset is not rendered.
 	At runtime, the geometric error is used to compute screen space error (SSE), i.e., the error measured in pixels.
 	minimum = 0
 	*/
 	document.AddMember("geometricError", ts.geometricError, alloc); // error when the entire tileset is not rendered
-	
+
 
 	// bounding box: An array of 12 numbers that define an oriented bounding box.  
 	// The first three elements define the x, y, and z values for the center of the box.  
@@ -111,29 +127,29 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 	*/
 	Potree::Vector3<double> center = ts.box.getCenter();
 	boxarr.PushBack(center.x, alloc);
-	boxarr.PushBack(center.y, alloc); 
+	boxarr.PushBack(center.y, alloc);
 	boxarr.PushBack(center.z, alloc);
 
 	// its an AABB to an OBB // what is meant by "half-lenght"?
 	// x axis direction
-	boxarr.PushBack(1, alloc); 
-	boxarr.PushBack(0, alloc); 
-	boxarr.PushBack(0, alloc); 
-					 
-	// y axis direction	 
-	boxarr.PushBack(0, alloc); 
 	boxarr.PushBack(1, alloc);
 	boxarr.PushBack(0, alloc);
-					 
+	boxarr.PushBack(0, alloc);
+
+	// y axis direction	 
+	boxarr.PushBack(0, alloc);
+	boxarr.PushBack(1, alloc);
+	boxarr.PushBack(0, alloc);
+
 	// z axis direction	 
-	boxarr.PushBack(0, alloc); 
+	boxarr.PushBack(0, alloc);
 	boxarr.PushBack(0, alloc);
 	boxarr.PushBack(1, alloc);
 
 	rootboundingvolumeobj.AddMember("box", boxarr, alloc);
 	rootobj.AddMember("boundingVolume", rootboundingvolumeobj, alloc);
 
-	
+
 	if (ts.requestVolumeIsSet())
 	{
 		Value reqBoxObj(kObjectType);
@@ -167,7 +183,7 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 		rootobj.AddMember("viewerRequestVolume", reqBoxObj, alloc);
 	}
 
-	
+
 	rootobj.AddMember("geometricError", ts.r_geometricError, alloc);
 
 	if (ts.writeRefine == true)
@@ -217,21 +233,21 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 		box.PushBack(1, alloc);
 		box.PushBack(0, alloc);
 		box.PushBack(0, alloc);
-					 
+
 		// y axis	 
 		box.PushBack(0, alloc);
 		box.PushBack(1, alloc);
 		box.PushBack(0, alloc);
-					 
+
 		// z axis	 
 		box.PushBack(0, alloc);
 		box.PushBack(0, alloc);
 		box.PushBack(1, alloc);
-		
+
 		bvObj.AddMember("box", box, alloc); // bounding volume object
 		childObj.SetObject();
 		assert(childObj.IsObject());
-		
+
 		childObj.AddMember("boundingVolume", bvObj, alloc);
 
 		childObj.AddMember("geometricError", child->geometricError, alloc);
@@ -250,27 +266,26 @@ bool TileSetWriter::writeJSON(const string& WorkDir, const Tileset& ts)
 
 
 	document.AddMember("root", rootobj, alloc);
-	
+
 	/*
 	External Tilesets:
-		root.geometricError === tile.geometricError
-		root.refine === tile.refine
-		root.boundingVolume === tile.content.boundingVolume
-		root.viewerRequestVolume === tile.viewerRequestVolume
-		geometricError from child is generally less than its parent tiles geometricError
-		tile.children must be undefined or empty array
+	root.geometricError === tile.geometricError
+	root.refine === tile.refine
+	root.boundingVolume === tile.content.boundingVolume
+	root.viewerRequestVolume === tile.viewerRequestVolume
+	geometricError from child is generally less than its parent tiles geometricError
+	tile.children must be undefined or empty array
 	*/
 
 	FILE* fp = fopen(WorkDir.c_str(), "wb");
 	char writeBuffer[65536];
-	
+
 	FileWriteStream os(fp, writeBuffer, sizeof(writeBuffer));
 
 	Writer<FileWriteStream> writer(os);
 	document.Accept(writer);
 
 	fclose(fp);
-	
 	return true;
 }
 
@@ -281,26 +296,9 @@ TileSetWriter::~TileSetWriter()
 // Point Cloud tile format
 void TileSetWriter::write(const Point & point)
 {
-
+	pntwriter->write(point);
 
 }
-
-// Content of the pnt file:
-/*
-
-*/
-
-// Header of pnt file:
-/*
-magic 
-version
-byteLenght
-featureTableJSONByteLength
-featureTableBinaryByteLength
-batchTableJSONByteLength
-batchTableBinaryByteLength
-*/
-
 
 void TileSetWriter::close()
 {
@@ -310,5 +308,5 @@ void TileSetWriter::close()
 		delete writer;
 		writer = NULL;
 	}
-	
+	pntwriter->close();
 }

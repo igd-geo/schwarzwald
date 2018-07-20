@@ -331,7 +331,7 @@ int main(int argc, char **argv){
 		pc.material = a.material;
 		pc.showSkybox = a.showSkybox;
 
-		//pc.convert();
+		pc.convert();
 	}catch(exception &e){
 		cout << "ERROR: " << e.what() << endl;
 		return 1;

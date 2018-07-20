@@ -15,6 +15,7 @@
 
 #include "Tileset.h"
 #include "Point.h"
+#include "PNTWriter.h"
 
 using rapidjson::Document;
 using rapidjson::FileWriteStream;
@@ -39,6 +40,8 @@ public:
 	PointAttributes p_attributes;
 	AABB aabb;
 	double scale;
+	PNTWriter *pntwriter;
+
 
 	TileSetWriter(string file, AABB aabb, double scale, PointAttributes pointattributes);
 	~TileSetWriter();
@@ -48,7 +51,9 @@ public:
 
 	void close();
 
-	bool writeJSON(const string& workDir, const Tileset& tileset); // add working dir
+	bool writeTileset(const string& workDir, const Tileset& tileset); 
+private:
+	bool writeTilesetJSON(const string& workDir, const Tileset& tileset);
 };
 
 #endif

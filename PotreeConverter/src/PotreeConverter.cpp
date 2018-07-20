@@ -426,7 +426,7 @@ void PotreeConverter::convert(){
 			pointsProcessed++;
 
 			Point p = reader->getPoint();
-			writer->add(p);
+			writer->add(p); //Tilesetwriter.pntwriter.addpoint
 
 			if((pointsProcessed % (1'000'000)) == 0){
 				writer->processStore();

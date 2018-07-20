@@ -18,6 +18,7 @@ void writeAsBytes(const T& obj, std::vector<std::byte>& vec) {
 PNTWriter::PNTWriter(string file, AABB aabb, double scale) 
 	: scale(scale), aabb(aabb), file(file)
 {
+
 	writer = new std::ofstream(file, ios::out | ios::binary);
 }
 
@@ -53,7 +54,7 @@ void PNTWriter::writeHeader()
 		writeAsBytes(c, buffer);
 	}
 	writeAsBytes(version, buffer); // 4 Bytes...
-	writeAsBytes(t_byteLength, buffer); // wrong
+	writeAsBytes(t_byteLength, buffer); 
 	writeAsBytes(ftJSON_byteLength, buffer);
 	writeAsBytes(ft_byteLength, buffer);
 	writeAsBytes(btJSON_byteLength, buffer);
