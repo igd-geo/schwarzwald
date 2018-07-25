@@ -133,6 +133,7 @@ public:
 	int normal_oct_byteLength = 0;
 	int batchid_byteLength = 0;
 
+	int number_of_features = 0;
 
 	vector<float> positions;
 	vector<uint8_t> colors;
@@ -150,9 +151,12 @@ private:
 	
 	std::vector<std::byte> createFeatureBIN(); // with this function we have the right size for ft_byteLenght
 	
-	void createfeatureTableJSON(); //creates a json withe the name featuretable.json
+	int seekfeatureTableJSONByteSize();
 
+	void writeFeatureTableJSON();
 
 	void writeHeader();
+
+	int get_number_of_digits(int integer);
 };
 

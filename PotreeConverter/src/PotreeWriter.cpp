@@ -37,7 +37,7 @@ namespace fs = std::experimental::filesystem;
 
 namespace Potree{
 
-PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb) : tileset(aabb, "nottheactualname"){
+PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb) : tileset(aabb, "1234"){
 	this->potreeWriter = potreeWriter;
 	this->aabb = aabb;
 	this->grid = new SparseGrid(aabb, spacing());
@@ -45,7 +45,7 @@ PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb) : tileset(aabb, "nottheact
 	this->tileset.content_url =  name() + ".pnt";
 }
 
-PWNode::PWNode(PotreeWriter* potreeWriter, int index, AABB aabb, int level) : tileset(aabb, "nottheactualname"){
+PWNode::PWNode(PotreeWriter* potreeWriter, int index, AABB aabb, int level) : tileset(aabb, "1234"){
 	this->index = index;
 	this->aabb = aabb;
 	this->level = level;
@@ -82,7 +82,7 @@ string PWNode::workDir(){
 
 string PWNode::hierarchyPath(){
 	string path = "r/";
-
+	/*
 	int hierarchyStepSize = potreeWriter->hierarchyStepSize;
 	string indices = name().substr(1);
 
@@ -90,6 +90,7 @@ string PWNode::hierarchyPath(){
 	for(int i = 0; i < numParts; i++){
 		path += indices.substr(i * hierarchyStepSize, hierarchyStepSize) + "/";
 	}
+	*/
 
 	return path;
 }
