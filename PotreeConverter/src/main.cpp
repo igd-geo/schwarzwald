@@ -301,14 +301,14 @@ int main(int argc, char **argv){
 		std::cout << (int)x << std::endl;
 		std::cout << (char)y << std::endl;
 		*/
-		/*
+		
 		AABB aabb(Vector3<double>(0, 0, 0), Vector3<double>(1, 1, 1));
 		PNTWriter pntwriter("file", aabb, 1.0);
 		pntwriter.write(p1);
 		pntwriter.write(p2);
 		pntwriter.write(p3);
 		pntwriter.writePNT();
-		*/
+		
 		
 		pc.spacing = a.spacing;
 		pc.diagonalFraction = a.diagonalFraction;

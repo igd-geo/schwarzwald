@@ -127,7 +127,7 @@ public:
 	int position_byteLength = 0; // This is necessary for byte offset in feature table
 	int position_quantized_byteLength = 0;
 	int rgba_byteLength = 0;
-	int rgb__byteLength = 0;
+	int rgb_byteLength = 0;
 	int rgb565_byteLength = 0;
 	int normal_byteLength = 0;
 	int normal_oct_byteLength = 0;
@@ -158,5 +158,6 @@ private:
 	void writeHeader();
 
 	int get_number_of_digits(int integer);
+
 };
 
