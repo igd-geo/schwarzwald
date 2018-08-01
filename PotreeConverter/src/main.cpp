@@ -291,16 +291,12 @@ int main(int argc, char **argv){
 		printArguments(a);
         PotreeConverter pc(a.executablePath, a.outdir, a.source);
 
-		// testing zone
+		// DEBUG:
+		/*
 		Point p1(0, 0, 0);
 		Point p2(0.5, 0.5, 0.5);
 		Point p3(1.0, 1.0, 1.0);
-		/*
-		std::byte x = (std::byte)10;
-		std::byte y = (std::byte)'a';
-		std::cout << (int)x << std::endl;
-		std::cout << (char)y << std::endl;
-		*/
+		
 		
 		AABB aabb(Vector3<double>(0, 0, 0), Vector3<double>(1, 1, 1));
 		PNTWriter pntwriter("file", aabb, 1.0);
@@ -308,7 +304,7 @@ int main(int argc, char **argv){
 		pntwriter.write(p2);
 		pntwriter.write(p3);
 		pntwriter.writePNT();
-		
+		*/
 		
 		pc.spacing = a.spacing;
 		pc.diagonalFraction = a.diagonalFraction;
@@ -333,6 +329,7 @@ int main(int argc, char **argv){
 		pc.showSkybox = a.showSkybox;
 
 		pc.convert();
+
 	}catch(exception &e){
 		cout << "ERROR: " << e.what() << endl;
 		return 1;

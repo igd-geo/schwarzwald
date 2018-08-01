@@ -45,8 +45,8 @@ void PNTWriter::write(const Point & point)
 	colors.push_back(255);
 	colors.push_back(255);
 	colors.push_back(255);
-	// with Potree::Point many features are not available
 
+	// with Potree::Point many features are not available
 }
 
 void PNTWriter::writeHeader()
@@ -57,6 +57,7 @@ void PNTWriter::writeHeader()
 	for (const auto& c : magic) { // 4 Bytes
 		writeAsBytes(c, buffer);
 	}
+
 	writeAsBytes(version, buffer); // 4 Bytes...
 	writeAsBytes(t_byteLength, buffer); 
 	writeAsBytes(ftJSON_byteLength, buffer);
@@ -64,11 +65,9 @@ void PNTWriter::writeHeader()
 	writeAsBytes(btJSON_byteLength, buffer);
 	writeAsBytes(bt_byteLength, buffer);
 	
-
 	for (int i = 0; i < buffer.size(); i++) {
 		writer->write(reinterpret_cast<const char*>(&buffer[i]), sizeof(char));
 	}
-
 }
 
 int PNTWriter::get_number_of_digits(int integer)
@@ -81,10 +80,10 @@ void PNTWriter::writePNT()
 	// 28 bytes header size
 	writer->seekp(28);
 	// create batch and featuretable (and get the size)
-	std::vector<std::byte> ft_binbody = createFeatureBIN(); // the features in this buffer have to be alligned
+	std::vector<std::byte> ft_binbody = createFeatureBIN(); // the features in this buffer are alligned
 	
 	int jsonBL = seekfeatureTableJSONByteSize();
-	// byteoffset of the first featureArray is set to 0 by deafault
+	// byteoffset of the first featureArray is set to 0 by default
 	
 	if (jsonBL % 4 != 0) {
 
@@ -105,15 +104,12 @@ void PNTWriter::writePNT()
 	
 	writer->seekp(28);
 	writeFeatureTableJSON();
-	
 	writer->seekp(28 + ftJSON_byteLength);
-
 
 	//ft_bin
 	for (int i = 0; i < ft_binbody.size(); i++) {
 		writer->write(reinterpret_cast<const char*>(&ft_binbody[i]), sizeof(std::byte));
 	}
-
 
 	//create header
 	writer->seekp(0);

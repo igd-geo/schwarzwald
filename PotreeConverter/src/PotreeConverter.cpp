@@ -466,8 +466,6 @@ void PotreeConverter::convert(){
 		}
 		reader->close();
 		delete reader;
-		
-		// END
 	}
 	
 	cout << "closing writer" << endl;
