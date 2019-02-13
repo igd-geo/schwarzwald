@@ -35,9 +35,14 @@ SOURCE_GROUP("Source Files\\io" FILES
 SOURCE_GROUP("lib\\rapidjson" FILES ${lib_rapidjson_files})
 SOURCE_GROUP("lib\\arguments" FILES ${lib_argument_files})
 
+#add proj4 via hunter
+hunter_add_package(PROJ4)
+find_package(PROJ4 CONFIG REQUIRED)
+
+
 add_executable(PotreeConverter ${files} ${lib_rapidjson_files} ${lib_argument_files})
 
-target_link_libraries(PotreeConverter ${LASZIP_LIBRARY})
+target_link_libraries(PotreeConverter PUBLIC ${LASZIP_LIBRARY} proj)
 
 if(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++14 -pthread -lstdc++ -lm")
