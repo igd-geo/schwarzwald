@@ -54,7 +54,7 @@ namespace Potree{
 PointReader *PotreeConverter::createPointReader(string path, PointAttributes pointAttributes){
 	PointReader *reader = NULL;
 	if(iEndsWith(path, ".las") || iEndsWith(path, ".laz")){
-		reader = new LASPointReader(path);
+		reader = new LASPointReader(path, projection);
 	}else if(iEndsWith(path, ".ptx")){
 		reader = new PTXPointReader(path);
 	}else if(iEndsWith(path, ".ply")){

@@ -32,8 +32,9 @@ AABB LIBLASReader::getAABB(){
     return aabb;
 }
 
-LASPointReader::LASPointReader(string path){
+LASPointReader::LASPointReader(string path, string projection){
 	this->path = path;
+	this->projection = projection;
 
 
 	if(fs::is_directory(path)){
@@ -54,7 +55,7 @@ LASPointReader::LASPointReader(string path){
 
 	// read bounding box
 	for (const auto &file : files) {
-		LIBLASReader aabbReader(file);
+		LIBLASReader aabbReader(file, projection);
 		AABB lAABB = aabbReader.getAABB();
 
 		aabb.update(lAABB.min);
@@ -65,7 +66,7 @@ LASPointReader::LASPointReader(string path){
 
 	// open first file
 	currentFile = files.begin();
-	reader = new LIBLASReader(*currentFile);
+	reader = new LIBLASReader(*currentFile, this->projection);
 //    cout << "let's go..." << endl;
 }
 
@@ -102,7 +103,7 @@ bool LASPointReader::readNextPoint(){
 		currentFile++;
 
 		if(currentFile != files.end()){
-			reader = new LIBLASReader(*currentFile);
+			reader = new LIBLASReader(*currentFile, projection);
 			hasPoints = reader->readPoint();
 		}
 	}

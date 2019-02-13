@@ -106,7 +106,7 @@ PointReader *PWNode::createReader(string path){
 	PointReader *reader = NULL;
 	OutputFormat outputFormat = this->potreeWriter->outputFormat;
 	if(outputFormat == OutputFormat::LAS || outputFormat == OutputFormat::LAZ){
-		reader = new LASPointReader(path);
+		reader = new LASPointReader(path, potreeWriter->projection);
 	}else if(outputFormat == OutputFormat::BINARY){
 		reader = new BINPointReader(path, aabb, potreeWriter->scale, this->potreeWriter->pointAttributes);
 	}

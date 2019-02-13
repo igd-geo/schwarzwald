@@ -12,6 +12,7 @@
 #include "Point.h"
 #include "PointReader.h"
 #include "stuff.h"
+#include "proj_api.h"
 
 using std::string;
 
@@ -27,9 +28,24 @@ private:
 
     double tr[16];
     bool hasTransform = false;
+	string projection;
 
     Point transform(double x, double y, double z) const {
         Point p;
+
+		if (projection != "") {
+
+			projPJ source = pj_init_plus(this->projection.c_str());
+			projPJ target = pj_init_plus("+proj=geocent +datum=WGS84 +units=m +no_defs");
+
+			p.position.x = x;
+			p.position.y = y;
+			p.position.z = z;
+
+			int success = pj_transform(source, target, 1, 1, &p.position.x, &p.position.y, &p.position.z);
+			return p;
+		}
+
         if (hasTransform) {
             p.position.x = tr[0] * x + tr[4] * y + tr[8] * z + tr[12];
             p.position.y = tr[1] * x + tr[5] * y + tr[9] * z + tr[13];
@@ -48,8 +64,10 @@ public:
 	double coordinates[3];
 	long long pointsRead = 0;
 
-    LIBLASReader(string path) {
+    LIBLASReader(string path, string projection) {
 
+		this->projection = projection;
+		
 		laszip_create(&laszip_reader);
 
 		laszip_BOOL request_reader = 1;
@@ -140,9 +158,10 @@ private:
 	LIBLASReader *reader;
 	vector<string> files;
 	vector<string>::iterator currentFile;
+	string projection;
 public:
 
-	LASPointReader(string path);
+	LASPointReader(string path, string projection);
 
 	~LASPointReader();
 
