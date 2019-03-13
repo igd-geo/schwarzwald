@@ -79,8 +79,7 @@ class Tileset {
 
   string child_url;  // Points to another Tileset File
 
-  Vector3<double> localToWorldOffset;
-  glm::dmat4 tileTransform;
+  Vector3<double> localCenter;
 
   Tileset(string name) : name(std::move(name)) {}
 

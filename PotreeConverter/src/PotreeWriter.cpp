@@ -35,6 +35,8 @@ namespace fs = std::experimental::filesystem;
 
 namespace Potree {
 
+constexpr double GEOMETRIC_ERROR_CORRECTION_FACTOR = 2.0;
+
 PWNode::PWNode(PotreeWriter *potreeWriter, AABB aabb,
                const SRSTransformHelper &transformHelper)
     : tileset(""), _transformHelper(transformHelper) {
@@ -45,7 +47,7 @@ PWNode::PWNode(PotreeWriter *potreeWriter, AABB aabb,
   // this->tileset.content_url = hierarchyPath() + name() + ".pnt";
   tileset.content_url = name() + ".pnt";
   tileset.boundingVolume = boundingVolumeFromAABB(aabb, transformHelper);
-  tileset.geometricError = spacing() * 50;
+  tileset.geometricError = spacing() * GEOMETRIC_ERROR_CORRECTION_FACTOR;
 }
 
 PWNode::PWNode(PotreeWriter *potreeWriter, int index, AABB aabb, int level,
@@ -60,7 +62,7 @@ PWNode::PWNode(PotreeWriter *potreeWriter, int index, AABB aabb, int level,
   // this->tileset.content_url = hierarchyPath() + name() + ".pnt";
   tileset.content_url = name() + ".pnt";
   tileset.boundingVolume = boundingVolumeFromAABB(aabb, transformHelper);
-  tileset.geometricError = spacing() * 50;
+  tileset.geometricError = spacing() * GEOMETRIC_ERROR_CORRECTION_FACTOR;
 }
 
 PWNode::~PWNode() {
@@ -291,6 +293,12 @@ void PWNode::flush() {
           writer = createWriter(filepath);
         }
 
+        // Transform the point positions on WRITE. This way, the creation of the
+        // octree structure is not affected, but we get the correct positions
+        // for Cesium. Additionally, we transform all point coordinates into a
+        // local coordinate system centered around the smallest point to prevent
+        // jitter during rendering
+
         Vector3<double> localOffsetToWorld;
         if (transformInplace) {
           _transformHelper.transformPositionsTo(
@@ -306,19 +314,7 @@ void PWNode::flush() {
           writer->writePoints(pointsCopy);
         }
 
-        // TODO Create the Tileset description for this node. This includes the
-        // tile transform, based on 'localOffsetToWorld' as well as the parents´
-        // offsets. 3d-tiles will chain transformations, so we have to take the
-        // parent transformation into account
-
-        this->tileset.localToWorldOffset = localOffsetToWorld;
-        if (this->parent) {
-          localOffsetToWorld -= this->parent->tileset.localToWorldOffset;
-        }
-
-        this->tileset.tileTransform = glm::translate(
-            glm::identity<glm::dmat4>(),
-            {localOffsetToWorld.x, localOffsetToWorld.y, localOffsetToWorld.z});
+        this->tileset.localCenter = localOffsetToWorld;
 
         writer->writeTileset(filepath, this->tileset);
 

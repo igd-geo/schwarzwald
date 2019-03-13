@@ -144,7 +144,7 @@ class PNTWriter : public Potree::PointWriter {
 
   void writePoints(const PointBuffer& points) override;
 
-  void flush();
+  void flush(const Vector3<double>& localCenter);
 
   void close() override;
 
@@ -191,7 +191,7 @@ class PNTWriter : public Potree::PointWriter {
   /// Creates a binary blob containing the feature table for the current set of
   /// points. This also contains the relevant offsets for the .pnts header
   /// </summary>
-  FeatureTableBlob createFeatureTableBlob();
+  FeatureTableBlob createFeatureTableBlob(const Vector3<double>& localCenter);
 };
 
 }  // namespace Potree

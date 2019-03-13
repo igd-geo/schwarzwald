@@ -2,6 +2,7 @@
 #include "PNTWriter.h"
 #include <rapidjson/filewritestream.h>
 #include <rapidjson/writer.h>
+#include "Transformation.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "stuff.h"
@@ -88,7 +89,7 @@ void Potree::PNTWriter::writePoints(const PointBuffer& points) {
   }
 }
 
-void Potree::PNTWriter::flush() {
+void Potree::PNTWriter::flush(const Vector3<double>& localCenter) {
   std::ofstream writer{_filePath, std::ios::out | std::ios::binary};
   if (!writer.is_open()) {
     std::cerr << "Could not write .pnts file \"" << _filePath << "\" ("
@@ -98,7 +99,7 @@ void Potree::PNTWriter::flush() {
 
   constexpr auto HEADER_SIZE = 28u;
 
-  const auto featureTableBlob = createFeatureTableBlob();
+  const auto featureTableBlob = createFeatureTableBlob(localCenter);
   const auto totalSize =
       static_cast<uint32_t>(featureTableBlob.bytes.size()) + HEADER_SIZE;
 
@@ -125,9 +126,9 @@ void Potree::PNTWriter::flush() {
 
 void Potree::PNTWriter::close() {}
 
-Potree::PNTWriter::FeatureTableBlob
-Potree::PNTWriter::createFeatureTableBlob()  // create a featuretable before
-                                             // this method
+Potree::PNTWriter::FeatureTableBlob Potree::PNTWriter::createFeatureTableBlob(
+    const Vector3<double>& localCenter)  // create a featuretable before
+                                         // this method
 {
   Document jsonHeader;
   auto& jsonAllocator = jsonHeader.GetAllocator();
@@ -140,6 +141,14 @@ Potree::PNTWriter::createFeatureTableBlob()  // create a featuretable before
 
   // We always have the POINTS_LENGTH member
   jsonHeader.AddMember("POINTS_LENGTH", _featuretable.numPoints, jsonAllocator);
+
+  // We also set the RTC_CENTER property. This prevents jitter when rendering
+  // the points
+  Value localCenterArray{kArrayType};
+  localCenterArray.PushBack(localCenter.x, jsonAllocator);
+  localCenterArray.PushBack(localCenter.y, jsonAllocator);
+  localCenterArray.PushBack(localCenter.z, jsonAllocator);
+  jsonHeader.AddMember("RTC_CENTER", localCenterArray, jsonAllocator);
 
   struct AttributeDescription {
     gsl::span<const std::byte> binaryRange;
@@ -159,9 +168,9 @@ Potree::PNTWriter::createFeatureTableBlob()  // create a featuretable before
       // specified that have different attributes in them, how would we extract
       // these attributes? We can either skip them in all files that have them,
       // assuming that if the attributes are not available for _ALL_ files, they
-      // are not available at all, or we go the opposite way and fill the missing
-      // attributes with default values... In any case, the user should be
-      // notified about this!
+      // are not available at all, or we go the opposite way and fill the
+      // missing attributes with default values... In any case, the user should
+      // be notified about this!
       std::cerr << "No values for attribute \""
                 << perPointAttribute->getAttributeNameForJSON()
                 << "\" were extracted from source files, the attribute will be "

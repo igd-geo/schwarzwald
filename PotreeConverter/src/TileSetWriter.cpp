@@ -48,7 +48,7 @@ bool Potree::TileSetWriter::writeTileset(const string& WorkDir,
                                          const Tileset& ts) {
   writeTilesetJSON(WorkDir, ts);
 
-  _pntWriter->flush();
+  _pntWriter->flush(ts.localCenter);
 
   return true;
 }
@@ -129,17 +129,6 @@ bool Potree::TileSetWriter::writeTilesetJSON(const string& WorkDir,
   */
   document.AddMember("geometricError", ts.geometricError,
                      alloc);  // error when the entire tileset is not rendered
-
-  // transform
-  {
-    Value transformArray{kArrayType};
-    for (auto idx = 0; idx < 16; ++idx) {
-      const auto rowIdx = idx % 4;
-      const auto colIdx = idx / 4;
-      transformArray.PushBack(ts.tileTransform[colIdx][rowIdx], alloc);
-    }
-    document.AddMember("transform", transformArray, alloc);
-  }
 
   /*
   -boundingVolume required

@@ -38,7 +38,7 @@ class PWNode {
   bool addCalledSinceLastFlush = false;
   PotreeWriter *potreeWriter;
   PointBuffer cache;
-  int storeLimit = 20'000'000;
+  int storeLimit = 20'000;
   PointBuffer store;
   bool isInMemory = true;
 

@@ -20,7 +20,8 @@ class PointWriter {
 
   virtual void writePoints(const PointBuffer& points) = 0;
 
-  virtual bool writeTileset(const string& workDir, const Tileset& tileset) {
+  virtual bool writeTileset(const std::string& workDir,
+                            const Tileset& tileset) {
     return false;
   }
 
