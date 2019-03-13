@@ -4,368 +4,327 @@
 #include <rapidjson/writer.h>
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
+#include "stuff.h"
 
-template<typename T>
+using namespace rapidjson;
+
+template <typename T>
 void writeAsBytes(const T& obj, std::vector<std::byte>& vec) {
-	const auto mem = reinterpret_cast<const std::byte*>(&obj);
-	const auto size = sizeof(T);
-	vec.reserve(vec.size() + size);
-	for (size_t idx = 0; idx < size; ++idx) {
-		vec.push_back(mem[idx]);
-	}
+  // TODO Move to utility header
+  const auto mem = reinterpret_cast<const std::byte*>(&obj);
+  const auto size = sizeof(T);
+  vec.reserve(vec.size() + size);
+  for (size_t idx = 0; idx < size; ++idx) {
+    vec.push_back(mem[idx]);
+  }
 }
 
-PNTWriter::PNTWriter(string file, AABB aabb, double scale) 
-	: scale(scale), aabb(aabb), file(file)
-{
-
-	writer = new std::ofstream(file, ios::out | ios::binary);
+template <typename T>
+void writeBinary(const T& obj, std::ofstream& stream) {
+  const auto mem = reinterpret_cast<const char*>(&obj);
+  const auto size = sizeof(T);
+  stream.write(mem, size);
 }
 
-PNTWriter::~PNTWriter()
-{
-	close();
+namespace {
+static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
+    const Potree::PointAttribute& attribute) {
+  if (attribute == Potree::PointAttribute::POSITION_CARTESIAN) {
+    return std::make_unique<Potree::attributes::PositionAttribute>();
+  }
+  if (attribute == Potree::PointAttribute::COLOR_PACKED) {
+    return std::make_unique<Potree::attributes::RGBAAttribute>();
+  }
+  // TODO Implement other attribute types
+  if (attribute == Potree::PointAttribute::INTENSITY) {
+  }
+  if (attribute == Potree::PointAttribute::CLASSIFICATION) {
+  }
+  if (attribute == Potree::PointAttribute::NORMAL_SPHEREMAPPED) {
+  }
+  if (attribute == Potree::PointAttribute::NORMAL_OCT16) {
+  }
+  if (attribute == Potree::PointAttribute::NORMAL) {
+  }
+
+  return nullptr;
 }
+}  // namespace
+
+Potree::PNTWriter::PNTWriter(const string& filePath, const AABB& aabb,
+                             double scale,
+                             const PointAttributes& pointAttributes)
+    : _scale(scale), _aabb(aabb), _filePath(filePath) {
+  for (auto& desiredPointAttribute : pointAttributes.attributes) {
+    auto attributeCache = createPointAttributeCache(desiredPointAttribute);
+    if (!attributeCache) {
+      std::cerr << "Could not create attribute cache for PointAttribute "
+                << desiredPointAttribute.name
+                << "! Attribute will be skipped..." << std::endl;
+      continue;
+    }
+    _featuretable.perPointAttributes.push_back(std::move(attributeCache));
+  }
+
+  // TODO Create global attributes (how should we define them?)
+}
+
+Potree::PNTWriter::~PNTWriter() { close(); }
 
 /*
 Writes a Point to the Batch Table
 */
-void PNTWriter::write(const Point & point)
-{
-	featuretable.POINTS_LENGTH += 1;
-	// add point to positionBinary
-	positions.push_back(point.position.x);
-	positions.push_back(point.position.y);
-	positions.push_back(point.position.z);
-	/*
-	colors.push_back(point.color.x);
-	colors.push_back(point.color.y);
-	colors.push_back(point.color.z);
-	*/
-	colors.push_back(255);
-	colors.push_back(255);
-	colors.push_back(255);
+void Potree::PNTWriter::writePoints(const PointBuffer& points) {
+  const auto numPoints = points.count();
+  if (!numPoints) {
+    std::cout << "[PNTWriter::writePoints] No points to write..." << std::endl;
+    return;
+  }
 
-	// with Potree::Point many features are not available
+  _featuretable.numPoints += numPoints;
+
+  for (auto& localAttribute : _featuretable.perPointAttributes) {
+    localAttribute->extractFromPoints(points);
+  }
 }
 
-void PNTWriter::writeHeader()
-{
-	// 28 bytes
-	std::vector<std::byte> buffer;
+void Potree::PNTWriter::flush() {
+  std::ofstream writer{_filePath, std::ios::out | std::ios::binary};
+  if (!writer.is_open()) {
+    std::cerr << "Could not write .pnts file \"" << _filePath << "\" ("
+              << strerror(errno) << ")" << std::endl;
+    return;
+  }
 
-	for (const auto& c : magic) { // 4 Bytes
-		writeAsBytes(c, buffer);
-	}
+  constexpr auto HEADER_SIZE = 28u;
 
-	writeAsBytes(version, buffer); // 4 Bytes...
-	writeAsBytes(t_byteLength, buffer); 
-	writeAsBytes(ftJSON_byteLength, buffer);
-	writeAsBytes(ft_byteLength, buffer);
-	writeAsBytes(btJSON_byteLength, buffer);
-	writeAsBytes(bt_byteLength, buffer);
-	
-	for (int i = 0; i < buffer.size(); i++) {
-		writer->write(reinterpret_cast<const char*>(&buffer[i]), sizeof(char));
-	}
+  const auto featureTableBlob = createFeatureTableBlob();
+  const auto totalSize =
+      static_cast<uint32_t>(featureTableBlob.bytes.size()) + HEADER_SIZE;
+
+  // TODO Batch table
+  const auto batchTableJSONSize = 0u;
+  const auto batchTableBinarySize = 0u;
+
+  // Write header
+  writer << "pnts";
+  writeBinary<uint32_t>(1, writer);
+  writeBinary<uint32_t>(totalSize, writer);
+  writeBinary<uint32_t>(featureTableBlob.jsonByteLength, writer);
+  writeBinary<uint32_t>(featureTableBlob.binaryByteLength, writer);
+  writeBinary<uint32_t>(batchTableJSONSize, writer);
+  writeBinary<uint32_t>(batchTableBinarySize, writer);
+
+  // Write body
+  writer.write(reinterpret_cast<const char*>(featureTableBlob.bytes.data()),
+               featureTableBlob.bytes.size());
+
+  writer.flush();
+  writer.close();
 }
 
-int PNTWriter::get_number_of_digits(int integer)
+void Potree::PNTWriter::close() {}
+
+Potree::PNTWriter::FeatureTableBlob
+Potree::PNTWriter::createFeatureTableBlob()  // create a featuretable before
+                                             // this method
 {
-	return integer > 0 ? (int)log10((double)integer) + 1 : 1;
+  Document jsonHeader;
+  auto& jsonAllocator = jsonHeader.GetAllocator();
+
+  std::vector<std::byte> binaryBody;
+
+  // We have to write the JSON header and binary body simultaneously because of
+  // the byte offsets for all the per-point attributes
+  jsonHeader.SetObject();
+
+  // We always have the POINTS_LENGTH member
+  jsonHeader.AddMember("POINTS_LENGTH", _featuretable.numPoints, jsonAllocator);
+
+  struct AttributeDescription {
+    gsl::span<const std::byte> binaryRange;
+    uint32_t alignedOffset;
+    std::string attributeName;
+  };
+  std::vector<AttributeDescription> attributeDescriptions;
+  uint32_t currentAttributeOffset = 0;
+
+  for (auto& perPointAttribute : _featuretable.perPointAttributes) {
+    const auto attributeBytesRange = perPointAttribute->getBinaryDataRange();
+    const auto attributeByteSize =
+        static_cast<uint32_t>(attributeBytesRange.size());
+
+    if (attributeBytesRange.empty()) {
+      // TODO This raises a general question: If multiple source files are
+      // specified that have different attributes in them, how would we extract
+      // these attributes? We can either skip them in all files that have them,
+      // assuming that if the attributes are not available for _ALL_ files, they
+      // are not available at all, or we go the opposite way and fill the missing
+      // attributes with default values... In any case, the user should be
+      // notified about this!
+      std::cerr << "No values for attribute \""
+                << perPointAttribute->getAttributeNameForJSON()
+                << "\" were extracted from source files, the attribute will be "
+                   "skipped in \""
+                << _filePath << "\"!" << std::endl;
+      continue;
+    }
+
+    const auto alignmentRequirement =
+        perPointAttribute->getAlignmentRequirement();
+    assert(alignmentRequirement > 0);
+    const auto alignedOffset =
+        align(currentAttributeOffset, alignmentRequirement);
+
+    AttributeDescription attributeDescription;
+    attributeDescription.alignedOffset = alignedOffset;
+    attributeDescription.binaryRange = attributeBytesRange;
+    attributeDescription.attributeName =
+        perPointAttribute->getAttributeNameForJSON();
+    attributeDescriptions.push_back(attributeDescription);
+
+    currentAttributeOffset = alignedOffset + attributeByteSize;
+  }
+
+  // Binary body has to be 8-byte aligned at the end
+  const auto binaryBufferSize = align(currentAttributeOffset, 8u);
+  binaryBody.resize(binaryBufferSize);
+
+  for (auto& attributeDescription : attributeDescriptions) {
+    // Add the JSON entry containing the byte offset
+    Value key{attributeDescription.attributeName.c_str(),
+              static_cast<SizeType>(attributeDescription.attributeName.size()),
+              jsonAllocator};
+    Value obj(kObjectType);
+    obj.AddMember("byteOffset",
+                  static_cast<int>(attributeDescription.alignedOffset),
+                  jsonAllocator);
+    jsonHeader.AddMember(key, obj, jsonAllocator);
+
+    // Copy the binary data
+    const auto startInBinaryBody =
+        binaryBody.data() + attributeDescription.alignedOffset;
+    std::copy(attributeDescription.binaryRange.begin(),
+              attributeDescription.binaryRange.end(), startInBinaryBody);
+  }
+
+  // TODO Global attributes for the JSON header
+
+  StringBuffer jsonBuffer;
+  Writer<StringBuffer> writer(jsonBuffer);
+  jsonHeader.Accept(writer);
+
+  const auto jsonHeaderString = jsonBuffer.GetString();
+  const auto jsonHeaderSize = jsonBuffer.GetSize();
+
+  // JSON header has to be 8-byte aligned
+  const auto alignedJsonHeaderSize = align(jsonHeaderSize, 8ull);
+
+  FeatureTableBlob featureTableBlob;
+  featureTableBlob.binaryByteLength = binaryBufferSize;
+  featureTableBlob.jsonByteLength = alignedJsonHeaderSize;
+
+  featureTableBlob.bytes.resize(alignedJsonHeaderSize + binaryBufferSize);
+  // Copy JSON header and binary body into blob
+  std::copy(
+      reinterpret_cast<std::byte const*>(jsonHeaderString),
+      reinterpret_cast<std::byte const*>(jsonHeaderString + jsonHeaderSize),
+      featureTableBlob.bytes.data());
+  // Write some spaces for the JSON header alignment
+  std::generate(featureTableBlob.bytes.data() + jsonHeaderSize,
+                featureTableBlob.bytes.data() + alignedJsonHeaderSize, []() {
+                  return (std::byte)0x20; /*0x20 = space*/
+                });
+
+  std::copy(binaryBody.begin(), binaryBody.end(),
+            featureTableBlob.bytes.data() + alignedJsonHeaderSize);
+
+  return featureTableBlob;
 }
 
-void PNTWriter::writePNT()
-{
-	// 28 bytes header size
-	writer->seekp(28);
-	// create batch and featuretable (and get the size)
-	std::vector<std::byte> ft_binbody = createFeatureBIN(); // the features in this buffer are alligned
-	
-	int jsonBL = seekfeatureTableJSONByteSize();
-	// byteoffset of the first featureArray is set to 0 by default
-	
-	if (jsonBL % 4 != 0) {
+#pragma region attributes
 
-		// start padding
-		int padding = 4 - (jsonBL % 4);
+void Potree::attributes::PositionAttribute::extractFromPoints(
+    const PointBuffer& points) {
+  if (!points.count()) return;
 
-		writer->seekp(28 + jsonBL);
-		std::byte dummy = (std::byte)32; // space (for json-parsers)
-		for (int i = 0; i < padding; i++) {
-			writer->write(reinterpret_cast<const char*>(&dummy), sizeof(std::byte));
-		}
-		ftJSON_byteLength = jsonBL + padding; // header
-	}
-	else // no padding
-	{
-		ftJSON_byteLength = jsonBL;
-	}
-	
-	writer->seekp(28);
-	writeFeatureTableJSON();
-	writer->seekp(28 + ftJSON_byteLength);
-
-	//ft_bin
-	for (int i = 0; i < ft_binbody.size(); i++) {
-		writer->write(reinterpret_cast<const char*>(&ft_binbody[i]), sizeof(std::byte));
-	}
-
-	//create header
-	writer->seekp(0);
-	t_byteLength = 28 + ft_byteLength + ftJSON_byteLength + bt_byteLength + btJSON_byteLength;
-	writeHeader();
+  _positions.reserve(_positions.size() + static_cast<size_t>(points.count()));
+  std::transform(points.positions().begin(), points.positions().end(),
+                 std::back_inserter(_positions),
+                 [](const Vector3<double>& position) -> Vector3<float> {
+                   return {static_cast<float>(position.x),
+                           static_cast<float>(position.y),
+                           static_cast<float>(position.z)};
+                 });
 }
 
-void PNTWriter::close()
-{
-	if (writer != NULL) {
-		writer->close();
-		delete writer;
-		writer = NULL;
-	}
+std::string Potree::attributes::PositionAttribute::getAttributeNameForJSON()
+    const {
+  return "POSITION";
 }
 
-std::vector<std::byte> PNTWriter::createFeatureBIN()//create a featuretable before this method
-{
-	std::vector<std::byte> buffer;
-	int bsf = sizeof(float);
-	int bsi8 = sizeof(uint8_t);
-
-	ft_byteLength = 0;
-	number_of_features = 0;
-
-	assert(positions.size() == colors.size());
-	//The most efficient way
-	
-	if (positions.size() != 0) { // if positions.size() != 0?
-		const auto posData = positions.data();
-		buffer.resize(positions.size() * sizeof(float));
-		std::memcpy(buffer.data(), posData, positions.size() * sizeof(float));
-
-		position_byteLength = positions.size() * sizeof(float);
-		ft_byteLength += position_byteLength;
-
-		featuretable.POSITION_byteOffset.emplace(0);
-		number_of_features += 1;
-	}
-	if (false) { // if this is set QUANTIZED_VOLUME_OFFSET","QUANTIZED_VOLUME_SCALE" have to be set
-
-		
-	}
-	if (colors.size() != 0) {
-		const auto rgbData = colors.data();
-		auto be = colors.size();
-		auto end = buffer.size();
-		buffer.resize(buffer.size() + colors.size() * sizeof(uint8_t));
-		auto la = buffer.size();
-		std::memcpy(&buffer.at(end), rgbData, colors.size() * sizeof(uint8_t));
-
-		rgb_byteLength = colors.size() * sizeof(uint8_t);
-		ft_byteLength += rgb_byteLength;
-
-		featuretable.RGB_byteOffset.emplace(position_byteLength + position_quantized_byteLength);
-		number_of_features += 1;
-	}
-	/*
-	if (featuretable.RGBA_byteOffset != nullopt) {
-
-	}
-	if (featuretable.RGB565_byteOffset != nullopt) {
-
-	}
-	if (featuretable.NORMAL_byteOffset != nullopt) {
-
-	}
-	if (featuretable.NORMAL_OCT16P_byteOffset != nullopt) {
-
-	}
-	if (featuretable.BATCH_ID_byteOffset != nullopt) {
-
-	}*/
-	
-	return buffer;
+gsl::span<const std::byte>
+Potree::attributes::PositionAttribute::getBinaryDataRange() const {
+  const auto begin = reinterpret_cast<std::byte const*>(_positions.data());
+  const auto end = begin + vector_byte_size(_positions);
+  return {begin, end};
 }
 
-
-// not that pretty but skips a problem with rapidjson allocator
-int PNTWriter::seekfeatureTableJSONByteSize()
-{
-	// https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/schema/pnts.featureTable.schema.json
-	Document document;
-	document.SetObject();
-	Document::AllocatorType& alloc = document.GetAllocator();
-
-	// Point semantics Value must be a REFERENCE to the binary body (byte offset)
-	if (featuretable.POSITION_byteOffset != nullopt) {
-		Value obj(kObjectType);
-		int bo = featuretable.POSITION_byteOffset.value();
-		obj.AddMember("byteOffset", bo, alloc);
-		document.AddMember("POSITION", obj, alloc);
-	}
-	if (featuretable.POSITION_QUANTIZED_byteOffset != nullopt) { // if this is set QUANTIZED_VOLUME_OFFSET","QUANTIZED_VOLUME_SCALE" have to be set
-
-	}
-	if (featuretable.RGB_byteOffset != nullopt) {
-		Value obj(kObjectType);
-		int bo = featuretable.RGB_byteOffset.value();
-		obj.AddMember("byteOffset", bo, alloc);
-		document.AddMember("RGB", obj, alloc);
-	}
-	if (featuretable.RGBA_byteOffset != nullopt) {
-
-	}
-	if (featuretable.RGB565_byteOffset != nullopt) {
-
-	}
-	if (featuretable.NORMAL_byteOffset != nullopt) {
-
-	}
-	if (featuretable.NORMAL_OCT16P_byteOffset != nullopt) {
-
-	}
-	if (featuretable.BATCH_ID_byteOffset != nullopt) {
-
-	}
-
-	// Global semantics Value is an actual value here
-	document.AddMember("POINTS_LENGTH", featuretable.POINTS_LENGTH, alloc);
-
-	// using deep copy move semantics
-	if (featuretable.RTC_CENTER != nullopt) {
-		Vector3 rtc_val = featuretable.RTC_CENTER.value();
-		Value rtc_arr(rapidjson::kArrayType);
-		rtc_arr.PushBack(rtc_val.x, alloc);
-		rtc_arr.PushBack(rtc_val.y, alloc);
-		rtc_arr.PushBack(rtc_val.z, alloc);
-		document.AddMember("RTC_CENTER", rtc_arr, alloc);
-	}
-	if (featuretable.QUANTIZED_VOLUME_OFFSET != nullopt) {
-		Vector3 qvo_val = featuretable.QUANTIZED_VOLUME_OFFSET.value();
-		Value qvo_arr(rapidjson::kArrayType);
-		qvo_arr.PushBack(qvo_val.x, alloc);
-		qvo_arr.PushBack(qvo_val.y, alloc);
-		qvo_arr.PushBack(qvo_val.z, alloc);
-		document.AddMember("QUANTIZED_VOLUME_OFFSET", qvo_arr, alloc);
-	}
-	if (featuretable.QUANTIZED_VOLUME_SCALE != nullopt) {
-		Vector3 qvs_val = featuretable.QUANTIZED_VOLUME_SCALE.value();
-		Value qvs_arr(rapidjson::kArrayType);
-		qvs_arr.PushBack(qvs_val.x, alloc);
-		qvs_arr.PushBack(qvs_val.y, alloc);
-		qvs_arr.PushBack(qvs_val.z, alloc);
-		document.AddMember("QUANTIZED_VOLUME_SCALE", qvs_arr, alloc);
-	}
-	if (featuretable.CONSTANT_RGBA != nullopt) {
-		RGBA c_rgba = featuretable.CONSTANT_RGBA.value();
-		Value rgba_arr(rapidjson::kArrayType);
-		rgba_arr.PushBack(c_rgba.R, alloc);
-		rgba_arr.PushBack(c_rgba.G, alloc);
-		rgba_arr.PushBack(c_rgba.B, alloc);
-		rgba_arr.PushBack(c_rgba.A, alloc);
-		document.AddMember("CONSTANT_RGBA", rgba_arr, alloc);
-	}
-	if (featuretable.BATCH_LENGTH != nullopt) {
-		document.AddMember("BATCH_LENGTH", featuretable.BATCH_LENGTH.value(), alloc);
-	}
-	rapidjson::StringBuffer jsonBuffer;
-	rapidjson::Writer<rapidjson::StringBuffer> writer(jsonBuffer);
-
-	document.Accept(writer);
-
-	auto jsonSize = jsonBuffer.GetSize();
-	return jsonSize;
+uint32_t Potree::attributes::PositionAttribute::getAlignmentRequirement()
+    const {
+  return 4u;  // Positions are stored as float values
 }
 
-void PNTWriter::writeFeatureTableJSON()
-{
-	// https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/schema/pnts.featureTable.schema.json
-	Document document;
-	document.SetObject();
-	Document::AllocatorType& alloc = document.GetAllocator();
-
-	// Point semantics Value must be a REFERENCE to the binary body (byte offset)
-	if (featuretable.POSITION_byteOffset != nullopt) {
-		Value obj(kObjectType);
-		int bo = featuretable.POSITION_byteOffset.value();
-		obj.AddMember("byteOffset", bo, alloc);
-		document.AddMember("POSITION", obj, alloc);
-	}
-	if (featuretable.POSITION_QUANTIZED_byteOffset != nullopt) { // if this is set QUANTIZED_VOLUME_OFFSET","QUANTIZED_VOLUME_SCALE" have to be set
-
-	}
-	if (featuretable.RGB_byteOffset != nullopt) {
-		Value obj(kObjectType);
-		int bo = featuretable.RGB_byteOffset.value();
-		obj.AddMember("byteOffset", bo, alloc);
-		document.AddMember("RGB", obj, alloc);
-	}
-	if (featuretable.RGBA_byteOffset != nullopt) {
-
-	}
-	if (featuretable.RGB565_byteOffset != nullopt) {
-
-	}
-	if (featuretable.NORMAL_byteOffset != nullopt) {
-
-	}
-	if (featuretable.NORMAL_OCT16P_byteOffset != nullopt) {
-
-	}
-	if (featuretable.BATCH_ID_byteOffset != nullopt) {
-
-	}
-
-	// Global semantics Value is an actual value here
-	document.AddMember("POINTS_LENGTH", featuretable.POINTS_LENGTH, alloc);
-
-	// using deep copy move semantics
-	if (featuretable.RTC_CENTER != nullopt) {
-		Vector3 rtc_val = featuretable.RTC_CENTER.value();
-		Value rtc_arr(rapidjson::kArrayType);
-		rtc_arr.PushBack(rtc_val.x, alloc);
-		rtc_arr.PushBack(rtc_val.y, alloc);
-		rtc_arr.PushBack(rtc_val.z, alloc);
-		document.AddMember("RTC_CENTER", rtc_arr, alloc);
-	}
-	if (featuretable.QUANTIZED_VOLUME_OFFSET != nullopt) {
-		Vector3 qvo_val = featuretable.QUANTIZED_VOLUME_OFFSET.value();
-		Value qvo_arr(rapidjson::kArrayType);
-		qvo_arr.PushBack(qvo_val.x, alloc);
-		qvo_arr.PushBack(qvo_val.y, alloc);
-		qvo_arr.PushBack(qvo_val.z, alloc);
-		document.AddMember("QUANTIZED_VOLUME_OFFSET", qvo_arr, alloc);
-	}
-	if (featuretable.QUANTIZED_VOLUME_SCALE != nullopt) {
-		Vector3 qvs_val = featuretable.QUANTIZED_VOLUME_SCALE.value();
-		Value qvs_arr(rapidjson::kArrayType);
-		qvs_arr.PushBack(qvs_val.x, alloc);
-		qvs_arr.PushBack(qvs_val.y, alloc);
-		qvs_arr.PushBack(qvs_val.z, alloc);
-		document.AddMember("QUANTIZED_VOLUME_SCALE", qvs_arr, alloc);
-	}
-	if (featuretable.CONSTANT_RGBA != nullopt) {
-		RGBA c_rgba = featuretable.CONSTANT_RGBA.value();
-		Value rgba_arr(rapidjson::kArrayType);
-		rgba_arr.PushBack(c_rgba.R, alloc);
-		rgba_arr.PushBack(c_rgba.G, alloc);
-		rgba_arr.PushBack(c_rgba.B, alloc);
-		rgba_arr.PushBack(c_rgba.A, alloc);
-		document.AddMember("CONSTANT_RGBA", rgba_arr, alloc);
-	}
-	if (featuretable.BATCH_LENGTH != nullopt) {
-		document.AddMember("BATCH_LENGTH", featuretable.BATCH_LENGTH.value(), alloc);
-	}
-
-	rapidjson::StringBuffer jsonBuffer;
-	rapidjson::Writer<rapidjson::StringBuffer> writer(jsonBuffer);
-
-	document.Accept(writer);
-
-	auto jsonInMemory = jsonBuffer.GetString();
-	auto jsonSize = jsonBuffer.GetSize();
-
-	//Write JSON memory into ofstream
-	this->writer->write(jsonInMemory, jsonSize);
-
+void Potree::attributes::PositionQuantizedAttribute::extractFromPoints(
+    const PointBuffer& points) {
+  // TODO
 }
+
+std::string
+Potree::attributes::PositionQuantizedAttribute::getAttributeNameForJSON()
+    const {
+  return "POSITION_QUANTIZED";
+}
+
+gsl::span<const std::byte>
+Potree::attributes::PositionQuantizedAttribute::getBinaryDataRange() const {
+  // TODO
+  return {};
+}
+
+uint32_t
+Potree::attributes::PositionQuantizedAttribute::getAlignmentRequirement()
+    const {
+  return uint32_t();  // TODO
+}
+
+void Potree::attributes::RGBAAttribute::extractFromPoints(
+    const PointBuffer& points) {
+  if (!points.count()) return;
+  if (!points.hasColors()) return;
+
+  _rgbaColors.reserve(_rgbaColors.size() + static_cast<size_t>(points.count()));
+  std::transform(
+      points.rgbColors().begin(), points.rgbColors().end(),
+      std::back_inserter(_rgbaColors),
+      [](const Vector3<uint8_t>& rgbColor) -> RGBA {
+        return {rgbColor.x, rgbColor.y, rgbColor.z, static_cast<uint8_t>(255)};
+      });
+}
+
+std::string Potree::attributes::RGBAAttribute::getAttributeNameForJSON() const {
+  return "RGBA";
+}
+
+gsl::span<const std::byte>
+Potree::attributes::RGBAAttribute::getBinaryDataRange() const {
+  const auto begin = reinterpret_cast<std::byte const*>(_rgbaColors.data());
+  const auto end = begin + vector_byte_size(_rgbaColors);
+  return {begin, end};
+}
+
+uint32_t Potree::attributes::RGBAAttribute::getAlignmentRequirement() const {
+  return 1u;
+}
+
+#pragma endregion

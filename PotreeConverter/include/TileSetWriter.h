@@ -1,59 +1,45 @@
 #ifndef TILESETWRITER_H
 #define TILESETWRITER_H
 
-#include "rapidjson/document.h"
 #include <rapidjson/filewritestream.h>
 #include <rapidjson/writer.h>
+#include <cstdio>
+#include <fstream>
+#include <iostream>
+#include "rapidjson/document.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
-#include <cstdio>
-#include <iostream>
-#include <fstream>
 
-#include "PointWriter.hpp"
 #include "PointAttributes.hpp"
+#include "PointWriter.hpp"
 
-#include "Tileset.h"
-#include "Point.h"
 #include "PNTWriter.h"
+#include "Point.h"
+#include "Tileset.h"
 
-using rapidjson::Document;
-using rapidjson::FileWriteStream;
-using rapidjson::Writer;
-using rapidjson::Value;
-using rapidjson::kObjectType;
-using rapidjson::kArrayType;
-using rapidjson::StringBuffer;
-using rapidjson::PrettyWriter;
-using Potree::AABB;
-using Potree::Point;
-using std::ofstream;
-using std::ios;
-using Potree::PointAttributes;
+namespace Potree {
 
-class TileSetWriter : public Potree::PointWriter
-{
-public:
-	Document document;
-	string file;
-	ofstream *writer;
-	PointAttributes p_attributes;
-	AABB aabb;
-	double scale;
-	PNTWriter *pntwriter;
+class TileSetWriter : public PointWriter {
+ public:
+  TileSetWriter(const std::string& filePath, const AABB& aabb, double scale,
+                const PointAttributes& pointAttributes);
+  ~TileSetWriter();
 
+  void writePoints(const PointBuffer& points) override;
+  bool writeTileset(const string& workDir, const Tileset& tileset) override;
 
-	TileSetWriter(string file, AABB aabb, double scale, PointAttributes pointattributes);
-	~TileSetWriter();
+  void close() override;
 
-	void write(const Point &point);
-	
+ private:
+  std::string _filePath;
+  PointAttributes _pointAttributes;
+  AABB _aabb;
+  double _scale;
+  std::unique_ptr<PNTWriter> _pntWriter;
 
-	void close();
-
-	bool writeTileset(const string& workDir, const Tileset& tileset); 
-private:
-	bool writeTilesetJSON(const string& workDir, const Tileset& tileset);
+  bool writeTilesetJSON(const string& workDir, const Tileset& tileset);
 };
+
+}  // namespace Potree
 
 #endif

@@ -90,10 +90,10 @@ AABB childAABB(const AABB &aabb, const int &index){
  * 0----4
  *
  */
-int nodeIndex(const AABB &aabb, const Point &point){
-	int mx = (int)(2.0 * (point.position.x - aabb.min.x) / aabb.size.x);
-	int my = (int)(2.0 * (point.position.y - aabb.min.y) / aabb.size.y);
-	int mz = (int)(2.0 * (point.position.z - aabb.min.z) / aabb.size.z);
+int nodeIndex(const AABB &aabb, const Vector3<double>& pointPosition){
+	int mx = (int)(2.0 * (pointPosition.x - aabb.min.x) / aabb.size.x);
+	int my = (int)(2.0 * (pointPosition.y - aabb.min.y) / aabb.size.y);
+	int mz = (int)(2.0 * (pointPosition.z - aabb.min.z) / aabb.size.z);
 
 	mx = min(mx, 1);
 	my = min(my, 1);

@@ -1,77 +1,102 @@
 #ifndef TILESET_H
 #define TILESET_H
 
+#include <functional>
+#include <list>
+#include <sstream>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
-#include <functional>
-#include <sstream>
-#include <list>
-#include "SparseGrid.h"
+
+#include <glm/matrix.hpp>
+
 #include "PointAttributes.hpp"
+#include "SparseGrid.h"
+#include "Transformation.h"
 #include "Vector3.h"
 
 #include "AABB.h"
 
+using Potree::AABB;
 using Potree::Vector3;
 using std::string;
-using std::vector;
 using std::stringstream;
-using Potree::AABB;
+using std::vector;
 
 enum GltAxis { X, Y, Z };
 enum Refine { ADD, REFINE };
 
+struct BoundingRegion {
+  double west, south, east, north, minHeight, maxHeight;
+};
+// TODO Other bounding regions (box, sphere)
+
+using BoundingVolume_t = std::variant<BoundingRegion>;
+
+/// <summary>
+/// Creates a 3D tiles bounding volume from the given AABB. For coordinate
+/// system transformations, the given SRSTransformHelper is used. The returned
+/// bounding volume will always be in WGS84 coordinates as defined by
+/// https://github.com/AnalyticalGraphicsInc/3d-tiles/tree/master/specification#bounding-volumes
+/// </summary>
+BoundingVolume_t boundingVolumeFromAABB(
+    const AABB& aabb, const Potree::SRSTransformHelper& transformHelper);
+
+/// <summary>
+/// Converts the bounding volume to an array representation which contains all
+/// relevant parameters of the bounding volume
+/// </summary>
+std::vector<double> boundingVolumeToArray(
+    const BoundingVolume_t& boundingVolume);
+
 class Tileset {
-	
-public:
-	string url = ""; //url of this Tileset e.g r/tileset.json
-	string name = ""; // e.g tileset.json
-	
-	string version = "0.0";
-	string tilesetVersion = ""; // not required
-	GltAxis gltfUpAxis = Y;
+ public:
+  string url = "";   // url of this Tileset e.g r/tileset.json
+  string name = "";  // e.g tileset.json
 
-	//properties
-	double height_min = 0;
-	double height_max = 0;
+  string version = "0.0";
+  string tilesetVersion = "";  // not required
+  GltAxis gltfUpAxis = Y;
 
-	//geometricError - required
-	double geometricError = 500; // This should be set up and be less or eq in the child tilesets
+  // properties
+  double height_min = 0;
+  double height_max = 0;
 
-	//root - required
-	AABB box; // root.boundingVolume
-	double r_geometricError = 500;
-	
-	Refine refine = ADD;
-	bool writeRefine = true;
+  // geometricError - required
+  double geometricError =
+      500;  // This should be set up and be less or eq in the child tilesets
 
-	AABB contend_box; // is this undefined or == box? //not required
-	string content_url; // Refers to the pnt-file
-	
-	vector<Tileset*> children; // Get aabb geometricError and url
-	
-	string child_url; // Points to another Tileset File
+  // root - required
+  BoundingVolume_t boundingVolume;
 
-	Tileset(AABB box, string name) 
-		: box(box), name(name)
-	{
-		
-	}
+  Refine refine = ADD;
+  bool writeRefine = true;
 
-	void setRequestVolume(AABB rv)
-	{
-		viewerRequestVolume = rv;
-		this->requestVolumeSet = true;
-	}
+  string content_url;  // Refers to the pnt-file
 
-	AABB getRequestVolume() const { return viewerRequestVolume; }
-	bool requestVolumeIsSet() const { return requestVolumeSet; }
+  vector<Tileset*> children;  // Get aabb geometricError and url
 
-private:
-	AABB viewerRequestVolume; // Viewer must be inside of it before the tiles content will be refined based on geometric error
-	bool requestVolumeSet = false;
+  string child_url;  // Points to another Tileset File
 
+  Vector3<double> localToWorldOffset;
+  glm::dmat4 tileTransform;
+
+  Tileset(string name) : name(std::move(name)) {}
+
+  void setRequestVolume(const BoundingVolume_t& rv) {
+    _viewerRequestVolume = rv;
+    _requestVolumeSet = true;
+  }
+
+  const auto& getRequestVolume() const { return _viewerRequestVolume; }
+  bool requestVolumeIsSet() const { return _requestVolumeSet; }
+
+ private:
+  BoundingVolume_t
+      _viewerRequestVolume;  // Viewer must be inside of it before the tiles
+                             // content will be refined based on geometric error
+  bool _requestVolumeSet = false;
 };
 
 #endif

@@ -1,7 +1,7 @@
-
-
 #ifndef GRID_INDEX_H
 #define GRID_INDEX_H
+
+#include <ostream>
 
 namespace Potree{
 
@@ -33,7 +33,7 @@ public:
 		return false;
 	}
 
-	friend ostream &operator<<( ostream &output,  const GridIndex &value ){ 
+	friend std::ostream &operator<<( std::ostream &output,  const GridIndex &value ){ 
 		output << "[" << value.i << ", " << value.j << ", " << value.k << "]" ;
 		return output;            
 	}

@@ -7,9 +7,16 @@ file(GLOB_RECURSE files src/*.cpp include/*.h include/*.hpp )
 file(GLOB_RECURSE lib_rapidjson_files ${RAPIDJSON_INCLUDE_DIR}/* )
 file(GLOB_RECURSE lib_argument_files ${ARGUMENTS_INCLUDE_DIR}/* )
 
+message(STATUS "LASzip include directory: ${LASZIP_INCLUDE_DIRS}")
+message(STATUS "LASzip library:  ${LASZIP_LIBRARY}")
+
 include_directories(include ${LASZIP_INCLUDE_DIRS})
 include_directories(include ${RAPIDJSON_INCLUDE_DIR})
 include_directories(include ${ARGUMENTS_INCLUDE_DIR})
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/Debug)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/build/RelWithDebInfo)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/Release)
 
 SOURCE_GROUP("Header Files\\io" FILES 
 	include/BINPointReader.hpp 
@@ -35,18 +42,21 @@ SOURCE_GROUP("Source Files\\io" FILES
 SOURCE_GROUP("lib\\rapidjson" FILES ${lib_rapidjson_files})
 SOURCE_GROUP("lib\\arguments" FILES ${lib_argument_files})
 
-#add proj4 via hunter
+#external dependencies through hunter
 hunter_add_package(PROJ4)
 find_package(PROJ4 CONFIG REQUIRED)
 
+hunter_add_package(Microsoft.GSL)
+find_package(Microsoft.GSL CONFIG REQUIRED)
+
+hunter_add_package(glm)
+find_package(glm REQUIRED)
 
 add_executable(PotreeConverter ${files} ${lib_rapidjson_files} ${lib_argument_files})
 
-target_link_libraries(PotreeConverter PUBLIC ${LASZIP_LIBRARY} proj)
+target_link_libraries(PotreeConverter PUBLIC ${LASZIP_LIBRARY} proj Microsoft.GSL::GSL PRIVATE glm)
 
 if(UNIX)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++14 -pthread -lstdc++ -lm")
     target_link_libraries(PotreeConverter -lstdc++fs)
 endif()
-
-install(TARGETS PotreeConverter RUNTIME DESTINATION bin/ )

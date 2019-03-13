@@ -3,181 +3,145 @@
 #ifndef LASPOINTREADER_H
 #define LASPOINTREADER_H
 
-#include <string>
 #include <iostream>
+#include <string>
 #include <vector>
 
 #include "laszip_api.h"
 
 #include "Point.h"
 #include "PointReader.h"
-#include "stuff.h"
 #include "proj_api.h"
+#include "stuff.h"
 
 using std::string;
 
-using std::ifstream;
 using std::cout;
 using std::endl;
+using std::ifstream;
 using std::vector;
 
-namespace Potree{
+namespace Potree {
 
-class LIBLASReader{
-private:
+class LIBLASReader {
+ private:
+  size_t _numPoints;
 
-    double tr[16];
-    bool hasTransform = false;
-	string projection;
+ public:
+  laszip_POINTER laszip_reader;
+  laszip_header* header;
+  laszip_point* point;
+  int colorScale;
+  double coordinates[3];
+  long long pointsRead = 0;
 
-    Point transform(double x, double y, double z) const {
-        Point p;
+  LIBLASReader(string path) {
+    laszip_create(&laszip_reader);
 
-		if (projection != "") {
+    laszip_BOOL request_reader = 1;
+    laszip_request_compatibility_mode(laszip_reader, request_reader);
 
-			projPJ source = pj_init_plus(this->projection.c_str());
-			projPJ target = pj_init_plus("+proj=geocent +datum=WGS84 +units=m +no_defs");
+    {  // read first x points to find if color is 1 or 2 bytes
+      laszip_BOOL is_compressed = iEndsWith(path, ".laz") ? 1 : 0;
+      laszip_open_reader(laszip_reader, path.c_str(), &is_compressed);
 
-			p.position.x = x;
-			p.position.y = y;
-			p.position.z = z;
+      laszip_get_header_pointer(laszip_reader, &header);
 
-			int success = pj_transform(source, target, 1, 1, &p.position.x, &p.position.y, &p.position.z);
-			return p;
-		}
+      if (header->version_major >= 1 && header->version_minor >= 4) {
+        _numPoints = header->extended_number_of_point_records;
+      } else {
+        _numPoints = header->number_of_point_records;
+      }
 
-        if (hasTransform) {
-            p.position.x = tr[0] * x + tr[4] * y + tr[8] * z + tr[12];
-            p.position.y = tr[1] * x + tr[5] * y + tr[9] * z + tr[13];
-            p.position.z = tr[2] * x + tr[6] * y + tr[10] * z + tr[14];
-        } else {
-			p.position = Vector3<double>{x,y,z};
-        }
-        return p;
-    }
-public:
+      laszip_get_point_pointer(laszip_reader, &point);
 
-	laszip_POINTER laszip_reader;
-	laszip_header* header;
-	laszip_point* point;
-	int colorScale;
-	double coordinates[3];
-	long long pointsRead = 0;
+      colorScale = 1;
+      for (size_t i = 0; i < 100000 && i < _numPoints; i++) {
+        laszip_read_point(laszip_reader);
 
-    LIBLASReader(string path, string projection) {
+        auto r = point->rgb[0];
+        auto g = point->rgb[1];
+        auto b = point->rgb[2];
 
-		this->projection = projection;
-		
-		laszip_create(&laszip_reader);
-
-		laszip_BOOL request_reader = 1;
-		laszip_request_compatibility_mode(laszip_reader, request_reader);
-
-		{// read first x points to find if color is 1 or 2 bytes
-			laszip_BOOL is_compressed = iEndsWith(path, ".laz") ? 1 : 0;
-			laszip_open_reader(laszip_reader, path.c_str(), &is_compressed);
-
-			laszip_get_header_pointer(laszip_reader, &header);
-
-			long long npoints = (header->number_of_point_records ? header->number_of_point_records : header->extended_number_of_point_records);
-			
-			laszip_get_point_pointer(laszip_reader, &point);
-
-			colorScale = 1;
-			for(int i = 0; i < 100000 && i < npoints; i++){
-				laszip_read_point(laszip_reader);
-		
-				auto r = point->rgb[0];
-				auto g = point->rgb[1];
-				auto b = point->rgb[2];
-		
-				if(r > 255 || g > 255 || b > 255){
-					colorScale = 256;
-					break;
-				};
-			}
-		}
-
-		laszip_seek_point(laszip_reader, 0);
+        if (r > 255 || g > 255 || b > 255) {
+          colorScale = 256;
+          break;
+        };
+      }
     }
 
-	long long numPoints() {
-		if (header->version_major >= 1 && header->version_minor >= 4) {
-			return header->extended_number_of_point_records;
-		} else {
-			return header->number_of_point_records;
-		}
-	}
+    laszip_seek_point(laszip_reader, 0);
+  }
 
-	~LIBLASReader(){
-		laszip_close_reader(laszip_reader);
-		laszip_destroy(laszip_reader);
-	}
+  size_t numPoints() const { return _numPoints; }
 
-	bool readPoint(){
-		if(pointsRead < numPoints()){
-			laszip_read_point(laszip_reader);
-			pointsRead++;
+  ~LIBLASReader() {
+    laszip_close_reader(laszip_reader);
+    laszip_destroy(laszip_reader);
+  }
 
-			return true;
-		}else{
-			return false;
-		}
-	}
+  PointBuffer readNextBatch(size_t maxBatchSize);
 
-    Point GetPoint() {
-        
-		laszip_get_coordinates(laszip_reader, coordinates);
+  bool isAtEnd() const;
 
-        Point p = transform(coordinates[0], coordinates[1], coordinates[2]);
-        p.intensity = point->intensity;
-        p.classification = point->classification;
+  bool readPoint() {
+    if (pointsRead < numPoints()) {
+      laszip_read_point(laszip_reader);
+      pointsRead++;
 
-        p.color.x = point->rgb[0] / colorScale;
-        p.color.y = point->rgb[1] / colorScale;
-        p.color.z = point->rgb[2] / colorScale;
-
-		p.returnNumber = point->return_number;
-		p.numberOfReturns = point->number_of_returns;
-		p.pointSourceID = point->point_source_ID;
-
-        return p;
+      return true;
+    } else {
+      return false;
     }
-	void close(){
+  }
 
-	}
+  Point GetPoint() {
+    laszip_get_coordinates(laszip_reader, coordinates);
 
-	AABB getAABB();
+    Point p;
+    p.position = {coordinates[0], coordinates[1], coordinates[2]};
+    p.intensity = point->intensity;
+    p.classification = point->classification;
+
+    p.color.x = point->rgb[0] / colorScale;
+    p.color.y = point->rgb[1] / colorScale;
+    p.color.z = point->rgb[2] / colorScale;
+
+    p.returnNumber = point->return_number;
+    p.numberOfReturns = point->number_of_returns;
+    p.pointSourceID = point->point_source_ID;
+
+    return p;
+  }
+  void close() {}
+
+  AABB getAABB();
 };
 
+class LASPointReader : public PointReader {
+ private:
+  AABB aabb;
+  string path;
+  std::unique_ptr<LIBLASReader> reader;
+  vector<string> files;
+  vector<string>::iterator currentFile;
 
-class LASPointReader : public PointReader{
-private:
-	AABB aabb;
-	string path;
-	LIBLASReader *reader;
-	vector<string> files;
-	vector<string>::iterator currentFile;
-	string projection;
-public:
+ public:
+  LASPointReader(string path);
 
-	LASPointReader(string path, string projection);
+  ~LASPointReader();
 
-	~LASPointReader();
+  PointBuffer readPointBatch(size_t maxBatchSize) override;
 
-	bool readNextPoint();
+  AABB getAABB();
 
-	Point getPoint();
+  long long numPoints();
 
-	AABB getAABB();
+  void close();
 
-	long long numPoints();
-
-	void close();
-
-	Vector3<double> getScale();
+  Vector3<double> getScale();
 };
 
-}
+}  // namespace Potree
 
 #endif
