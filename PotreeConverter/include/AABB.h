@@ -15,6 +15,8 @@ using std::endl;
 
 namespace Potree{
 
+
+// Axis Aligned Bounding Box
 class AABB{
 
 public:
@@ -66,6 +68,14 @@ public:
 	void makeCubic(){
 		max = min + size.maxValue();
 		size = max - min;
+	}
+
+	// not tested
+	Vector3<double> getCenter() const
+	{
+		Vector3<double> center;
+		center = min + size / 2;
+		return center;
 	}
 
 	friend ostream &operator<<( ostream &output,  const AABB &value ){ 

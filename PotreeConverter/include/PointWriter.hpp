@@ -2,31 +2,32 @@
 #ifndef POINTWRITER_H
 #define POINTWRITER_H
 
-#include <string>
 #include <iostream>
+#include <string>
 
-#include "Point.h"
+#include "PointBuffer.h"
 
 using std::string;
+class Tileset;
 
-namespace Potree{
+namespace Potree {
 
-class PointWriter{
+class PointWriter {
+ public:
+  int numPoints = 0;
 
-public:
-	string file;
-	int numPoints = 0;
+  virtual ~PointWriter(){};
 
-	virtual ~PointWriter(){};
+  virtual void writePoints(const PointBuffer& points) = 0;
 
-	virtual void write(const Point &point) = 0;
+  virtual bool writeTileset(const std::string& workDir,
+                            const Tileset& tileset) {
+    return false;
+  }
 
-	virtual void close() = 0;
-
+  virtual void close() = 0;
 };
 
-}
+}  // namespace Potree
 
 #endif
-
-

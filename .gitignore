@@ -10,3 +10,5 @@ build/*
 .idea
 *.orig
 test/converted
+.vs/
+CMakeSettings.json
