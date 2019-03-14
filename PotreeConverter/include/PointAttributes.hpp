@@ -6,69 +6,67 @@
 #include <string>
 #include <vector>
 
-using std::string;
-using std::vector;
+namespace Potree {
 
-namespace Potree{
+class PointAttribute {
+ public:
+  const int ordinal;
+  const char* name;
+  const int numElements;
+  const int byteSize;
 
-class PointAttribute{
-public:
-	static const PointAttribute POSITION_CARTESIAN;
-	static const PointAttribute COLOR_PACKED;
-	static const PointAttribute INTENSITY;
-	static const PointAttribute CLASSIFICATION;
-	static const PointAttribute NORMAL_SPHEREMAPPED;
-	static const PointAttribute NORMAL_OCT16;
-	static const PointAttribute NORMAL;
+  constexpr PointAttribute(int ordinal, const char* name, int numElements,
+                           int byteSize)
+      : ordinal(ordinal),
+        name(name),
+        numElements(numElements),
+        byteSize(byteSize) {}
 
-	int ordinal;
-	string name;
-	int numElements;
-	int byteSize;
+  constexpr PointAttribute(const PointAttribute& other)
+      : ordinal(other.ordinal),
+        name(other.name),
+        numElements(other.numElements),
+        byteSize(other.byteSize) {}
 
-	PointAttribute(int ordinal, string name, int numElements, int byteSize){
-		this->ordinal = ordinal;
-		this->name = name;
-		this->numElements = numElements;
-		this->byteSize = byteSize;
-	}
+  static PointAttribute fromString(const std::string& name);
+  constexpr static PointAttribute fromStringLiteral(const char* name);
 
-	static PointAttribute fromString(string name);
-
+  constexpr operator int() const { return ordinal; }
 };
 
 bool operator==(const PointAttribute& lhs, const PointAttribute& rhs);
 
+namespace attributes {
+constexpr PointAttribute POSITION_CARTESIAN = {0, "POSITION_CARTESIAN", 3, 12};
+constexpr PointAttribute COLOR_PACKED = {1, "COLOR_PACKED", 4, 4};
+constexpr PointAttribute INTENSITY = {2, "INTENSITY", 1, 2};
+constexpr PointAttribute CLASSIFICATION = {3, "CLASSIFICATION", 1, 1};
+constexpr PointAttribute NORMAL_SPHEREMAPPED = {4, "NORMAL_SPHEREMAPPED", 2, 2};
+constexpr PointAttribute NORMAL_OCT16 = {5, "NORMAL_OCT16", 2, 2};
+constexpr PointAttribute NORMAL = {6, "NORMAL", 3, 12};
+}  // namespace attributes
 
-class PointAttributes{
-public:
-	vector<PointAttribute> attributes;
-	int byteSize;
+class PointAttributes {
+ public:
+  std::vector<PointAttribute> attributes;
+  int byteSize;
 
-	PointAttributes(){
-		byteSize = 0;
-	}
+  PointAttributes() { byteSize = 0; }
 
-	void add(PointAttribute attribute){
-		attributes.push_back(attribute);
-		byteSize += attribute.byteSize;
-	}
+  PointAttributes& operator=(const PointAttributes&) = delete;
 
-	int size(){
-		return (int)attributes.size();
-	}
+  void add(PointAttribute attribute) {
+    attributes.push_back(attribute);
+    byteSize += attribute.byteSize;
+  }
 
-	PointAttribute& operator[](int i) { 
-		return attributes[i]; 
-	}
+  int size() { return (int)attributes.size(); }
 
+  PointAttribute& operator[](int i) { return attributes[i]; }
 
+  std::string toString() const;
 };
 
-
-}
-
-
-
+}  // namespace Potree
 
 #endif

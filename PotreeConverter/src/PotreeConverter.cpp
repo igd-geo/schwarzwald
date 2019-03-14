@@ -104,7 +104,7 @@ PointReader *PotreeConverter::createPointReader(
     string path, PointAttributes pointAttributes) {
   PointReader *reader = NULL;
   if (iEndsWith(path, ".las") || iEndsWith(path, ".laz")) {
-    reader = new LASPointReader(path);
+    reader = new LASPointReader(path, pointAttributes);
   } else if (iEndsWith(path, ".ptx")) {
     reader = new PTXPointReader(path);
   } else if (iEndsWith(path, ".ply")) {
@@ -160,19 +160,22 @@ void PotreeConverter::prepare() {
   }
   this->sources = sourceFiles;
 
-  pointAttributes = PointAttributes();
-  pointAttributes.add(PointAttribute::POSITION_CARTESIAN);
+  pointAttributes.add(attributes::POSITION_CARTESIAN);
   for (const auto &attribute : outputAttributes) {
     if (attribute == "RGB") {
-      pointAttributes.add(PointAttribute::COLOR_PACKED);
+      pointAttributes.add(attributes::COLOR_PACKED);
     } else if (attribute == "INTENSITY") {
-      pointAttributes.add(PointAttribute::INTENSITY);
+      pointAttributes.add(attributes::INTENSITY);
     } else if (attribute == "CLASSIFICATION") {
-      pointAttributes.add(PointAttribute::CLASSIFICATION);
+      pointAttributes.add(attributes::CLASSIFICATION);
     } else if (attribute == "NORMAL") {
-      pointAttributes.add(PointAttribute::NORMAL_OCT16);
+      pointAttributes.add(attributes::NORMAL_OCT16);
     }
   }
+
+  const auto attributesDescription = pointAttributes.toString();
+  std::cout << "Writing the following point attributes: "
+            << attributesDescription << std::endl;
 }
 
 void PotreeConverter::cleanUp() {

@@ -8,15 +8,10 @@
 #include "laszip_api.h"
 
 #include "LASPointReader.h"
+#include "PointAttributes.hpp"
 #include "stuff.h"
 
 namespace fs = std::experimental::filesystem;
-
-using std::cout;
-using std::endl;
-using std::ifstream;
-using std::ios;
-using std::vector;
 
 namespace Potree {
 
@@ -47,6 +42,17 @@ PointBuffer LIBLASReader::readNextBatch(size_t maxBatchSize) {
 
 bool LIBLASReader::isAtEnd() const { return pointsRead == numPoints(); }
 
+bool LIBLASReader::hasAttributes(const PointAttributes &attributes,
+                                 PointAttributes *missingAttributes) const {
+  for (auto &attribute : attributes.attributes) {
+    if (!hasAttribute(attribute)) {
+      if (!missingAttributes) return false;
+      missingAttributes->add(attribute);
+    }
+  }
+  return true;
+}
+
 AABB LIBLASReader::getAABB() {
   AABB aabb;
 
@@ -59,9 +65,46 @@ AABB LIBLASReader::getAABB() {
   return aabb;
 }
 
-LASPointReader::LASPointReader(string path) {
-  this->path = path;
+bool LIBLASReader::hasAttribute(const PointAttribute &attribute) const {
+  switch (attribute.ordinal) {
+    case attributes::POSITION_CARTESIAN:
+      return true;  // LAS always has positions
+    case attributes::COLOR_PACKED:
+      return hasColor();
+    case attributes::INTENSITY:
+      return hasIntensity();
+    case attributes::NORMAL:
+    case attributes::NORMAL_OCT16:
+    case attributes::NORMAL_SPHEREMAPPED:
+      return hasNormals();
+    case attributes::CLASSIFICATION:
+      return true;  // LAS always has classifications
+    default:
+      throw std::runtime_error{"Unrecognized attribute type!"};
+  }
+}
 
+bool LIBLASReader::hasColor() const {
+  // Point data record formats 2 and 3 have RGB colors!
+  return header->point_data_format == 2 || header->point_data_format == 3;
+}
+
+bool LIBLASReader::hasIntensity() const {
+  // TODO Currently, I don't see a way to identify if intensity is really
+  // included or not. The spec says that the intensity field is optional, but
+  // there seems to be no flag that indicates whether it is included or not...
+  return true;
+}
+
+bool LIBLASReader::hasNormals() const {
+  // TODO Could these be stored in the variable-length headers? If so we would
+  // have to check them
+  return false;
+}
+
+LASPointReader::LASPointReader(const std::string &path,
+                               const PointAttributes &requestedAttributes)
+    : path(path) {
   if (fs::is_directory(path)) {
     // if directory is specified, find all las and laz files inside directory
 
@@ -81,13 +124,20 @@ LASPointReader::LASPointReader(string path) {
 
   // read bounding box
   for (const auto &file : files) {
-    LIBLASReader aabbReader(file);
-    AABB lAABB = aabbReader.getAABB();
+    LIBLASReader tmpReader(file);
+    AABB lAABB = tmpReader.getAABB();
 
     aabb.update(lAABB.min);
     aabb.update(lAABB.max);
 
-    aabbReader.close();
+    PointAttributes missingAttributes;
+    if (tmpReader.hasAttributes(requestedAttributes, &missingAttributes)) {
+      std::cerr << "LAS/LAZ file \"" << path
+                << "\" is missing the following requested attributes: ";
+      std::cerr << missingAttributes.toString();
+      std::cerr << " These attributes will be filled with default values!"
+                << std::endl;
+    }
   }
 
   // open first file
@@ -120,12 +170,7 @@ PointBuffer LASPointReader::readPointBatch(size_t maxBatchSize) {
   return reader->readNextBatch(maxBatchSize);
 }
 
-void LASPointReader::close() {
-  if (reader != nullptr) {
-    reader->close();
-    reader = nullptr;
-  }
-}
+void LASPointReader::close() { reader = nullptr; }
 
 long long LASPointReader::numPoints() {
   if (reader->header->version_major >= 1 &&

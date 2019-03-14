@@ -176,8 +176,8 @@ class PNTSWriter {
 
   int number_of_features = 0;
 
-  vector<float> positions;
-  vector<uint8_t> colors;
+  std::vector<float> positions;
+  std::vector<uint8_t> colors;
 
   struct FeatureTableBlob {
     std::vector<std::byte> bytes;

@@ -7,12 +7,12 @@
 #include <vector>
 
 #include "AABB.h"
-#include "CloudJS.hpp"
 #include "PointAttributes.hpp"
 #include "PointBuffer.h"
 #include "SparseGrid.h"
 #include "Tileset.h"
 #include "Transformation.h"
+#include "definitions.hpp"
 
 using std::string;
 using std::thread;

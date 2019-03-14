@@ -10,17 +10,6 @@
 using namespace rapidjson;
 
 template <typename T>
-void writeAsBytes(const T& obj, std::vector<std::byte>& vec) {
-  // TODO Move to utility header
-  const auto mem = reinterpret_cast<const std::byte*>(&obj);
-  const auto size = sizeof(T);
-  vec.reserve(vec.size() + size);
-  for (size_t idx = 0; idx < size; ++idx) {
-    vec.push_back(mem[idx]);
-  }
-}
-
-template <typename T>
 void writeBinary(const T& obj, std::ofstream& stream) {
   const auto mem = reinterpret_cast<const char*>(&obj);
   const auto size = sizeof(T);
@@ -30,22 +19,22 @@ void writeBinary(const T& obj, std::ofstream& stream) {
 namespace {
 static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
     const Potree::PointAttribute& attribute) {
-  if (attribute == Potree::PointAttribute::POSITION_CARTESIAN) {
+  if (attribute == Potree::attributes::POSITION_CARTESIAN) {
     return std::make_unique<Potree::attributes::PositionAttribute>();
   }
-  if (attribute == Potree::PointAttribute::COLOR_PACKED) {
+  if (attribute == Potree::attributes::COLOR_PACKED) {
     return std::make_unique<Potree::attributes::RGBAAttribute>();
   }
   // TODO Implement other attribute types
-  if (attribute == Potree::PointAttribute::INTENSITY) {
+  if (attribute == Potree::attributes::INTENSITY) {
   }
-  if (attribute == Potree::PointAttribute::CLASSIFICATION) {
+  if (attribute == Potree::attributes::CLASSIFICATION) {
   }
-  if (attribute == Potree::PointAttribute::NORMAL_SPHEREMAPPED) {
+  if (attribute == Potree::attributes::NORMAL_SPHEREMAPPED) {
   }
-  if (attribute == Potree::PointAttribute::NORMAL_OCT16) {
+  if (attribute == Potree::attributes::NORMAL_OCT16) {
   }
-  if (attribute == Potree::PointAttribute::NORMAL) {
+  if (attribute == Potree::attributes::NORMAL) {
   }
 
   return nullptr;

@@ -14,14 +14,10 @@
 #include "proj_api.h"
 #include "stuff.h"
 
-using std::string;
-
-using std::cout;
-using std::endl;
-using std::ifstream;
-using std::vector;
-
 namespace Potree {
+
+class PointAttribute;
+class PointAttributes;
 
 class LIBLASReader {
  private:
@@ -35,7 +31,8 @@ class LIBLASReader {
   double coordinates[3];
   long long pointsRead = 0;
 
-  LIBLASReader(string path) {
+  LIBLASReader(std::string path) {
+    // TODO Error handling
     laszip_create(&laszip_reader);
 
     laszip_BOOL request_reader = 1;
@@ -73,16 +70,25 @@ class LIBLASReader {
     laszip_seek_point(laszip_reader, 0);
   }
 
-  size_t numPoints() const { return _numPoints; }
-
   ~LIBLASReader() {
     laszip_close_reader(laszip_reader);
     laszip_destroy(laszip_reader);
   }
 
+  size_t numPoints() const { return _numPoints; }
+
   PointBuffer readNextBatch(size_t maxBatchSize);
 
   bool isAtEnd() const;
+
+  /// <summary>
+  /// Checks whether the underlying LAS/LAZ file supports all the given
+  /// attributes. Returns true if it does and false if it doesn't. If attributes
+  /// are not present and missingAttributes is not null, the missing attributes
+  /// will be pushed into missingAttributes
+  /// </summary>
+  bool hasAttributes(const PointAttributes& attributes,
+                     PointAttributes* missingAttributes = nullptr) const;
 
   bool readPoint() {
     if (pointsRead < numPoints()) {
@@ -113,21 +119,28 @@ class LIBLASReader {
 
     return p;
   }
-  void close() {}
 
   AABB getAABB();
+
+ private:
+  bool hasAttribute(const PointAttribute& attribute) const;
+
+  bool hasColor() const;
+  bool hasIntensity() const;
+  bool hasNormals() const;
 };
 
 class LASPointReader : public PointReader {
  private:
   AABB aabb;
-  string path;
+  std::string path;
   std::unique_ptr<LIBLASReader> reader;
-  vector<string> files;
-  vector<string>::iterator currentFile;
+  std::vector<std::string> files;
+  std::vector<std::string>::iterator currentFile;
 
  public:
-  LASPointReader(string path);
+  LASPointReader(const std::string& path,
+                 const PointAttributes& requestedAttributes);
 
   ~LASPointReader();
 

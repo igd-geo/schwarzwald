@@ -43,7 +43,7 @@ std::optional<Potree::PNTSFile> Potree::readPNTSFile(
   const auto featureTableBinaryEnd =
       featureTableBinaryBegin + pntsFile.header.featureTableBinaryByteLength;
 
-  // TODO Batch table
+  // TODO Read the batch table if it exists
 
   rs::Document featureTableJSONDocument;
   if (featureTableJSONDocument.Parse<0>(featureTableJSON.c_str())

@@ -12,7 +12,6 @@
 
 #include "AABB.h"
 #include "BINPointReader.hpp"
-#include "CloudJS.hpp"
 #include "LASPointReader.h"
 #include "PNTSReader.h"
 #include "PointAttributes.hpp"
@@ -221,10 +220,10 @@ PointReader *PWNode::createReader(string path) {
   PointReader *reader = NULL;
   OutputFormat outputFormat = this->potreeWriter->outputFormat;
   if (outputFormat == OutputFormat::LAS || outputFormat == OutputFormat::LAZ) {
-    reader = new LASPointReader(path);
+    reader = new LASPointReader(path, potreeWriter->pointAttributes);
   } else if (outputFormat == OutputFormat::BINARY) {
     reader = new BINPointReader(path, aabb, potreeWriter->scale,
-                                this->potreeWriter->pointAttributes);
+                                potreeWriter->pointAttributes);
   }
 
   return reader;
@@ -411,7 +410,7 @@ void PWNode::flush() {
 vector<PWNode *> PWNode::getHierarchy(int levels) {
   vector<PWNode *> hierarchy;
 
-  list<PWNode *> stack;
+  std::list<PWNode *> stack;
   stack.push_back(this);
   while (!stack.empty()) {
     PWNode *node = stack.front();
@@ -503,17 +502,14 @@ PotreeWriter::PotreeWriter(string workDir, AABB aabb, float spacing,
                            PointAttributes pointAttributes,
                            ConversionQuality quality,
                            const SRSTransformHelper &transform)
-    : _transform(transform) {
-  this->workDir = workDir;
-  this->aabb = aabb;
-  this->spacing = spacing;
-  this->scale = scale;
-  this->maxDepth = maxDepth;
-  this->outputFormat = outputFormat;
-  this->quality = quality;
-
-  this->pointAttributes = pointAttributes;
-
+    : _transform(transform),
+      workDir(std::move(workDir)),
+      aabb(aabb),
+      spacing(spacing),
+      maxDepth(maxDepth),
+      outputFormat(outputFormat),
+      pointAttributes(pointAttributes),
+      quality(quality) {
   if (this->scale == 0) {
     if (aabb.size.length() > 1'000'000) {
       this->scale = 0.01;

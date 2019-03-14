@@ -4,7 +4,7 @@
 #define POTREE_CONVERTER_H
 
 #include "AABB.h"
-#include "CloudJS.hpp"
+#include "PointAttributes.hpp"
 #include "PointReader.h"
 #include "definitions.hpp"
 
@@ -25,7 +25,6 @@ class PotreeConverter {
   AABB aabb;
   vector<string> sources;
   string workDir;
-  CloudJS cloudjs;
   PointAttributes pointAttributes;
 
   PointReader *createPointReader(string source,

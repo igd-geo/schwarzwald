@@ -19,12 +19,11 @@ using std::vector;
 namespace Potree {
 
 BINPointReader::BINPointReader(string path, AABB aabb, double scale,
-                               PointAttributes pointAttributes) {
-  this->path = path;
-  this->aabb = aabb;
-  this->scale = scale;
-  this->attributes = pointAttributes;
-
+                               PointAttributes pointAttributes)
+    : path(std::move(path)),
+      aabb(aabb),
+      scale(scale),
+      attributes(pointAttributes) {
   if (fs::is_directory(path)) {
     // if directory is specified, find all las and laz files inside directory
 
@@ -94,26 +93,26 @@ bool BINPointReader::readNextPoint() {
     int offset = 0;
     for (int i = 0; i < attributes.size(); i++) {
       const PointAttribute attribute = attributes[i];
-      if (attribute == PointAttribute::POSITION_CARTESIAN) {
+      if (attribute == attributes::POSITION_CARTESIAN) {
         int* iBuffer = reinterpret_cast<int*>(buffer + offset);
         point.position.x = (iBuffer[0] * scale) + aabb.min.x;
         point.position.y = (iBuffer[1] * scale) + aabb.min.y;
         point.position.z = (iBuffer[2] * scale) + aabb.min.z;
-      } else if (attribute == PointAttribute::COLOR_PACKED) {
+      } else if (attribute == attributes::COLOR_PACKED) {
         unsigned char* ucBuffer =
             reinterpret_cast<unsigned char*>(buffer + offset);
         point.color.x = ucBuffer[0];
         point.color.y = ucBuffer[1];
         point.color.z = ucBuffer[2];
-      } else if (attribute == PointAttribute::INTENSITY) {
+      } else if (attribute == attributes::INTENSITY) {
         unsigned short* usBuffer =
             reinterpret_cast<unsigned short*>(buffer + offset);
         point.intensity = usBuffer[0];
-      } else if (attribute == PointAttribute::CLASSIFICATION) {
+      } else if (attribute == attributes::CLASSIFICATION) {
         unsigned char* ucBuffer =
             reinterpret_cast<unsigned char*>(buffer + offset);
         point.classification = ucBuffer[0];
-      } else if (attribute == PointAttribute::NORMAL_SPHEREMAPPED) {
+      } else if (attribute == attributes::NORMAL_SPHEREMAPPED) {
         // see http://aras-p.info/texts/CompactNormalStorage.html
         unsigned char* ucBuffer =
             reinterpret_cast<unsigned char*>(buffer + offset);
@@ -141,7 +140,7 @@ bool BINPointReader::readNextPoint() {
         point.normal.y = ny;
         point.normal.z = nz;
 
-      } else if (attribute == PointAttribute::NORMAL_OCT16) {
+      } else if (attribute == attributes::NORMAL_OCT16) {
         unsigned char* ucBuffer =
             reinterpret_cast<unsigned char*>(buffer + offset);
         unsigned char bx = ucBuffer[0];
@@ -170,7 +169,7 @@ bool BINPointReader::readNextPoint() {
         point.normal.x = x;
         point.normal.y = y;
         point.normal.z = z;
-      } else if (attribute == PointAttribute::NORMAL) {
+      } else if (attribute == attributes::NORMAL) {
         float* fBuffer = reinterpret_cast<float*>(buffer + offset);
         point.normal.x = fBuffer[0];
         point.normal.y = fBuffer[1];
