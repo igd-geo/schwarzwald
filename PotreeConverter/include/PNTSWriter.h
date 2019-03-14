@@ -11,7 +11,7 @@
 #include "AABB.h"
 #include "Point.h"
 #include "PointAttributes.hpp"
-#include "PointWriter.hpp"
+#include "PointBuffer.h"
 #include "Vector3.h"
 
 #include <rapidjson/filewritestream.h>
@@ -118,7 +118,7 @@ struct RGBAAttribute : PointAttributeBase {
   std::vector<RGBA> _rgbaColors;
 };
 
-// TODO Implement rest
+// TODO Implement other point attributes (normals, batch_id etc.)
 
 }  // namespace attributes
 
@@ -136,22 +136,20 @@ struct FeatureTable {
 /// Writer for writing the .pnts files of the 3D-Tiles spec:
 /// https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/specification/TileFormats/PointCloud/README.md
 /// </summary>
-class PNTWriter : public Potree::PointWriter {
+class PNTSWriter {
  public:
-  PNTWriter(const std::string& filePath, const AABB& aabb, double scale,
-            const PointAttributes& pointAttributes);
-  ~PNTWriter();
+  PNTSWriter(const std::string& filePath,
+             const PointAttributes& pointAttributes);
+  ~PNTSWriter();
 
-  void writePoints(const PointBuffer& points) override;
+  void writePoints(const PointBuffer& points);
 
   void flush(const Vector3<double>& localCenter);
 
-  void close() override;
+  void close();
 
  private:
   std::string _filePath;
-  AABB _aabb;
-  double _scale;
   FeatureTable _featuretable;
   BatchTable _batchtable;
 

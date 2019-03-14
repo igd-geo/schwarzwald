@@ -67,11 +67,11 @@ class PWNode {
 
   void split();
 
-  string workDir();
-
-  string hierarchyPath();
-
-  string path();
+  std::string workDir() const;
+  std::string jsonPathAbsolute() const;
+  std::string pntsPathAbsolute() const;
+  std::string jsonPathRelative() const;
+  std::string pntsPathRelative() const;
 
   void flush();
 
@@ -85,7 +85,6 @@ class PWNode {
 
  private:
   PointReader *createReader(string path);
-  PointWriter *createWriter(string path);
 
   const SRSTransformHelper &_transformHelper;
 };
@@ -99,16 +98,13 @@ class PotreeWriter {
   double scale = 0;
   int maxDepth = -1;
   PWNode *root;
-  long long numAdded = 0;
   long long numAccepted = 0;
-  CloudJS cloudjs;
   OutputFormat outputFormat;
   PointAttributes pointAttributes;
   int hierarchyStepSize = 5;
   PointBuffer store;
   thread storeThread;
   int pointsInMemory = 0;
-  string projection = "";
   ConversionQuality quality = ConversionQuality::DEFAULT;
 
   PotreeWriter(string workDir, ConversionQuality quality,
@@ -136,10 +132,6 @@ class PotreeWriter {
   void flush();
 
   void close() { flush(); }
-
-  void setProjection(string projection);
-
-  void loadStateFromDisk();
 
  private:
   const SRSTransformHelper &_transform;

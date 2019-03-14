@@ -37,6 +37,15 @@ class Vector3 {
 
   ~Vector3() = default;
 
+  /// <summary>
+  /// Cast the given vector from type T into type U using static_cast
+  /// </summary>
+  template <typename U>
+  static Vector3<U> cast(const Vector3<T>& source) {
+    return {static_cast<U>(source.x), static_cast<U>(source.y),
+            static_cast<U>(source.z)};
+  }
+
   T length() { return sqrt(x * x + y * y + z * z); }
 
   T squaredLength() { return x * x + y * y + z * z; }

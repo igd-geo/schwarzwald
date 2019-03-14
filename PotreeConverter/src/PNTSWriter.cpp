@@ -1,5 +1,5 @@
 
-#include "PNTWriter.h"
+#include "PNTSWriter.h"
 #include <rapidjson/filewritestream.h>
 #include <rapidjson/writer.h>
 #include "Transformation.h"
@@ -52,10 +52,9 @@ static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
 }
 }  // namespace
 
-Potree::PNTWriter::PNTWriter(const string& filePath, const AABB& aabb,
-                             double scale,
-                             const PointAttributes& pointAttributes)
-    : _scale(scale), _aabb(aabb), _filePath(filePath) {
+Potree::PNTSWriter::PNTSWriter(const string& filePath,
+                               const PointAttributes& pointAttributes)
+    : _filePath(filePath) {
   for (auto& desiredPointAttribute : pointAttributes.attributes) {
     auto attributeCache = createPointAttributeCache(desiredPointAttribute);
     if (!attributeCache) {
@@ -70,12 +69,12 @@ Potree::PNTWriter::PNTWriter(const string& filePath, const AABB& aabb,
   // TODO Create global attributes (how should we define them?)
 }
 
-Potree::PNTWriter::~PNTWriter() { close(); }
+Potree::PNTSWriter::~PNTSWriter() { close(); }
 
 /*
 Writes a Point to the Batch Table
 */
-void Potree::PNTWriter::writePoints(const PointBuffer& points) {
+void Potree::PNTSWriter::writePoints(const PointBuffer& points) {
   const auto numPoints = points.count();
   if (!numPoints) {
     std::cout << "[PNTWriter::writePoints] No points to write..." << std::endl;
@@ -89,13 +88,14 @@ void Potree::PNTWriter::writePoints(const PointBuffer& points) {
   }
 }
 
-void Potree::PNTWriter::flush(const Vector3<double>& localCenter) {
+void Potree::PNTSWriter::flush(const Vector3<double>& localCenter) {
   std::ofstream writer{_filePath, std::ios::out | std::ios::binary};
   if (!writer.is_open()) {
     std::cerr << "Could not write .pnts file \"" << _filePath << "\" ("
               << strerror(errno) << ")" << std::endl;
     return;
   }
+  // std::cout << "Writing \"" << _filePath << "\"..." << std::endl;
 
   constexpr auto HEADER_SIZE = 28u;
 
@@ -124,9 +124,9 @@ void Potree::PNTWriter::flush(const Vector3<double>& localCenter) {
   writer.close();
 }
 
-void Potree::PNTWriter::close() {}
+void Potree::PNTSWriter::close() {}
 
-Potree::PNTWriter::FeatureTableBlob Potree::PNTWriter::createFeatureTableBlob(
+Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
     const Vector3<double>& localCenter)  // create a featuretable before
                                          // this method
 {
@@ -171,11 +171,12 @@ Potree::PNTWriter::FeatureTableBlob Potree::PNTWriter::createFeatureTableBlob(
       // are not available at all, or we go the opposite way and fill the
       // missing attributes with default values... In any case, the user should
       // be notified about this!
-      std::cerr << "No values for attribute \""
-                << perPointAttribute->getAttributeNameForJSON()
-                << "\" were extracted from source files, the attribute will be "
-                   "skipped in \""
-                << _filePath << "\"!" << std::endl;
+      // std::cerr << "No values for attribute \""
+      //          << perPointAttribute->getAttributeNameForJSON()
+      //          << "\" were extracted from source files, the attribute will be
+      //          "
+      //             "skipped in \""
+      //          << _filePath << "\"!" << std::endl;
       continue;
     }
 

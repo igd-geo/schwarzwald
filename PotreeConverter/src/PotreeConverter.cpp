@@ -47,6 +47,9 @@ namespace fs = std::experimental::filesystem;
 
 namespace Potree {
 
+constexpr auto PROCESS_COUNT = 1'000'000;
+constexpr auto FLUSH_COUNT = 10'000'000;
+
 static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
     const std::optional<std::string> &sourceProjection) {
   if (!sourceProjection) {
@@ -72,6 +75,29 @@ static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
     std::cerr << "Skipping point transformation..." << std::endl;
   }
   return std::make_unique<IdentityTransform>();
+}
+
+/// <summary>
+/// Verify that output directory is valid
+/// </summary>
+static void verifyWorkDir(const std::string &workDir, StoreOption storeOption) {
+  if (fs::exists(workDir)) {
+    const auto rootFile = workDir + "/r.json";
+    if (fs::exists(rootFile) && storeOption == StoreOption::ABORT_IF_EXISTS) {
+      throw std::runtime_error{
+          "Output directory is not empty. Specify --overwrite if you want to "
+          "overwrite the contents of the output folder!"};
+    }
+
+    std::cout << "Output directory not empty, removing existing files..."
+              << std::endl;
+    for (auto &entry : fs::directory_iterator{workDir}) {
+      fs::remove_all(entry);
+    }
+  } else {
+    std::cout << "Output directory does not exist, creating it..." << std::endl;
+    fs::create_directories(workDir);
+  }
 }
 
 PointReader *PotreeConverter::createPointReader(
@@ -109,6 +135,8 @@ PotreeConverter::PotreeConverter(string executablePath, string workDir,
 }
 
 void PotreeConverter::prepare() {
+  verifyWorkDir(workDir, storeOption);
+
   // if sources contains directories, use files inside the directory instead
   vector<string> sourceFiles;
   for (const auto &source : sources) {
@@ -144,6 +172,13 @@ void PotreeConverter::prepare() {
     } else if (attribute == "NORMAL") {
       pointAttributes.add(PointAttribute::NORMAL_OCT16);
     }
+  }
+}
+
+void PotreeConverter::cleanUp() {
+  const auto tempPath = workDir + "/temp";
+  if (fs::exists(tempPath)) {
+    fs::remove(tempPath);
   }
 }
 
@@ -385,7 +420,6 @@ static void writeSources(string path, vector<string> sourceFilenames,
 }
 
 void PotreeConverter::convert() {
-  // NOTE This is where the main conversion happens
   auto start = high_resolution_clock::now();
 
   prepare();
@@ -415,42 +449,9 @@ void PotreeConverter::convert() {
     workDir = workDir + "/pointclouds/" + pageName;
   }
 
-  PotreeWriter *writer = NULL;
-  if (fs::exists(fs::path(this->workDir + "/cloud.js"))) {
-    if (storeOption == StoreOption::ABORT_IF_EXISTS) {
-      cout << "ABORTING CONVERSION: target already exists: " << this->workDir
-           << "/cloud.js" << endl;
-      cout << "If you want to overwrite the existing conversion, specify "
-              "--overwrite"
-           << endl;
-      cout << "If you want add new points to the existing conversion, make "
-              "sure the new points ";
-      cout << "are contained within the bounding box of the existing "
-              "conversion and then specify --incremental"
-           << endl;
-
-      return;
-    } else if (storeOption == StoreOption::OVERWRITE) {
-      fs::remove_all(workDir + "/data");
-      fs::remove_all(workDir + "/temp");
-      fs::remove(workDir + "/cloud.js");
-      // Create Potree(tileset)writer
-      writer = new PotreeWriter(this->workDir, aabb, spacing, maxDepth, scale,
-                                outputFormat, pointAttributes, quality,
-                                *transformation);
-    } else if (storeOption == StoreOption::INCREMENTAL) {
-      writer = new PotreeWriter(this->workDir, quality, *transformation);
-      writer->loadStateFromDisk();
-    }
-  } else {
-    writer = new PotreeWriter(this->workDir, aabb, spacing, maxDepth, scale,
-                              outputFormat, pointAttributes, quality,
-                              *transformation);
-  }
-
-  if (writer == NULL) {
-    return;
-  }
+  PotreeWriter writer{this->workDir,   aabb,    spacing,
+                      maxDepth,        scale,   outputFormat,
+                      pointAttributes, quality, *transformation};
 
   vector<AABB> boundingBoxes;
   vector<int> numPoints;
@@ -460,35 +461,29 @@ void PotreeConverter::convert() {
     cout << "READING:  " << source << endl;
 
     PointReader *reader = createPointReader(source, pointAttributes);
+    // TODO We should issue a warning here if 'pointAttributes' do not match the
+    // attributes available in the current file!
 
     boundingBoxes.push_back(reader->getAABB());
     numPoints.push_back(reader->numPoints());
     sourceFilenames.push_back(fs::path(source).filename().string());
 
-    // NOTE Write sources.json
-    if (this->sourceListingOnly) {
-      reader->close();
-      delete reader;
-
-      continue;
-    }
-
     // NOTE Points from the source file(s) are read here
     while (true) {
-        auto pointBatch = reader->readPointBatch();
-        if (pointBatch.empty()) break;
+      auto pointBatch = reader->readPointBatch();
+      if (pointBatch.empty()) break;
 
-      pointsProcessed += pointBatch.count(); 
+      pointsProcessed += pointBatch.count();
       pointsSinceLastProcessing += pointBatch.count();
       pointsSinceLastFlush += pointBatch.count();
 
-      writer->add(pointBatch);
+      writer.add(pointBatch);
 
-      if (pointsSinceLastProcessing >= (1'000'000)) {
-          pointsSinceLastProcessing -= 1'000'000ull;
+      if (pointsSinceLastProcessing >= PROCESS_COUNT) {
+        pointsSinceLastProcessing -= PROCESS_COUNT;
 
-        writer->processStore();
-        writer->waitUntilProcessed();
+        writer.processStore();
+        writer.waitUntilProcessed();
 
         auto end = high_resolution_clock::now();
         long long duration = duration_cast<milliseconds>(end - start).count();
@@ -499,18 +494,18 @@ void PotreeConverter::convert() {
         ssMessage.imbue(std::locale(""));
         ssMessage << "INDEXING: ";
         ssMessage << pointsProcessed << " points processed; ";
-        ssMessage << writer->numAccepted << " points written; ";
+        ssMessage << writer.numAccepted << " points written; ";
         ssMessage << seconds << " seconds passed";
 
         cout << ssMessage.str() << endl;
       }
-      if (pointsSinceLastFlush >= (10'000'000)) {
-          pointsSinceLastFlush -= 10'000'000ull;
+      if (pointsSinceLastFlush >= FLUSH_COUNT) {
+        pointsSinceLastFlush -= FLUSH_COUNT;
         cout << "FLUSHING: ";
 
         auto start = high_resolution_clock::now();
 
-        writer->flush();
+        writer.flush();
 
         auto end = high_resolution_clock::now();
         long long duration = duration_cast<milliseconds>(end - start).count();
@@ -528,10 +523,10 @@ void PotreeConverter::convert() {
   }
 
   cout << "closing writer" << endl;
-  writer->flush();
-  writer->close();
+  writer.flush();
+  writer.close();
 
-  float percent = (float)writer->numAccepted / (float)pointsProcessed;
+  float percent = (float)writer.numAccepted / (float)pointsProcessed;
   percent = percent * 100;
 
   auto end = high_resolution_clock::now();
@@ -539,9 +534,8 @@ void PotreeConverter::convert() {
 
   cout << endl;
   cout << "conversion finished" << endl;
-  cout << pointsProcessed << " points were processed and "
-       << writer->numAccepted << " points ( " << percent
-       << "% ) were written to the output. " << endl;
+  cout << pointsProcessed << " points were processed and " << writer.numAccepted
+       << " points ( " << percent << "% ) were written to the output. " << endl;
 
   cout << "duration: " << (duration / 1000.0f) << "s" << endl;
 }

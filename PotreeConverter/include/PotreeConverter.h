@@ -31,6 +31,7 @@ class PotreeConverter {
   PointReader *createPointReader(string source,
                                  PointAttributes pointAttributes);
   void prepare();
+  void cleanUp();
   AABB calculateAABB();
   void generatePage(string name);
 

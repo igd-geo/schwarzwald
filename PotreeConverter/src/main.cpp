@@ -55,7 +55,6 @@ struct PotreeArguments {
   string pageTemplatePath = "";
   vector<double> aabbValues;
   string pageName = "";
-  bool sourceListingOnly = false;
   string listOfFiles = "";
   ConversionQuality conversionQuality = ConversionQuality::DEFAULT;
   string conversionQualityString = "";
@@ -106,8 +105,6 @@ PotreeArguments parseArguments(int argc, char **argv) {
   args.addArgument("incremental", "Add new points to existing conversion");
   args.addArgument("overwrite",
                    "Replace existing conversion at target directory");
-  args.addArgument("source-listing-only",
-                   "Create a sources.json but no octree.");
   args.addArgument("list-of-files",
                    "A text file containing a list of files to be converted.");
   args.addArgument("source", "Source file. Can be LAS, LAZ, PTX or PLY");
@@ -207,8 +204,6 @@ PotreeArguments parseArguments(int argc, char **argv) {
   } else {
     a.storeOption = StoreOption::ABORT_IF_EXISTS;
   }
-
-  a.sourceListingOnly = args.has("source-listing-only");
 
   if (args.has("source-projection")) {
     a.sourceProjection =
@@ -321,7 +316,6 @@ void printArguments(PotreeArguments &a) {
 }
 
 #include <random>
-#include "PNTWriter.h"
 #include "Vector3.h"
 
 int main(int argc, char **argv) {
@@ -358,7 +352,6 @@ int main(int argc, char **argv) {
     pc.aabbValues = a.aabbValues;
     pc.pageName = a.pageName;
     pc.pageTemplatePath = a.pageTemplatePath;
-    pc.sourceListingOnly = a.sourceListingOnly;
     pc.quality = a.conversionQuality;
     pc.title = a.title;
     pc.description = a.description;

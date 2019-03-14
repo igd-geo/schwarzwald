@@ -1,6 +1,10 @@
 #include "TileSetWriter.h"
 #include "type_util.h"
 
+#include <rapidjson/document.h>
+#include <rapidjson/filewritestream.h>
+#include <rapidjson/writer.h>
+
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
 
@@ -25,37 +29,8 @@ static Value writeBoundingVolume(const BoundingVolume_t& boundingVolume,
   return boundingVolumeObj;
 }
 
-Potree::TileSetWriter::TileSetWriter(const std::string& filePath,
-                                     const AABB& aabb, double scale,
-                                     const PointAttributes& pointAttributes)
-    : _filePath(filePath),
-      _aabb(aabb),
-      _scale(scale),
-      _pointAttributes(pointAttributes) {
-  auto pos = _filePath.find(".");
-  auto pntfile = _filePath.substr(0, pos);
-  pntfile += ".pnt";
-  _pntWriter =
-      std::make_unique<PNTWriter>(pntfile, aabb, scale, pointAttributes);
-}
-
-Potree::TileSetWriter::~TileSetWriter() {}
-
-/*
-Write to workDir + url of Tileset
-*/
-bool Potree::TileSetWriter::writeTileset(const string& WorkDir,
-                                         const Tileset& ts) {
-  writeTilesetJSON(WorkDir, ts);
-
-  _pntWriter->flush(ts.localCenter);
-
-  return true;
-}
-
-bool Potree::TileSetWriter::writeTilesetJSON(const string& WorkDir,
-                                             const Tileset& ts) {
-  std::cout << "Writing tileset JSON \"" << WorkDir << "\"..." << std::endl;
+bool Potree::writeTilesetJSON(const string& filepath, const Tileset& ts) {
+  // std::cout << "Writing tileset JSON \"" << filepath << "\"..." << std::endl;
 
   Document document;
   document.SetObject();
@@ -210,20 +185,20 @@ bool Potree::TileSetWriter::writeTilesetJSON(const string& WorkDir,
 
   document.AddMember("root", rootobj, alloc);
 
-  if (fs::exists(WorkDir)) {
+  if (fs::exists(filepath)) {
     std::error_code removeErrorCode;
-    auto success = fs::remove(WorkDir, removeErrorCode);
+    auto success = fs::remove(filepath, removeErrorCode);
     if (!success) {
-      std::cerr << "Could not remove file \"" << WorkDir << "\" ("
+      std::cerr << "Could not remove file \"" << filepath << "\" ("
                 << removeErrorCode.message() << ")" << std::endl;
       return false;
     }
   }
 
   FILE* filePtr;
-  auto fopenErr = fopen_s(&filePtr, WorkDir.c_str(), "wb");
+  auto fopenErr = fopen_s(&filePtr, filepath.c_str(), "wb");
   if (fopenErr) {
-    std::cerr << "Error writing tileset JSON to \"" << WorkDir << "\" ("
+    std::cerr << "Error writing tileset JSON to \"" << filepath << "\" ("
               << strerror(fopenErr) << ")" << std::endl;
     return false;
   }
@@ -238,17 +213,8 @@ bool Potree::TileSetWriter::writeTilesetJSON(const string& WorkDir,
   auto fcloseErr = fclose(filePtr);
   if (fcloseErr) {
     std::cerr << "Error " << fcloseErr << " while closing file handle for \""
-              << WorkDir << "\"" << std::endl;
+              << filepath << "\"" << std::endl;
   }
 
   return true;
-}
-
-void Potree::TileSetWriter::writePoints(const PointBuffer& points) {
-  _pntWriter->writePoints(points);
-}
-
-void Potree::TileSetWriter::close() {
-  _pntWriter->close();
-  _pntWriter = nullptr;
 }

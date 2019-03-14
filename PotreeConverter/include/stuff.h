@@ -73,7 +73,7 @@ AABB childAABB(const AABB &aabb, const int &index);
  * 0----4
  *
  */
-int nodeIndex(const AABB &aabb, const Vector3<double>& pointPosition);
+int nodeIndex(const AABB &aabb, const Vector3<double> &pointPosition);
 
 /**
  * from
@@ -132,6 +132,7 @@ string trim(string s);
 /// </summary>
 template <typename Number>
 constexpr Number align(Number value, Number alignment) {
+  if (!value) return value;
   if (!alignment) return value;
 
   return (value + alignment - (value % alignment));
