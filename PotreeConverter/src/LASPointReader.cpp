@@ -68,8 +68,7 @@ PointBuffer LIBLASReader::readNextBatch(size_t maxBatchSize) {
         });
   }
 
-  if (_requestedAttributes.has(attributes::INTENSITY) ||
-      _requestedAttributes.has(attributes::COLOR_FROM_INTENSITY)) {
+  if (_requestedAttributes.has(attributes::INTENSITY)) {
     intensities.reserve(batchSize);
 
     readCurrentPoint = continueWith(
@@ -80,8 +79,19 @@ PointBuffer LIBLASReader::readNextBatch(size_t maxBatchSize) {
         });
   }
 
+  if (_requestedAttributes.has(attributes::COLOR_FROM_INTENSITY)) {
+    colors.reserve(batchSize);
+
+    readCurrentPoint = continueWith(
+        readCurrentPoint,
+        [this](size_t currentIdx, auto &positions, auto &colors, auto &normals,
+               auto &intensities, auto &classifications) {
+          colors.push_back(intensityToRGB_Log(point->intensity));
+        });
+  }
+
   if (_requestedAttributes.has(attributes::CLASSIFICATION)) {
-    classifications.resize(batchSize);
+    classifications.reserve(batchSize);
 
     readCurrentPoint = continueWith(
         readCurrentPoint,

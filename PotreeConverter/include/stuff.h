@@ -125,6 +125,13 @@ string rtrim(string s);
 // https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 string trim(string s);
 
+/// <summary>
+/// Converts 16-bit intensity values to greyscale using logarithmization. This
+/// compresses the dynamic range so that the visualization is more pleasing
+/// (otherwise low intensity values would be very dark)
+/// </summary>
+Potree::Vector3<uint8_t> intensityToRGB_Log(uint16_t intensity);
+
 }  // namespace Potree
 
 /// <summary>
@@ -135,7 +142,9 @@ constexpr Number align(Number value, Number alignment) {
   if (!value) return value;
   if (!alignment) return value;
 
-  return (value + alignment - (value % alignment));
+  const auto remainder = value % alignment;
+  if (!remainder) return value;
+  return value + alignment - remainder;
 }
 
 template <typename T>

@@ -8,6 +8,22 @@
 
 namespace rs = rapidjson;
 
+template <typename FeatureType>
+static void extractFeatureArray(
+    std::vector<FeatureType>& featureVec, const char* featureName,
+    const rapidjson::Document& featureTableJSONDocument,
+    const char* featureTableBinaryBegin, uint32_t pointsLength) {
+  const auto featureMember = featureTableJSONDocument.FindMember(featureName);
+  if (featureMember == featureTableJSONDocument.MemberEnd()) return;
+
+  const auto featureByteOffset =
+      featureMember->value.FindMember("byteOffset")->value.GetUint();
+  const auto featureBegin = reinterpret_cast<const FeatureType*>(
+      featureTableBinaryBegin + featureByteOffset);
+  const auto featureEnd = featureBegin + pointsLength;
+  featureVec.insert(featureVec.begin(), featureBegin, featureEnd);
+}
+
 std::optional<Potree::PNTSFile> Potree::readPNTSFile(
     const std::string& filepath) {
   std::ifstream fs{filepath, std::ios_base::in | std::ios_base::binary};
@@ -70,8 +86,6 @@ std::optional<Potree::PNTSFile> Potree::readPNTSFile(
   const auto positionByteOffset =
       positionMember.FindMember("byteOffset")->value.GetUint();
 
-  // TODO Other per-point attributes
-
   const auto positionsBegin = reinterpret_cast<const Vector3<float>*>(
       featureTableBinaryBegin + positionByteOffset);
   const auto positionsEnd = positionsBegin + pointsLength;
@@ -81,7 +95,26 @@ std::optional<Potree::PNTSFile> Potree::readPNTSFile(
                  std::back_inserter(highpPositions),
                  Vector3<float>::cast<double>);
 
-  pntsFile.points = {pointsLength, std::move(highpPositions)};
+  std::vector<Vector3<uint8_t>> colors;
+  extractFeatureArray<Vector3<uint8_t>>(colors, "RGB", featureTableJSONDocument,
+                                        featureTableBinaryBegin, pointsLength);
+
+  std::vector<Vector3<float>> normals;
+  // TODO Read normals from PNTS file
+
+  std::vector<uint16_t> intensities;
+  extractFeatureArray<uint16_t>(intensities, "INTENSITY",
+                                featureTableJSONDocument,
+                                featureTableBinaryBegin, pointsLength);
+
+  std::vector<uint8_t> classifications;
+  extractFeatureArray<uint8_t>(classifications, "CLASSIFICATION",
+                               featureTableJSONDocument,
+                               featureTableBinaryBegin, pointsLength);
+
+  pntsFile.points = {pointsLength,           std::move(highpPositions),
+                     std::move(colors),      std::move(normals),
+                     std::move(intensities), std::move(classifications)};
 
   return std::make_optional<PNTSFile>(std::move(pntsFile));
 }

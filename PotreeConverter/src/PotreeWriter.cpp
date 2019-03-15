@@ -251,6 +251,7 @@ void PWNode::loadFromDisk() {
     for (auto &position : points.positions()) {
       grid->addWithoutCheck(position);
     }
+    cache.append_buffer(points);
   }
 
   grid->numAccepted = numAccepted;

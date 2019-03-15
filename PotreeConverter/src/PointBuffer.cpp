@@ -161,6 +161,24 @@ bool Potree::PointBuffer::hasClassifications() const {
   return !_classifications.empty();
 }
 
+void Potree::PointBuffer::verify() const {
+  if (_positions.size() != _count) {
+    throw std::invalid_argument{"positions.size() does not equal count!"};
+  }
+  if (_rgbColors.size() && _rgbColors.size() != _count) {
+    throw std::invalid_argument{"rgbColors.size() does not equal count!"};
+  }
+  if (_normals.size() && _normals.size() != _count) {
+    throw std::invalid_argument{"normals.size() does not equal count!"};
+  }
+  if (_intensities.size() && _intensities.size() != _count) {
+    throw std::invalid_argument{"intensities.size() does not equal count!"};
+  }
+  if (_classifications.size() && _classifications.size() != _count) {
+    throw std::invalid_argument{"positions.size() does not equal count!"};
+  }
+}
+
 Potree::PointBuffer::PointConstIterator Potree::PointBuffer::begin() const {
   return PointBuffer::PointConstIterator{*this, 0};
 }

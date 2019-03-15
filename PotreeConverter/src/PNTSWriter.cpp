@@ -7,6 +7,8 @@
 #include "rapidjson/stringbuffer.h"
 #include "stuff.h"
 
+#include <sstream>
+
 using namespace rapidjson;
 
 template <typename T>
@@ -23,28 +25,17 @@ static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
     case Potree::attributes::POSITION_CARTESIAN:
       return std::make_unique<Potree::attributes::PositionAttribute>();
     case Potree::attributes::COLOR_PACKED:
-      return std::make_unique<Potree::attributes::RGBAAttribute>();
+    case Potree::attributes::COLOR_FROM_INTENSITY:
+      return std::make_unique<Potree::attributes::RGBAttribute>();
     case Potree::attributes::INTENSITY:
       return std::make_unique<Potree::attributes::IntensityAttribute>();
-    case Potree::attributes::COLOR_FROM_INTENSITY:
-      return std::make_unique<
-          Potree::attributes::ColorFromIntensityAttribute>();
+    case Potree::attributes::CLASSIFICATION:
+      return std::make_unique<Potree::attributes::ClassificationAttribute>();
     default:
       return nullptr;
   }
 }
 }  // namespace
-
-/// <summary>
-/// Converts 16-bit intensity values to greyscale using logarithmization. This
-/// compresses the dynamic range so that the visualization is more pleasing
-/// (otherwise low intensity values would be very dark)
-/// </summary>
-static Potree::RGB intensityToRGB_Log(uint16_t intensity) {
-  const auto correctedIntensity = std::log(intensity + 1) / std::log(0xffff);
-  const auto grey = static_cast<uint8_t>(255 * correctedIntensity);
-  return Potree::RGB{grey, grey, grey};
-}
 
 Potree::PNTSWriter::PNTSWriter(const string& filePath,
                                const PointAttributes& pointAttributes)
@@ -79,6 +70,18 @@ void Potree::PNTSWriter::writePoints(const PointBuffer& points) {
 
   for (auto& localAttribute : _featuretable.perPointAttributes) {
     localAttribute->extractFromPoints(points);
+  }
+
+  std::vector<size_t> attributeEntries;
+  std::transform(_featuretable.perPointAttributes.begin(),
+                 _featuretable.perPointAttributes.end(),
+                 std::back_inserter(attributeEntries),
+                 [](const auto& feature) { return feature->getNumEntries(); });
+  const auto diff =
+      std::adjacent_find(attributeEntries.begin(), attributeEntries.end(),
+                         [](size_t l, size_t r) { return l != r; });
+  if (diff != attributeEntries.end()) {
+    throw std::runtime_error{"Shits fucked up yo!"};
   }
 }
 
@@ -172,6 +175,16 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
       //             "skipped in \""
       //          << _filePath << "\"!" << std::endl;
       continue;
+    }
+    if (perPointAttribute->getNumEntries() != _featuretable.numPoints) {
+      // std::stringstream ss;
+      std::cerr << "Feature [" << perPointAttribute->getAttributeNameForJSON()
+                << "] has wrong number of entries (is: "
+                << perPointAttribute->getNumEntries()
+                << "; should be: " << _featuretable.numPoints << ") on node \""
+                << _filePath << "\"" << std::endl;
+      continue;
+      // throw std::runtime_error{ss.str()};
     }
 
     const auto alignmentRequirement =
@@ -331,6 +344,34 @@ uint32_t Potree::attributes::RGBAAttribute::getAlignmentRequirement() const {
   return 1u;
 }
 
+void Potree::attributes::RGBAttribute::extractFromPoints(
+    const PointBuffer& points) {
+  if (!points.count()) return;
+  if (!points.hasColors()) return;
+
+  _rgbColors.reserve(_rgbColors.size() + static_cast<size_t>(points.count()));
+  std::transform(points.rgbColors().begin(), points.rgbColors().end(),
+                 std::back_inserter(_rgbColors),
+                 [](const Vector3<uint8_t>& rgbColor) -> RGB {
+                   return {rgbColor.x, rgbColor.y, rgbColor.z};
+                 });
+}
+
+std::string Potree::attributes::RGBAttribute::getAttributeNameForJSON() const {
+  return "RGB";
+}
+
+gsl::span<const std::byte>
+Potree::attributes::RGBAttribute::getBinaryDataRange() const {
+  const auto begin = reinterpret_cast<std::byte const*>(_rgbColors.data());
+  const auto end = begin + vector_byte_size(_rgbColors);
+  return {begin, end};
+}
+
+uint32_t Potree::attributes::RGBAttribute::getAlignmentRequirement() const {
+  return 1u;
+}
+
 void Potree::attributes::IntensityAttribute::extractFromPoints(
     const PointBuffer& points) {
   if (!points.count()) return;
@@ -357,31 +398,30 @@ uint32_t Potree::attributes::IntensityAttribute::getAlignmentRequirement()
   return 2u;
 }
 
-void Potree::attributes::ColorFromIntensityAttribute::extractFromPoints(
+void Potree::attributes::ClassificationAttribute::extractFromPoints(
     const PointBuffer& points) {
   if (!points.count()) return;
-  if (!points.hasIntensities()) return;
+  if (!points.hasClassifications()) return;
 
-  _colors.reserve(_colors.size() + static_cast<size_t>(points.count()));
-  std::transform(points.intensities().begin(), points.intensities().end(),
-                 std::back_inserter(_colors), intensityToRGB_Log);
+  _classifications.insert(_classifications.end(),
+                          points.classifications().begin(),
+                          points.classifications().end());
 }
 
 std::string
-Potree::attributes::ColorFromIntensityAttribute::getAttributeNameForJSON()
-    const {
-  return "RGB";
+Potree::attributes::ClassificationAttribute::getAttributeNameForJSON() const {
+  return "CLASSIFICATION";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::ColorFromIntensityAttribute::getBinaryDataRange() const {
-  const auto begin = reinterpret_cast<std::byte const*>(_colors.data());
-  const auto end = begin + vector_byte_size(_colors);
+Potree::attributes::ClassificationAttribute::getBinaryDataRange() const {
+  const auto begin =
+      reinterpret_cast<std::byte const*>(_classifications.data());
+  const auto end = begin + vector_byte_size(_classifications);
   return {begin, end};
 }
 
-uint32_t
-Potree::attributes::ColorFromIntensityAttribute::getAlignmentRequirement()
+uint32_t Potree::attributes::ClassificationAttribute::getAlignmentRequirement()
     const {
   return 1u;
 }

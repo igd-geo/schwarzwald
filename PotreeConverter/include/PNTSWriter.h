@@ -73,6 +73,10 @@ struct PointAttributeBase {
   /// Returns the byte alignment required for this attribute
   /// </summary>
   virtual uint32_t getAlignmentRequirement() const = 0;
+  /// <summary>
+  /// Returns the number of entries for this attribute
+  /// </summary>
+  virtual size_t getNumEntries() const = 0;
 };
 
 /// <summary>
@@ -93,6 +97,7 @@ struct PositionAttribute : PointAttributeBase {
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _positions.size(); }
 
  private:
   std::vector<Vector3<float>> _positions;
@@ -103,6 +108,7 @@ struct PositionQuantizedAttribute : PointAttributeBase {
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _quantizedPositions.size(); }
 
  private:
   std::vector<NORMAL_OCT16P> _quantizedPositions;
@@ -113,9 +119,21 @@ struct RGBAAttribute : PointAttributeBase {
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _rgbaColors.size(); }
 
  private:
   std::vector<RGBA> _rgbaColors;
+};
+
+struct RGBAttribute : PointAttributeBase {
+  void extractFromPoints(const PointBuffer& points) override;
+  std::string getAttributeNameForJSON() const override;
+  gsl::span<const std::byte> getBinaryDataRange() const override;
+  uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _rgbColors.size(); }
+
+ private:
+  std::vector<RGB> _rgbColors;
 };
 
 struct IntensityAttribute : PointAttributeBase {
@@ -123,19 +141,21 @@ struct IntensityAttribute : PointAttributeBase {
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _intensities.size(); }
 
  private:
   std::vector<uint16_t> _intensities;
 };
 
-struct ColorFromIntensityAttribute : PointAttributeBase {
+struct ClassificationAttribute : PointAttributeBase {
   void extractFromPoints(const PointBuffer& points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _classifications.size(); }
 
  private:
-  std::vector<RGB> _colors;
+  std::vector<uint8_t> _classifications;
 };
 
 // TODO Implement other point attributes (normals, batch_id etc.)

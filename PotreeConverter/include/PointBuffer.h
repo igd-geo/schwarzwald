@@ -29,7 +29,7 @@ struct PointBuffer {
     const uint16_t* intensity() const;
     const uint8_t* classification() const;
 
-   private:       
+   private:
     PointReference(PointBuffer const* pointBuffer, size_t index);
 
     PointBuffer const* _pointBuffer;
@@ -59,9 +59,10 @@ struct PointBuffer {
   PointBuffer& operator=(PointBuffer&&) = default;
 
   /// <summary>
-  /// Push a single point into this PointBuffer. If the point has attributes that are not
-  /// defined in this PointBuffer they are ignored. Attributes from this PointBuffer that
-  /// are not defined in the given point are filled with default values
+  /// Push a single point into this PointBuffer. If the point has attributes
+  /// that are not defined in this PointBuffer they are ignored. Attributes from
+  /// this PointBuffer that are not defined in the given point are filled with
+  /// default values
   /// </summary>
   void push_point(PointReference point);
 
@@ -92,9 +93,7 @@ struct PointBuffer {
   std::vector<Vector3<uint8_t>>& rgbColors() { return _rgbColors; }
   std::vector<Vector3<float>>& normals() { return _normals; }
   std::vector<uint16_t>& intensities() { return _intensities; }
-  std::vector<uint8_t>& classifications() {
-      return _classifications;
-  }
+  std::vector<uint8_t>& classifications() { return _classifications; }
 
   const std::vector<Vector3<double>>& positions() const { return _positions; }
   const std::vector<Vector3<uint8_t>>& rgbColors() const { return _rgbColors; }
@@ -109,8 +108,10 @@ struct PointBuffer {
   bool hasIntensities() const;
   bool hasClassifications() const;
 
+  void verify() const;
+
   struct PointConstIterator {
-      PointConstIterator(PointBuffer const& pointBuffer, size_t idx);
+    PointConstIterator(PointBuffer const& pointBuffer, size_t idx);
 
     PointReference operator*() const;
     PointConstIterator& operator++();
