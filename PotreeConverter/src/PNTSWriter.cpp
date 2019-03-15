@@ -19,27 +19,32 @@ void writeBinary(const T& obj, std::ofstream& stream) {
 namespace {
 static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
     const Potree::PointAttribute& attribute) {
-  if (attribute == Potree::attributes::POSITION_CARTESIAN) {
-    return std::make_unique<Potree::attributes::PositionAttribute>();
+  switch (attribute) {
+    case Potree::attributes::POSITION_CARTESIAN:
+      return std::make_unique<Potree::attributes::PositionAttribute>();
+    case Potree::attributes::COLOR_PACKED:
+      return std::make_unique<Potree::attributes::RGBAAttribute>();
+    case Potree::attributes::INTENSITY:
+      return std::make_unique<Potree::attributes::IntensityAttribute>();
+    case Potree::attributes::COLOR_FROM_INTENSITY:
+      return std::make_unique<
+          Potree::attributes::ColorFromIntensityAttribute>();
+    default:
+      return nullptr;
   }
-  if (attribute == Potree::attributes::COLOR_PACKED) {
-    return std::make_unique<Potree::attributes::RGBAAttribute>();
-  }
-  // TODO Implement other attribute types
-  if (attribute == Potree::attributes::INTENSITY) {
-  }
-  if (attribute == Potree::attributes::CLASSIFICATION) {
-  }
-  if (attribute == Potree::attributes::NORMAL_SPHEREMAPPED) {
-  }
-  if (attribute == Potree::attributes::NORMAL_OCT16) {
-  }
-  if (attribute == Potree::attributes::NORMAL) {
-  }
-
-  return nullptr;
 }
 }  // namespace
+
+/// <summary>
+/// Converts 16-bit intensity values to greyscale using logarithmization. This
+/// compresses the dynamic range so that the visualization is more pleasing
+/// (otherwise low intensity values would be very dark)
+/// </summary>
+static Potree::RGB intensityToRGB_Log(uint16_t intensity) {
+  const auto correctedIntensity = std::log(intensity + 1) / std::log(0xffff);
+  const auto grey = static_cast<uint8_t>(255 * correctedIntensity);
+  return Potree::RGB{grey, grey, grey};
+}
 
 Potree::PNTSWriter::PNTSWriter(const string& filePath,
                                const PointAttributes& pointAttributes)
@@ -323,6 +328,61 @@ Potree::attributes::RGBAAttribute::getBinaryDataRange() const {
 }
 
 uint32_t Potree::attributes::RGBAAttribute::getAlignmentRequirement() const {
+  return 1u;
+}
+
+void Potree::attributes::IntensityAttribute::extractFromPoints(
+    const PointBuffer& points) {
+  if (!points.count()) return;
+  if (!points.hasIntensities()) return;
+
+  _intensities.insert(_intensities.end(), points.intensities().begin(),
+                      points.intensities().end());
+}
+
+std::string Potree::attributes::IntensityAttribute::getAttributeNameForJSON()
+    const {
+  return "INTENSITY";
+}
+
+gsl::span<const std::byte>
+Potree::attributes::IntensityAttribute::getBinaryDataRange() const {
+  const auto begin = reinterpret_cast<std::byte const*>(_intensities.data());
+  const auto end = begin + vector_byte_size(_intensities);
+  return {begin, end};
+}
+
+uint32_t Potree::attributes::IntensityAttribute::getAlignmentRequirement()
+    const {
+  return 2u;
+}
+
+void Potree::attributes::ColorFromIntensityAttribute::extractFromPoints(
+    const PointBuffer& points) {
+  if (!points.count()) return;
+  if (!points.hasIntensities()) return;
+
+  _colors.reserve(_colors.size() + static_cast<size_t>(points.count()));
+  std::transform(points.intensities().begin(), points.intensities().end(),
+                 std::back_inserter(_colors), intensityToRGB_Log);
+}
+
+std::string
+Potree::attributes::ColorFromIntensityAttribute::getAttributeNameForJSON()
+    const {
+  return "RGB";
+}
+
+gsl::span<const std::byte>
+Potree::attributes::ColorFromIntensityAttribute::getBinaryDataRange() const {
+  const auto begin = reinterpret_cast<std::byte const*>(_colors.data());
+  const auto end = begin + vector_byte_size(_colors);
+  return {begin, end};
+}
+
+uint32_t
+Potree::attributes::ColorFromIntensityAttribute::getAlignmentRequirement()
+    const {
   return 1u;
 }
 

@@ -101,7 +101,7 @@ static void verifyWorkDir(const std::string &workDir, StoreOption storeOption) {
 }
 
 PointReader *PotreeConverter::createPointReader(
-    string path, PointAttributes pointAttributes) {
+    string path, const PointAttributes &pointAttributes) {
   PointReader *reader = NULL;
   if (iEndsWith(path, ".las") || iEndsWith(path, ".laz")) {
     reader = new LASPointReader(path, pointAttributes);
@@ -164,6 +164,8 @@ void PotreeConverter::prepare() {
   for (const auto &attribute : outputAttributes) {
     if (attribute == "RGB") {
       pointAttributes.add(attributes::COLOR_PACKED);
+    } else if (attribute == "RGB_FROM_INTENSITY") {
+      pointAttributes.add(attributes::COLOR_FROM_INTENSITY);
     } else if (attribute == "INTENSITY") {
       pointAttributes.add(attributes::INTENSITY);
     } else if (attribute == "CLASSIFICATION") {

@@ -44,6 +44,8 @@ constexpr PointAttribute CLASSIFICATION = {3, "CLASSIFICATION", 1, 1};
 constexpr PointAttribute NORMAL_SPHEREMAPPED = {4, "NORMAL_SPHEREMAPPED", 2, 2};
 constexpr PointAttribute NORMAL_OCT16 = {5, "NORMAL_OCT16", 2, 2};
 constexpr PointAttribute NORMAL = {6, "NORMAL", 3, 12};
+constexpr PointAttribute COLOR_FROM_INTENSITY = {7, "COLOR_FROM_INTENSITY", 3,
+                                                 3};
 }  // namespace attributes
 
 class PointAttributes {
@@ -58,6 +60,11 @@ class PointAttributes {
   void add(PointAttribute attribute) {
     attributes.push_back(attribute);
     byteSize += attribute.byteSize;
+  }
+
+  bool has(const PointAttribute& attribute) const {
+    return std::find(attributes.begin(), attributes.end(), attribute) !=
+           attributes.end();
   }
 
   int size() { return (int)attributes.size(); }

@@ -34,6 +34,20 @@ using std::chrono::milliseconds;
 
 #define MAX_FLOAT std::numeric_limits<float>::max()
 
+static void verifyOutputAttributes(
+    const std::vector<std::string> &outputAttributes) {
+  const auto hasAttribute = [](const auto &attributes, const char *attribute) {
+    return std::find(attributes.begin(), attributes.end(), attribute) !=
+           attributes.end();
+  };
+
+  if (hasAttribute(outputAttributes, "RGB") &&
+      hasAttribute(outputAttributes, "RGB_FROM_INTENSITY")) {
+    throw std::runtime_error{
+        "Can't define both RGB and RGB_FROM_INTENSITY attributes!"};
+  }
+}
+
 class SparseGrid;
 
 struct PotreeArguments {
@@ -95,8 +109,9 @@ PotreeArguments parseArguments(int argc, char **argv) {
       "output-format",
       "Output format can be BINARY, LAS or LAZ. Default is BINARY");
   args.addArgument("output-attributes,a",
-                   "can be any combination of RGB, INTENSITY and "
-                   "CLASSIFICATION. Default is RGB.");
+                   "valid values are RGB, INTENSITY, RGB_FROM_INTENSITY, "
+                   "CLASSIFICATION, NORMAL. If RGB_FROM_INTENSITY is defined, "
+                   "RGB must not be defined. Default is RGB.");
   args.addArgument("scale",
                    "Scale of the X, Y, Z coordinate in LAS and LAZ files.");
   args.addArgument("aabb",
@@ -172,6 +187,7 @@ PotreeArguments parseArguments(int argc, char **argv) {
 
   if (args.has("output-attributes")) {
     a.outputAttributes = args.get("output-attributes").as<vector<string>>();
+    verifyOutputAttributes(a.outputAttributes);
   } else {
     a.outputAttributes = {"RGB"};
   }

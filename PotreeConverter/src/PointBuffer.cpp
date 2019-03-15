@@ -1,5 +1,4 @@
 #include "..\include\PointBuffer.h"
-#include "..\include\PointBuffer.h"
 #include "PointBuffer.h"
 
 Potree::PointBuffer::PointBuffer() : _count(0) {}
@@ -33,10 +32,21 @@ Potree::PointBuffer::PointBuffer(size_t count,
   }
 }
 
-void Potree::PointBuffer::push_point(PointReference point)
-{
-    _positions.push_back(point.position());
-    ++_count;
+void Potree::PointBuffer::push_point(PointReference point) {
+  _positions.push_back(point.position());
+  if (point.rgbColor()) {
+    _rgbColors.push_back(*point.rgbColor());
+  }
+  if (point.normal()) {
+    _normals.push_back(*point.normal());
+  }
+  if (point.intensity()) {
+    _intensities.push_back(*point.intensity());
+  }
+  if (point.classification()) {
+    _classifications.push_back(*point.classification());
+  }
+  ++_count;
 }
 
 void Potree::PointBuffer::push_points(gsl::span<Vector3<double>> newPositions,
@@ -130,14 +140,13 @@ void Potree::PointBuffer::append_buffer(const PointBuffer& other) {
   _count += other.count();
 }
 
-void Potree::PointBuffer::clear()
-{
-    _count = 0;
-    _positions.clear();
-    _rgbColors.clear();
-    _normals.clear();
-    _intensities.clear();
-    _classifications.clear();
+void Potree::PointBuffer::clear() {
+  _count = 0;
+  _positions.clear();
+  _rgbColors.clear();
+  _normals.clear();
+  _intensities.clear();
+  _classifications.clear();
 }
 
 bool Potree::PointBuffer::hasColors() const { return !_rgbColors.empty(); }
@@ -153,71 +162,69 @@ bool Potree::PointBuffer::hasClassifications() const {
 }
 
 Potree::PointBuffer::PointConstIterator Potree::PointBuffer::begin() const {
-    return PointBuffer::PointConstIterator{ *this, 0 };
+  return PointBuffer::PointConstIterator{*this, 0};
 }
 Potree::PointBuffer::PointConstIterator Potree::PointBuffer::end() const {
-    return PointBuffer::PointConstIterator{ *this, count() };
+  return PointBuffer::PointConstIterator{*this, count()};
 }
 
 #pragma region PointReference
 const Potree::Vector3<double>& Potree::PointBuffer::PointReference::position()
     const {
-    return _pointBuffer->positions()[_index];
+  return _pointBuffer->positions()[_index];
 }
 
-const Potree::Vector3<uint8_t>*
-Potree::PointBuffer::PointReference::rgbColor() const {
-    if (!_pointBuffer->hasColors()) return nullptr;
-    return _pointBuffer->rgbColors().data() + _index;
-}
-
-const Potree::Vector3<float>*
-Potree::PointBuffer::PointReference::normal() const {
-    if (!_pointBuffer->hasNormals()) return nullptr;
-    return _pointBuffer->normals().data() + _index;
-}
-
-const uint16_t* Potree::PointBuffer::PointReference::intensity()
+const Potree::Vector3<uint8_t>* Potree::PointBuffer::PointReference::rgbColor()
     const {
-    if (!_pointBuffer->hasIntensities()) return nullptr;
-    return _pointBuffer->intensities().data() + _index;
+  if (!_pointBuffer->hasColors()) return nullptr;
+  return _pointBuffer->rgbColors().data() + _index;
 }
 
-const uint8_t*
-Potree::PointBuffer::PointReference::classification() const {
-    if (!_pointBuffer->hasClassifications()) return nullptr;
-    return _pointBuffer->classifications().data() + _index;
+const Potree::Vector3<float>* Potree::PointBuffer::PointReference::normal()
+    const {
+  if (!_pointBuffer->hasNormals()) return nullptr;
+  return _pointBuffer->normals().data() + _index;
 }
 
-Potree::PointBuffer::PointReference::PointReference(PointBuffer const* pointBuffer,
-                                                    size_t index) : _pointBuffer(pointBuffer), _index(index) {}
+const uint16_t* Potree::PointBuffer::PointReference::intensity() const {
+  if (!_pointBuffer->hasIntensities()) return nullptr;
+  return _pointBuffer->intensities().data() + _index;
+}
+
+const uint8_t* Potree::PointBuffer::PointReference::classification() const {
+  if (!_pointBuffer->hasClassifications()) return nullptr;
+  return _pointBuffer->classifications().data() + _index;
+}
+
+Potree::PointBuffer::PointReference::PointReference(
+    PointBuffer const* pointBuffer, size_t index)
+    : _pointBuffer(pointBuffer), _index(index) {}
 #pragma endregion
 
 #pragma region PointIterator
-Potree::PointBuffer::PointConstIterator::PointConstIterator(const PointBuffer& pointBuffer,
-                                                  size_t idx) : _pointBuffer(&pointBuffer), _index(idx) {}
+Potree::PointBuffer::PointConstIterator::PointConstIterator(
+    const PointBuffer& pointBuffer, size_t idx)
+    : _pointBuffer(&pointBuffer), _index(idx) {}
 
 Potree::PointBuffer::PointReference
     Potree::PointBuffer::PointConstIterator::operator*() const {
-    return PointBuffer::PointReference{ _pointBuffer, _index };
+  return PointBuffer::PointReference{_pointBuffer, _index};
 }
 
 Potree::PointBuffer::PointConstIterator&
 Potree::PointBuffer::PointConstIterator::operator++() {
-    ++_index;
-    return *this;
+  ++_index;
+  return *this;
 }
 
 bool Potree::PointBuffer::PointConstIterator::operator==(
     const PointConstIterator& other) const {
-    return _pointBuffer == other._pointBuffer &&
-        _index == other._index;
+  return _pointBuffer == other._pointBuffer && _index == other._index;
 }
 
 bool Potree::PointBuffer::PointConstIterator::operator!=(
     const PointConstIterator& other) const {
-    return _pointBuffer != other._pointBuffer ||
-        _index != other._index;
+  return _pointBuffer != other._pointBuffer || _index != other._index;
 }
 
 #pragma endregion

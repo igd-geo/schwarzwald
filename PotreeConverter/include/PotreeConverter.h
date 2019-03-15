@@ -27,8 +27,8 @@ class PotreeConverter {
   string workDir;
   PointAttributes pointAttributes;
 
-  PointReader *createPointReader(string source,
-                                 PointAttributes pointAttributes);
+  PointReader* createPointReader(string source,
+                                 const PointAttributes& pointAttributes);
   void prepare();
   void cleanUp();
   AABB calculateAABB();

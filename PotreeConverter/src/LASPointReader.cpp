@@ -19,38 +19,103 @@ PointBuffer LIBLASReader::readNextBatch(size_t maxBatchSize) {
   const auto remainingPoints = static_cast<size_t>(numPoints() - pointsRead);
   const auto batchSize = std::min(remainingPoints, maxBatchSize);
 
-  // TODO Read all and only those attributes that we care about, based on the
+  // Read all and only those attributes that we care about, based on the
   // PointAttributes structure that we should pass to LASPointReader
 
+  const auto continueWith = [](auto call, auto continuation) {
+    return [=](auto &&... args) {
+      call(std::forward<decltype(args)>(args)...);
+      continuation(std::forward<decltype(args)>(args)...);
+    };
+  };
+
+  std::function<void(size_t, std::vector<Vector3<double>> &,
+                     std::vector<Vector3<uint8_t>> &,
+                     std::vector<Vector3<float>> &, std::vector<uint16_t> &,
+                     std::vector<uint8_t> &)>
+      readCurrentPoint =
+          [this](size_t currentIdx, auto &positions, auto &colors,
+                 auto &normals, auto &intensities,
+                 auto &classifications) { laszip_read_point(laszip_reader); };
+
   std::vector<Vector3<double>> positions;
+  std::vector<Vector3<uint8_t>> colors;
+  std::vector<Vector3<float>> normals;
+  std::vector<uint16_t> intensities;
+  std::vector<uint8_t> classifications;
+
   positions.resize(batchSize);
 
+  readCurrentPoint = continueWith(
+      readCurrentPoint,
+      [this](size_t currentIdx, auto &positions, auto &colors, auto &normals,
+             auto &intensities, auto &classifications) {
+        auto currentPositionPtr =
+            reinterpret_cast<double *>(positions.data() + currentIdx);
+        laszip_get_coordinates(laszip_reader, currentPositionPtr);
+      });
+
+  if (_requestedAttributes.has(attributes::COLOR_PACKED)) {
+    colors.reserve(batchSize);
+
+    readCurrentPoint = continueWith(
+        readCurrentPoint,
+        [this](size_t currentIdx, auto &positions, auto &colors, auto &normals,
+               auto &intensities, auto &classifications) {
+          colors.push_back({static_cast<uint8_t>(point->rgb[0] / colorScale),
+                            static_cast<uint8_t>(point->rgb[1] / colorScale),
+                            static_cast<uint8_t>(point->rgb[2] / colorScale)});
+        });
+  }
+
+  if (_requestedAttributes.has(attributes::INTENSITY) ||
+      _requestedAttributes.has(attributes::COLOR_FROM_INTENSITY)) {
+    intensities.reserve(batchSize);
+
+    readCurrentPoint = continueWith(
+        readCurrentPoint,
+        [this](size_t currentIdx, auto &positions, auto &colors, auto &normals,
+               auto &intensities, auto &classifications) {
+          intensities.push_back(point->intensity);
+        });
+  }
+
+  if (_requestedAttributes.has(attributes::CLASSIFICATION)) {
+    classifications.resize(batchSize);
+
+    readCurrentPoint = continueWith(
+        readCurrentPoint,
+        [this](size_t currentIdx, auto &positions, auto &colors, auto &normals,
+               auto &intensities, auto &classifications) {
+          classifications.push_back(point->classification);
+        });
+  }
+
   for (size_t idx = 0; idx < batchSize; ++idx) {
-    laszip_read_point(laszip_reader);
-
-    auto currentPositionPtr =
-        reinterpret_cast<double *>(positions.data() + idx);
-    laszip_get_coordinates(laszip_reader, currentPositionPtr);
-
-    //... other attributes ...
+    readCurrentPoint(idx, positions, colors, normals, intensities,
+                     classifications);
   }
 
   pointsRead += batchSize;
 
-  return PointBuffer{batchSize, std::move(positions)};
+  return PointBuffer{
+      batchSize,          std::move(positions),   std::move(colors),
+      std::move(normals), std::move(intensities), std::move(classifications)};
 }
 
 bool LIBLASReader::isAtEnd() const { return pointsRead == numPoints(); }
 
 bool LIBLASReader::hasAttributes(const PointAttributes &attributes,
                                  PointAttributes *missingAttributes) const {
+  auto foundMissingAttributes = false;
   for (auto &attribute : attributes.attributes) {
     if (!hasAttribute(attribute)) {
-      if (!missingAttributes) return false;
+      foundMissingAttributes = true;
+      if (!missingAttributes) break;
       missingAttributes->add(attribute);
     }
   }
-  return true;
+  return !foundMissingAttributes;
 }
 
 AABB LIBLASReader::getAABB() {
@@ -72,6 +137,7 @@ bool LIBLASReader::hasAttribute(const PointAttribute &attribute) const {
     case attributes::COLOR_PACKED:
       return hasColor();
     case attributes::INTENSITY:
+    case attributes::COLOR_FROM_INTENSITY:
       return hasIntensity();
     case attributes::NORMAL:
     case attributes::NORMAL_OCT16:
@@ -104,7 +170,7 @@ bool LIBLASReader::hasNormals() const {
 
 LASPointReader::LASPointReader(const std::string &path,
                                const PointAttributes &requestedAttributes)
-    : path(path) {
+    : path(path), _requestedAttributes(requestedAttributes) {
   if (fs::is_directory(path)) {
     // if directory is specified, find all las and laz files inside directory
 
@@ -124,14 +190,14 @@ LASPointReader::LASPointReader(const std::string &path,
 
   // read bounding box
   for (const auto &file : files) {
-    LIBLASReader tmpReader(file);
+    LIBLASReader tmpReader(file, _requestedAttributes);
     AABB lAABB = tmpReader.getAABB();
 
     aabb.update(lAABB.min);
     aabb.update(lAABB.max);
 
     PointAttributes missingAttributes;
-    if (tmpReader.hasAttributes(requestedAttributes, &missingAttributes)) {
+    if (!tmpReader.hasAttributes(requestedAttributes, &missingAttributes)) {
       std::cerr << "LAS/LAZ file \"" << path
                 << "\" is missing the following requested attributes: ";
       std::cerr << missingAttributes.toString();
@@ -142,7 +208,7 @@ LASPointReader::LASPointReader(const std::string &path,
 
   // open first file
   currentFile = files.begin();
-  reader = std::make_unique<LIBLASReader>(*currentFile);
+  reader = std::make_unique<LIBLASReader>(*currentFile, _requestedAttributes);
   //    cout << "let's go..." << endl;
 }
 
@@ -164,7 +230,7 @@ PointBuffer LASPointReader::readPointBatch(size_t maxBatchSize) {
       return {};
     }
 
-    reader = std::make_unique<LIBLASReader>(*currentFile);
+    reader = std::make_unique<LIBLASReader>(*currentFile, _requestedAttributes);
   }
 
   return reader->readNextBatch(maxBatchSize);

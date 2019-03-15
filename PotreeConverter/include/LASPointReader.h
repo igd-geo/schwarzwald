@@ -22,6 +22,7 @@ class PointAttributes;
 class LIBLASReader {
  private:
   size_t _numPoints;
+  const PointAttributes& _requestedAttributes;
 
  public:
   laszip_POINTER laszip_reader;
@@ -31,7 +32,9 @@ class LIBLASReader {
   double coordinates[3];
   long long pointsRead = 0;
 
-  LIBLASReader(std::string path) {
+  LIBLASReader(const std::string& path,
+               const PointAttributes& requestedAttributes)
+      : _requestedAttributes(requestedAttributes) {
     // TODO Error handling
     laszip_create(&laszip_reader);
 
@@ -137,6 +140,7 @@ class LASPointReader : public PointReader {
   std::unique_ptr<LIBLASReader> reader;
   std::vector<std::string> files;
   std::vector<std::string>::iterator currentFile;
+  const PointAttributes& _requestedAttributes;
 
  public:
   LASPointReader(const std::string& path,

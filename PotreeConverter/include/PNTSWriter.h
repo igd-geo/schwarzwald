@@ -118,6 +118,26 @@ struct RGBAAttribute : PointAttributeBase {
   std::vector<RGBA> _rgbaColors;
 };
 
+struct IntensityAttribute : PointAttributeBase {
+  void extractFromPoints(const PointBuffer& points) override;
+  std::string getAttributeNameForJSON() const override;
+  gsl::span<const std::byte> getBinaryDataRange() const override;
+  uint32_t getAlignmentRequirement() const override;
+
+ private:
+  std::vector<uint16_t> _intensities;
+};
+
+struct ColorFromIntensityAttribute : PointAttributeBase {
+  void extractFromPoints(const PointBuffer& points) override;
+  std::string getAttributeNameForJSON() const override;
+  gsl::span<const std::byte> getBinaryDataRange() const override;
+  uint32_t getAlignmentRequirement() const override;
+
+ private:
+  std::vector<RGB> _colors;
+};
+
 // TODO Implement other point attributes (normals, batch_id etc.)
 
 }  // namespace attributes
