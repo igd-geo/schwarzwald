@@ -232,10 +232,10 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
   jsonHeader.Accept(writer);
 
   const auto jsonHeaderString = jsonBuffer.GetString();
-  const auto jsonHeaderSize = jsonBuffer.GetSize();
+  const uint64_t jsonHeaderSize = jsonBuffer.GetSize();
 
   // JSON header has to be 8-byte aligned
-  const auto alignedJsonHeaderSize = align(jsonHeaderSize, 8ull);
+  const auto alignedJsonHeaderSize = align(jsonHeaderSize, uint64_t{8});
 
   FeatureTableBlob featureTableBlob;
   featureTableBlob.binaryByteLength = binaryBufferSize;

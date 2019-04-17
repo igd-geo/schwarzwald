@@ -43,7 +43,10 @@ constexpr PointAttribute PointAttribute::fromStringLiteral(const char* name) {
     return attributes::NORMAL;
   }
 
+//BUG: The throw does not compile with gcc (7.x.x), but the C++ standard says this is conformant?
+#ifdef _WIN32
   throw std::runtime_error{"Unrecognized PointAttribute name!"};
+#endif  
 }
 
 bool operator==(const PointAttribute& lhs, const PointAttribute& rhs) {
