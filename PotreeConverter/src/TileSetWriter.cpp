@@ -5,6 +5,7 @@
 #include <rapidjson/filewritestream.h>
 #include <rapidjson/writer.h>
 
+#include <fstream>
 #include <experimental/filesystem>
 namespace fs = std::experimental::filesystem;
 
@@ -195,6 +196,7 @@ bool Potree::writeTilesetJSON(const string& filepath, const Tileset& ts) {
     }
   }
 
+  /*
   FILE* filePtr;
   auto fopenErr = fopen_s(&filePtr, filepath.c_str(), "wb");
   if (fopenErr) {
@@ -206,15 +208,35 @@ bool Potree::writeTilesetJSON(const string& filepath, const Tileset& ts) {
   char writeBuffer[65536];
 
   FileWriteStream os(filePtr, writeBuffer, sizeof(writeBuffer));
+  */
 
-  Writer<FileWriteStream> writer(os);
+  struct Stream {
+    std::ofstream of;
+
+    explicit Stream(const std::string& filepath) : 
+      of {filepath, std::ios::binary} {}
+
+    typedef char Ch;
+    void Put (Ch ch) {of.put (ch);}
+    void Flush() {}
+  };
+
+  Stream fs{filepath};
+  if(!fs.of.is_open()) {
+    std::cerr << "Error writing tileset JSON to \"" << filepath << "\"" << std::endl;
+    return false;
+  }
+
+  Writer<Stream> writer(fs);
   document.Accept(writer);
 
+  /*
   auto fcloseErr = fclose(filePtr);
   if (fcloseErr) {
     std::cerr << "Error " << fcloseErr << " while closing file handle for \""
               << filepath << "\"" << std::endl;
   }
+  */
 
   return true;
 }

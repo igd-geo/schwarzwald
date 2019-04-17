@@ -1,4 +1,3 @@
-#include "..\include\PointBuffer.h"
 #include "PointBuffer.h"
 
 Potree::PointBuffer::PointBuffer() : _count(0) {}

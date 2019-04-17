@@ -12,3 +12,9 @@ build/*
 test/converted
 .vs/
 CMakeSettings.json
+.vscode
+
+!cmake/
+cmake/*
+!cmake/FindLibLAS.cmake
+!cmake/HunterGate.cmake
