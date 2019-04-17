@@ -83,6 +83,12 @@ class PWNode {
 
   PWNode *findNode(string name);
 
+  /// <summary>
+  /// Returns an estimate for the binary size of this PWNode in memory. This includes the dynamically
+  /// allocated memory for the store, cache, grid as well as the memory for all child nodes!
+  /// </summary>
+  size_t estimate_binary_size() const;
+
  private:
   PointReader *createReader(string path);
 
@@ -108,12 +114,12 @@ class PotreeWriter {
   ConversionQuality quality = ConversionQuality::DEFAULT;
 
   PotreeWriter(string workDir, ConversionQuality quality,
-               const SRSTransformHelper &transform);
+               const SRSTransformHelper &transform, uint32_t max_memory_usage_MiB);
 
   PotreeWriter(string workDir, AABB aabb, float spacing, int maxDepth,
                double scale, OutputFormat outputFormat,
                PointAttributes pointAttributes, ConversionQuality quality,
-               const SRSTransformHelper &transform);
+               const SRSTransformHelper &transform, uint32_t max_memory_usage_MiB);
 
   ~PotreeWriter() {
     close();
@@ -133,8 +139,12 @@ class PotreeWriter {
 
   void close() { flush(); }
 
+  bool needs_flush() const;
+
  private:
   const SRSTransformHelper &_transform;
+  uint32_t _max_memory_usage_MiB;
+  bool _needs_flush;
 };
 
 }  // namespace Potree

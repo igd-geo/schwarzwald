@@ -79,6 +79,7 @@ struct PotreeArguments {
   string material = "RGB";
   string executablePath;
   std::optional<string> sourceProjection;
+  uint32_t max_memory_usage_MiB = 256;
 };
 
 PotreeArguments parseArguments(int argc, char **argv) {
@@ -133,6 +134,8 @@ PotreeArguments parseArguments(int argc, char **argv) {
   args.addArgument("source-projection",
                    "Source projection in proj4 format. Provide this if the "
                    "projection is not specified within your source file");
+  args.addArgument("max-memory-usage", "Maximum memory usage of the tool during conversion (in MiB). "
+                   "Note that this is only an estimate, the tool might use slightly more memory internally. The default value is 256 MiB, the minimum value is 32 MiB.");
 
   PotreeArguments a;
 
@@ -224,6 +227,10 @@ PotreeArguments parseArguments(int argc, char **argv) {
   if (args.has("source-projection")) {
     a.sourceProjection =
         std::make_optional(args.get("source-projection").as<string>());
+  }
+
+  if(args.has("max-memory-usage")) {
+    a.max_memory_usage_MiB = static_cast<uint32_t>(std::max(32, args.get("max-memory-usage").as<int>(32)));
   }
 
   if (args.has("source")) {
@@ -319,10 +326,10 @@ void printArguments(PotreeArguments &a) {
     cout << "levels:            \t" << a.levels << endl;
     cout << "format:            \t" << a.format << endl;
     cout << "scale:             \t" << a.scale << endl;
-    cout << "pageName:          \t" << a.pageName << endl;
     if (a.sourceProjection) {
       cout << "source projection: \t" << *a.sourceProjection << endl;
     }
+    cout << "max memory usage:  \t" << a.max_memory_usage_MiB << " MiB" << endl;
     cout << endl;
   } catch (exception &e) {
     cout << "ERROR: " << e.what() << endl;
@@ -376,6 +383,7 @@ int main(int argc, char **argv) {
     pc.showSkybox = a.showSkybox;
     pc.storeOption = a.storeOption;
     pc.sourceProjection = a.sourceProjection;
+    pc.max_memory_usage_MiB = a.max_memory_usage_MiB;
 
     pc.convert();
 
@@ -383,8 +391,6 @@ int main(int argc, char **argv) {
     cout << "ERROR: " << e.what() << endl;
     return 1;
   }
-
-  getchar();
 
   return 0;
 }

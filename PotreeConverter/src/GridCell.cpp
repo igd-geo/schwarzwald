@@ -1,6 +1,7 @@
 
 #include "GridCell.h"
 #include "SparseGrid.h"
+#include "stuff.h"
 
 #include <iostream>
 
@@ -51,6 +52,10 @@ bool GridCell::isDistant(const Vector3<double> &p,
   }
 
   return true;
+}
+
+size_t GridCell::content_byte_size() const {
+  return vector_byte_size(points) + vector_byte_size(neighbours);
 }
 
 }  // namespace Potree

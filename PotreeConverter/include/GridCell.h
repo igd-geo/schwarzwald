@@ -27,6 +27,9 @@ class GridCell {
   void add(const Vector3<double> &p);
 
   bool isDistant(const Vector3<double> &p, const double &squaredSpacing) const;
+
+  size_t content_byte_size() const;
+
 };
 
 }  // namespace Potree

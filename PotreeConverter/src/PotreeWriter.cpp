@@ -342,7 +342,7 @@ PWNode *PWNode::add(PointBuffer::PointReference point) {
 
       int childIndex = nodeIndex(aabb, point.position());
       if (childIndex >= 0) {
-        if (isLeafNode()) {  // TODO Redundant check because of line 205?
+        if (isLeafNode()) {  // TODO Redundant check?
           children.resize(8, NULL);
         }
         PWNode *child = children[childIndex];
@@ -369,12 +369,7 @@ void PWNode::flush() {
       flushPoints(store, pntsPathAbsolute(), potreeWriter->pointAttributes,
                   _transformHelper, false, false);
       writeTilesetJSON(jsonPathAbsolute(), tileset);
-
-      // if(store.size() != this->numAccepted){
-      //	cout << "store " << store.size() << " != " << this->numAccepted
-      //<< " - " << this->name() << endl;
-      //}
-    } else if (!addCalledSinceLastFlush && isInMemory) {
+    } else if(!addCalledSinceLastFlush && isInMemory) {
       store.clear();
 
       isInMemory = false;
@@ -490,9 +485,19 @@ PWNode *PWNode::findNode(string name) {
   }
 }
 
+size_t PWNode::estimate_binary_size() const {
+  const auto self_size = cache.content_byte_size() + store.content_byte_size() + (grid ? grid->content_byte_size() : size_t{0});
+  const auto children_size = std::accumulate(children.begin(), children.end(), size_t{0}, [](auto accum, auto child) {
+    if(!child) return accum;
+    return accum + child->estimate_binary_size();
+  });
+
+  return self_size + children_size;
+}
+
 PotreeWriter::PotreeWriter(string workDir, ConversionQuality quality,
-                           const SRSTransformHelper &transform)
-    : _transform(transform) {
+                           const SRSTransformHelper &transform, uint32_t max_memory_usage_MiB)
+    : _transform(transform), _needs_flush(false), _max_memory_usage_MiB(max_memory_usage_MiB) {
   this->workDir = workDir;
   this->quality = quality;
 }
@@ -502,15 +507,17 @@ PotreeWriter::PotreeWriter(string workDir, AABB aabb, float spacing,
                            OutputFormat outputFormat,
                            PointAttributes pointAttributes,
                            ConversionQuality quality,
-                           const SRSTransformHelper &transform)
+                           const SRSTransformHelper &transform, uint32_t max_memory_usage_MiB)
     : _transform(transform),
+      _needs_flush(false),
       workDir(std::move(workDir)),
       aabb(aabb),
       spacing(spacing),
       maxDepth(maxDepth),
       outputFormat(outputFormat),
       pointAttributes(pointAttributes),
-      quality(quality) {
+      quality(quality),
+      _max_memory_usage_MiB(max_memory_usage_MiB) {
   if (this->scale == 0) {
     if (aabb.size.length() > 1'000'000) {
       this->scale = 0.01;
@@ -561,6 +568,11 @@ void PotreeWriter::processStore() {
 
   waitUntilProcessed();
 
+  const auto current_size = root->estimate_binary_size();
+  const auto current_size_MiB = (current_size / (1024.0 * 1024.0));
+  //std::cout << "Tree structure binary size: " << std::setprecision(2) << current_size_MiB << "MiB (maximum " << _max_memory_usage_MiB << " MiB)" << std::endl;
+  _needs_flush = (current_size_MiB >= _max_memory_usage_MiB);
+
   storeThread = thread([this, pointsStore = std::move(movedStore)] {
     for (auto point : pointsStore) {
       PWNode *acceptedBy = root->add(point);
@@ -584,6 +596,12 @@ void PotreeWriter::flush() {
   root->flush();
 
   root->traverse([](PWNode *node) { node->addedSinceLastFlush = false; });
+
+  _needs_flush = false;
+}
+
+bool PotreeWriter::needs_flush() const {
+  return _needs_flush;
 }
 
 }  // namespace Potree

@@ -1,6 +1,7 @@
 
 #include <math.h>
 #include <iostream>
+#include <numeric>
 
 #include "GridIndex.h"
 #include "SparseGrid.h"
@@ -195,6 +196,15 @@ void SparseGrid::addWithoutCheck(const Vector3<double> &p) {
   }
 
   it->second->add(p);
+}
+
+size_t SparseGrid::content_byte_size() const {
+  //Estimate for the in-memory size of the map itself (keys, values and, since the values are pointers, the dynamically allocated memory for the values)
+  const auto map_byte_size = this->size() * (sizeof(long long) + sizeof(void*) + sizeof(GridCell));
+  //The memory that each GridCell is referencing dynamically 
+  const auto cells_byte_size = std::accumulate(begin(), end(), size_t{0}, [](auto accum, const auto& kv_pair) {
+    return accum + kv_pair.second->content_byte_size();
+  });
 }
 
 }  // namespace Potree

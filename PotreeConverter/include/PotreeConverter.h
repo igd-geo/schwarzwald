@@ -57,6 +57,7 @@ class PotreeConverter {
   string material = "RGB";
   string executablePath;
   std::optional<string> sourceProjection;
+  uint32_t max_memory_usage_MiB;
 
   PotreeConverter(string executablePath, string workDir,
                   vector<string> sources);

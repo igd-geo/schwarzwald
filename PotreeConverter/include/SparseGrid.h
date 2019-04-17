@@ -55,6 +55,9 @@ class SparseGrid : public unordered_map<long long, GridCell *> {
   bool add(const Vector3<double> &p);
 
   void addWithoutCheck(const Vector3<double> &p);
+
+  size_t content_byte_size() const;
+
 };
 
 }  // namespace Potree
