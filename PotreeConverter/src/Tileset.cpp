@@ -45,10 +45,37 @@ static BoundingRegion boundingRegionFromAABB(
   return boundingRegion;
 }
 
+static BoundingBox boundingBoxFromAABB(const AABB& aabb, const Potree::SRSTransformHelper& transformHelper) {
+    const auto aabbCenter = aabb.getCenter();
+    const auto aabbExtent = aabb.max - aabb.min;
+    
+    //TODO Support for SRS transformation
+
+    BoundingBox ret;
+    ret.cx = aabbCenter.x;
+    ret.cy = aabbCenter.y;
+    ret.cz = aabbCenter.z;
+
+    ret.xx = aabbExtent.x / 2;
+    ret.xy = 0;
+    ret.xz = 0;
+
+    ret.yx = 0;
+    ret.yy = aabbExtent.y / 2;
+    ret.yz = 0;
+
+    ret.zx = 0;
+    ret.zy = 0;
+    ret.zz = aabbExtent.z / 2;
+
+    return ret;
+}
+
 BoundingVolume_t boundingVolumeFromAABB(
     const AABB& aabb, const Potree::SRSTransformHelper& transformHelper) {
   // TODO Configure what type of bounding region to generate here
   return boundingRegionFromAABB(aabb, transformHelper);
+    //return boundingBoxFromAABB(aabb, transformHelper);
 }
 
 std::vector<double> boundingVolumeToArray(
@@ -57,6 +84,8 @@ std::vector<double> boundingVolumeToArray(
       overloaded{[](const BoundingRegion& br) -> std::vector<double> {
         return {br.west,  br.south,     br.east,
                 br.north, br.minHeight, br.maxHeight};
-      }},
+      }, [](const BoundingBox& bb) -> std::vector<double> {
+          return {bb.cx, bb.cy, bb.cz, bb.xx, bb.xy, bb.xz, bb.yx, bb.yy, bb.yz, bb.zx, bb.zy, bb.zz};
+      } },
       boundingVolume);
 }

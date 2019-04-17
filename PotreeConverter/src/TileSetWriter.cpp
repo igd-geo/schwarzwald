@@ -23,7 +23,10 @@ static Value writeBoundingVolume(const BoundingVolume_t& boundingVolume,
 
   std::visit(overloaded{[&](const BoundingRegion& br) {
                boundingVolumeObj.AddMember("region", boundingVolumeArr, alloc);
-             }},
+             }, 
+            [&](const BoundingBox& bb) {
+               boundingVolumeObj.AddMember("box", boundingVolumeArr, alloc);
+             } },
              boundingVolume);
 
   return boundingVolumeObj;

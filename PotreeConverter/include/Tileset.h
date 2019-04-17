@@ -30,9 +30,16 @@ enum Refine { ADD, REFINE };
 struct BoundingRegion {
   double west, south, east, north, minHeight, maxHeight;
 };
+
+struct BoundingBox {
+    double cx, cy, cz;
+    double xx, xy, xz;
+    double yx, yy, yz;
+    double zx, zy, zz;
+};
 // TODO Other bounding regions (box, sphere)
 
-using BoundingVolume_t = std::variant<BoundingRegion>;
+using BoundingVolume_t = std::variant<BoundingRegion, BoundingBox>;
 
 /// <summary>
 /// Creates a 3D tiles bounding volume from the given AABB. For coordinate
