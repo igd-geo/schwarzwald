@@ -110,6 +110,13 @@ struct PointBuffer {
 
   void verify() const;
 
+  /// <summary>
+  /// Returns the raw size in bytes of the contents (positions, normals etc.) of this PointBuffer. This does NOT
+  /// include the in-memory size of a PointBuffer structure itself, but rather the allocated memory of all the
+  /// vectors of the PointBuffer
+  /// </summary>
+  size_t content_byte_size() const;
+
   struct PointConstIterator {
     PointConstIterator(PointBuffer const& pointBuffer, size_t idx);
 

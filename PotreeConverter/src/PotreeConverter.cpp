@@ -48,7 +48,6 @@ namespace fs = std::experimental::filesystem;
 namespace Potree {
 
 constexpr auto PROCESS_COUNT = 1'000'000;
-constexpr auto FLUSH_COUNT = 10'000'000;
 
 static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
     const std::optional<std::string> &sourceProjection) {
@@ -156,8 +155,18 @@ void PotreeConverter::prepare() {
       }
     } else if (fs::is_regular_file(pSource)) {
       sourceFiles.push_back(source);
+    } else {
+      std::cout << "Can't open input file \"" << source << "\"" << std::endl;
     }
-  }
+  } 
+
+  //Remove input files that don't exist and notify user
+  sourceFiles.erase(std::remove_if(sourceFiles.begin(), sourceFiles.end(), [](const auto& path) { 
+    if(fs::exists(path)) return false;
+    std::cout << "Can't open input file \"" << path << "\"" << std::endl;
+    return true;
+  }), sourceFiles.end());
+
   this->sources = sourceFiles;
 
   pointAttributes.add(attributes::POSITION_CARTESIAN);
@@ -431,7 +440,6 @@ void PotreeConverter::convert() {
 
   size_t pointsProcessed = 0;
   size_t pointsSinceLastProcessing = 0;
-  size_t pointsSinceLastFlush = 0;
 
   // We don't transform the AABBs here, since this would break the process of
   // partitioning the points. Instead, we will transform only upon writing the
@@ -456,7 +464,7 @@ void PotreeConverter::convert() {
 
   PotreeWriter writer{this->workDir,   aabb,    spacing,
                       maxDepth,        scale,   outputFormat,
-                      pointAttributes, quality, *transformation};
+                      pointAttributes, quality, *transformation, max_memory_usage_MiB};
 
   vector<AABB> boundingBoxes;
   vector<int> numPoints;
@@ -480,7 +488,6 @@ void PotreeConverter::convert() {
 
       pointsProcessed += pointBatch.count();
       pointsSinceLastProcessing += pointBatch.count();
-      pointsSinceLastFlush += pointBatch.count();
 
       writer.add(pointBatch);
 
@@ -504,8 +511,7 @@ void PotreeConverter::convert() {
 
         cout << ssMessage.str() << endl;
       }
-      if (pointsSinceLastFlush >= FLUSH_COUNT) {
-        pointsSinceLastFlush -= FLUSH_COUNT;
+      if (writer.needs_flush()) {
         cout << "FLUSHING: ";
 
         auto start = high_resolution_clock::now();

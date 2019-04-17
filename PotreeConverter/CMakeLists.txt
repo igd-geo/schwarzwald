@@ -54,9 +54,8 @@ find_package(glm REQUIRED)
 
 add_executable(PotreeConverter ${files} ${lib_rapidjson_files} ${lib_argument_files})
 
-target_link_libraries(PotreeConverter PUBLIC ${LASZIP_LIBRARY} proj Microsoft.GSL::GSL PRIVATE glm)
-
 if(UNIX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -std=c++14 -pthread -lstdc++ -lm")
-    target_link_libraries(PotreeConverter -lstdc++fs)
+    target_link_libraries(PotreeConverter PUBLIC ${LASZIP_LIBRARY} proj Microsoft.GSL::GSL PRIVATE glm -lstdc++fs)
+else()
+	target_link_libraries(PotreeConverter PUBLIC ${LASZIP_LIBRARY} proj Microsoft.GSL::GSL PRIVATE glm)
 endif()

@@ -18,3 +18,10 @@ CMakeSettings.json
 cmake/*
 !cmake/FindLibLAS.cmake
 !cmake/HunterGate.cmake
+
+_3rdParty/
+CMakeFiles/
+
+PotreeConverter/Makefile
+CMakeCache.txt
+cmake_install.cmake

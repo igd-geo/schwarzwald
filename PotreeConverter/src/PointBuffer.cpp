@@ -1,5 +1,7 @@
 #include "PointBuffer.h"
 
+#include "stuff.h"
+
 Potree::PointBuffer::PointBuffer() : _count(0) {}
 
 Potree::PointBuffer::PointBuffer(size_t count,
@@ -142,10 +144,15 @@ void Potree::PointBuffer::append_buffer(const PointBuffer& other) {
 void Potree::PointBuffer::clear() {
   _count = 0;
   _positions.clear();
+  _positions.shrink_to_fit();
   _rgbColors.clear();
+  _rgbColors.shrink_to_fit();
   _normals.clear();
+  _normals.shrink_to_fit();
   _intensities.clear();
+  _intensities.shrink_to_fit();
   _classifications.clear();
+  _classifications.shrink_to_fit();
 }
 
 bool Potree::PointBuffer::hasColors() const { return !_rgbColors.empty(); }
@@ -176,6 +183,11 @@ void Potree::PointBuffer::verify() const {
   if (_classifications.size() && _classifications.size() != _count) {
     throw std::invalid_argument{"positions.size() does not equal count!"};
   }
+}
+
+size_t Potree::PointBuffer::content_byte_size() const {
+  return vector_byte_size(_positions) + vector_byte_size(_rgbColors) + 
+    vector_byte_size(_normals) + vector_byte_size(_intensities) + vector_byte_size(_classifications);
 }
 
 Potree::PointBuffer::PointConstIterator Potree::PointBuffer::begin() const {
