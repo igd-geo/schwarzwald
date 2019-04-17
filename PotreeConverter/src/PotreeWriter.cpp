@@ -369,11 +369,7 @@ void PWNode::flush() {
       flushPoints(store, pntsPathAbsolute(), potreeWriter->pointAttributes,
                   _transformHelper, false, false);
       writeTilesetJSON(jsonPathAbsolute(), tileset);
-    } 
-
-    //Always clear to preserve memory 
-    //TODO We should make the flush frequency configurable 
-    if(isInMemory) {
+    } else if(!addCalledSinceLastFlush && isInMemory) {
       store.clear();
 
       isInMemory = false;
@@ -391,9 +387,7 @@ void PWNode::flush() {
       //	exit(1);
       //}
       cache.clear();
-    } 
-    
-    if (isInMemory) {
+    } else if (!addCalledSinceLastFlush && isInMemory) {
       delete grid;
       grid = new SparseGrid(aabb, spacing());
       isInMemory = false;
