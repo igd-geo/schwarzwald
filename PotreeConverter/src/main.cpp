@@ -48,6 +48,16 @@ static void verifyOutputAttributes(
   }
 }
 
+static const char* store_option_to_string(StoreOption store_option) {
+    switch (store_option)
+    {
+    case Potree::StoreOption::ABORT_IF_EXISTS: return "ABORT_IF_EXISTS";
+    case Potree::StoreOption::OVERWRITE: return "OVERWRITE";
+    case Potree::StoreOption::INCREMENTAL: return "INCREMENTAL";
+    default: return "unrecognized";
+    }
+}
+
 class SparseGrid;
 
 struct PotreeArguments {
@@ -329,6 +339,7 @@ void printArguments(PotreeArguments &a) {
     if (a.sourceProjection) {
       cout << "source projection: \t" << *a.sourceProjection << endl;
     }
+    cout << "store option:      \t" << store_option_to_string(a.storeOption) << endl;
     cout << "max memory usage:  \t" << a.max_memory_usage_MiB << " MiB" << endl;
     cout << endl;
   } catch (exception &e) {

@@ -7,6 +7,7 @@
 #include "PointAttributes.hpp"
 #include "PointReader.h"
 #include "definitions.hpp"
+#include "TerminalUI.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -27,12 +28,16 @@ class PotreeConverter {
   string workDir;
   PointAttributes pointAttributes;
 
-  PointReader* createPointReader(string source,
-                                 const PointAttributes& pointAttributes);
+  UIState _ui_state;
+  TerminalUI _ui;
+
+  PointReader* createPointReader(const string& source,
+                                 const PointAttributes& pointAttributes) const;
   void prepare();
   void cleanUp();
   AABB calculateAABB();
   void generatePage(string name);
+  size_t get_total_points_count() const;
 
  public:
   float spacing;
