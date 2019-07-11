@@ -16,6 +16,7 @@
 #include "Transformation.h"
 #include "XYZPointReader.hpp"
 #include "stuff.h"
+#include "ThroughputCounter.hpp"
 
 #include <math.h>
 #include <chrono>
@@ -24,6 +25,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <sstream>
+#include <iomanip>
 
 #include "TileSetWriter.h"
 
@@ -88,6 +91,11 @@ static void verifyWorkDir(const std::string &workDir, StoreOption storeOption) {
           "overwrite the contents of the output folder!"};
     }
 
+    if (storeOption == StoreOption::INCREMENTAL) {
+        std::cout << "Appending to existing output directory..." << std::endl;
+        return;
+    }
+
     std::cout << "Output directory not empty, removing existing files..."
               << std::endl;
     for (auto &entry : fs::directory_iterator{workDir}) {
@@ -100,7 +108,7 @@ static void verifyWorkDir(const std::string &workDir, StoreOption storeOption) {
 }
 
 PointReader *PotreeConverter::createPointReader(
-    string path, const PointAttributes &pointAttributes) {
+    const string& path, const PointAttributes &pointAttributes) const {
   PointReader *reader = NULL;
   if (iEndsWith(path, ".las") || iEndsWith(path, ".laz")) {
     reader = new LASPointReader(path, pointAttributes);
@@ -127,7 +135,8 @@ PointReader *PotreeConverter::createPointReader(
 }
 
 PotreeConverter::PotreeConverter(string executablePath, string workDir,
-                                 vector<string> sources) {
+                                 vector<string> sources) :
+  _ui(&_ui_state) {
   this->executablePath = executablePath;
   this->workDir = workDir;
   this->sources = sources;
@@ -433,6 +442,16 @@ static void writeSources(string path, vector<string> sourceFilenames,
   sourcesOut.close();
 }
 
+size_t PotreeConverter::get_total_points_count() const {
+  size_t total_count = 0;
+  for(auto& source : sources) {
+    PointReader *reader = createPointReader(source, pointAttributes);
+    total_count += reader->numPoints();
+    delete reader;
+  }
+  return total_count;
+}
+
 void PotreeConverter::convert() {
   auto start = high_resolution_clock::now();
 
@@ -440,6 +459,9 @@ void PotreeConverter::convert() {
 
   size_t pointsProcessed = 0;
   size_t pointsSinceLastProcessing = 0;
+
+  _ui_state.set_processed_points(0);
+  _ui_state.set_total_points(get_total_points_count());
 
   // We don't transform the AABBs here, since this would break the process of
   // partitioning the points. Instead, we will transform only upon writing the
@@ -470,8 +492,10 @@ void PotreeConverter::convert() {
   vector<int> numPoints;
   vector<string> sourceFilenames;
 
+  ThroughputCounter point_throughput_counter;
+
   for (const auto &source : sources) {
-    cout << "READING:  " << source << endl;
+    //cout << "READING:  " << source << endl;
 
     PointReader *reader = createPointReader(source, pointAttributes);
     // TODO We should issue a warning here if 'pointAttributes' do not match the
@@ -488,6 +512,13 @@ void PotreeConverter::convert() {
 
       pointsProcessed += pointBatch.count();
       pointsSinceLastProcessing += pointBatch.count();
+      point_throughput_counter.push_entry(pointBatch.count());
+      
+      _ui_state.set_current_mode("INDEXING");
+      _ui_state.set_processed_points(pointsProcessed);
+      _ui_state.set_progress(static_cast<float>(pointsProcessed) / _ui_state.get_total_points());
+      _ui_state.set_points_per_second(static_cast<float>(point_throughput_counter.get_throughput_per_second()));
+      _ui.redraw();
 
       writer.add(pointBatch);
 
@@ -500,42 +531,23 @@ void PotreeConverter::convert() {
         auto end = high_resolution_clock::now();
         long long duration = duration_cast<milliseconds>(end - start).count();
         float seconds = duration / 1'000.0f;
-
-        stringstream ssMessage;
-
-        ssMessage.imbue(std::locale(""));
-        ssMessage << "INDEXING: ";
-        ssMessage << pointsProcessed << " points processed; ";
-        ssMessage << writer.numAccepted << " points written; ";
-        ssMessage << seconds << " seconds passed";
-
-        cout << ssMessage.str() << endl;
       }
       if (writer.needs_flush()) {
-        cout << "FLUSHING: ";
-
-        auto start = high_resolution_clock::now();
+        _ui_state.set_current_mode("FLUSHING");
+        _ui.redraw();
 
         writer.flush();
-
-        auto end = high_resolution_clock::now();
-        long long duration = duration_cast<milliseconds>(end - start).count();
-        float seconds = duration / 1'000.0f;
-
-        cout << seconds << "s" << endl;
       }
-
-      // if(pointsProcessed >= 10'000'000){
-      //	break;
-      //}
     }
     reader->close();
     delete reader;
   }
 
-  cout << "closing writer" << endl;
+  _ui_state.set_current_mode("FINISHING");
+  _ui.redraw();
   writer.flush();
   writer.close();
+
 
   float percent = (float)writer.numAccepted / (float)pointsProcessed;
   percent = percent * 100;
@@ -543,12 +555,13 @@ void PotreeConverter::convert() {
   auto end = high_resolution_clock::now();
   long long duration = duration_cast<milliseconds>(end - start).count();
 
-  cout << endl;
-  cout << "conversion finished" << endl;
-  cout << pointsProcessed << " points were processed and " << writer.numAccepted
-       << " points ( " << percent << "% ) were written to the output. " << endl;
+  std::stringstream ss;
+  ss << "Conversion finished! " << pointsProcessed << " points processed, " << writer.numAccepted << " points (" << std::fixed <<
+   std::setprecision(2) << percent << " %) written to output. Took " << (duration / 1000.0f) << "s.";
 
-  cout << "duration: " << (duration / 1000.0f) << "s" << endl;
+  _ui_state.push_message(ss.str());
+  _ui_state.set_current_mode("DONE");
+  _ui.redraw();
 }
 
 }  // namespace Potree
