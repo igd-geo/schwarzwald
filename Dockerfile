@@ -1,4 +1,4 @@
-FROM conanio/gcc7
+FROM conanio/gcc7 AS build
 
 RUN whoami
 
@@ -39,5 +39,20 @@ RUN mkdir build
 RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so -DTERMINALPP_INCLUDE_DIRS=/data/terminalpp/include -DTERMINALPP_LIBRARY=/data/terminalpp/libterminalpp.a .. 
 RUN cd build && make
 RUN cp -R /data/PotreeConverter/PotreeConverter/resources/ /data
+
+# copy libproj.so dependency to a temporary directory
+RUN ldd /data/PotreeConverter/build/Release/PotreeConverter | grep 'libproj.so' | awk '{print $3}' | xargs -I '{}' cp -v '{}' /tmp/
+
+# after building, create smaller image that only contains the binary
+# and its dependencies
+FROM ubuntu:artful
+
+# copy dependencies
+COPY --from=build /home/conan/.hunter/_Base/0b8c31b/2af030b/adeda0f/Install/lib/ /home/conan/.hunter/_Base/0b8c31b/2af030b/adeda0f/Install/lib/
+COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /data/LAStools/LASzip/build/src/liblaszip.so
+COPY --from=build /tmp/libproj.so* /usr/lib/
+
+# copy binary
+COPY --from=build /data/PotreeConverter/build/Release/PotreeConverter /data/PotreeConverter/build/Release/PotreeConverter
 
 ENTRYPOINT ["/data/PotreeConverter/build/Release/PotreeConverter"]
