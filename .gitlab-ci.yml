@@ -16,9 +16,9 @@ build:
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
     - if [ "${CI_COMMIT_REF_NAME}" != "master" ]; then docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME; fi;
     - if [ "${CI_COMMIT_REF_NAME}" == "master" ]; then docker push $CI_REGISTRY_IMAGE:latest; fi;
-    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA mtr.external.otc.telekomcloud.com/ftth/potree-3d-tiles:latest
-    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA mtr.external.otc.telekomcloud.com/ftth/potree-3d-tiles:$CI_COMMIT_TAG
-    - if [ "${CI_PROJECT_PATH}" == "pbormann/potree-3d-tiles" ] && [ ! -z "${CI_COMMIT_TAG}" ]; then 
+    - if [ "${CI_PROJECT_PATH}" == "pbormann/potree-3d-tiles" ] && [ ! -z "${CI_COMMIT_TAG}" ]; then
+      docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA mtr.external.otc.telekomcloud.com/ftth/potree-3d-tiles:latest &&
+      docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA mtr.external.otc.telekomcloud.com/ftth/potree-3d-tiles:$CI_COMMIT_TAG &&
       docker login -u $FTTH_MTR_USER -p $FTTH_MTR_PW mtr.external.otc.telekomcloud.com &&
       docker push mtr.external.otc.telekomcloud.com/ftth/potree-3d-tiles:$CI_COMMIT_TAG;
       fi;
