@@ -1,0 +1,18 @@
+services:
+  - docker:dind
+
+variables:
+  UPSTREAM_IMAGE: $CI_REGISTRY/telekom/$CI_PROJECT_NAME
+  DOCKER_HOST: tcp://docker:2375/
+
+build:
+  image: docker:stable
+  stage: build
+  before_script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+  script:
+    - docker pull $UPSTREAM_IMAGE:latest || true
+    - docker build --cache-from $UPSTREAM_IMAGE:latest --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA --tag $CI_REGISTRY_IMAGE:latest --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME .
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - if [ "${CI_COMMIT_REF_NAME}" != "master" ]; then docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME; fi;
+    - if [ "${CI_COMMIT_REF_NAME}" == "master" ]; then docker push $CI_REGISTRY_IMAGE:latest; fi;
