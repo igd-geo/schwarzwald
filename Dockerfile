@@ -49,10 +49,10 @@ FROM ubuntu:artful
 
 # copy dependencies
 COPY --from=build /home/conan/.hunter/_Base/0b8c31b/2af030b/adeda0f/Install/lib/ /home/conan/.hunter/_Base/0b8c31b/2af030b/adeda0f/Install/lib/
-COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /data/LAStools/LASzip/build/src/liblaszip.so
+COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /usr/lib/liblaszip.so
 COPY --from=build /tmp/libproj.so* /usr/lib/
 
 # copy binary
-COPY --from=build /data/PotreeConverter/build/Release/PotreeConverter /data/PotreeConverter/build/Release/PotreeConverter
+COPY --from=build /data/PotreeConverter/build/Release/PotreeConverter /potree-3d-tiles/PotreeConverter/build/Release/PotreeConverter
 
-ENTRYPOINT ["/data/PotreeConverter/build/Release/PotreeConverter"]
+ENTRYPOINT ["/potree-3d-tiles/PotreeConverter/build/Release/PotreeConverter"]
