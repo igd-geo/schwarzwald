@@ -7,7 +7,7 @@
 #include "PointAttributes.hpp"
 #include "PointReader.h"
 #include "definitions.hpp"
-#include "TerminalUI.hpp"
+#include "ui/TerminalUI.hpp"
 
 #include <cstdint>
 #include <optional>
@@ -21,8 +21,9 @@ namespace Potree {
 
 class SparseGrid;
 
-class PotreeConverter {
- private:
+class PotreeConverter
+{
+private:
   AABB aabb;
   vector<string> sources;
   string workDir;
@@ -36,40 +37,23 @@ class PotreeConverter {
   void prepare();
   void cleanUp();
   AABB calculateAABB();
-  void generatePage(string name);
   size_t get_total_points_count() const;
 
- public:
+public:
   float spacing;
   int maxDepth;
-  string format;
   OutputFormat outputFormat;
   vector<string> outputAttributes;
-  vector<double> colorRange;
-  vector<double> intensityRange;
-  double scale = 0.01;
   int diagonalFraction = 250;
-  vector<double> aabbValues;
-  string pageName = "";
-  string pageTemplatePath = "";
-  StoreOption storeOption = StoreOption::ABORT_IF_EXISTS;
-  bool sourceListingOnly = false;
   ConversionQuality quality = ConversionQuality::DEFAULT;
-  string title = "PotreeViewer";
-  string description = "";
-  bool edlEnabled = false;
-  bool showSkybox = false;
-  string material = "RGB";
-  string executablePath;
   std::optional<string> sourceProjection;
   uint32_t max_memory_usage_MiB;
 
-  PotreeConverter(string executablePath, string workDir,
-                  vector<string> sources);
+  PotreeConverter(const string& workDir, vector<string> sources);
 
   void convert();
 };
 
-}  // namespace Potree
+} // namespace Potree
 
 #endif

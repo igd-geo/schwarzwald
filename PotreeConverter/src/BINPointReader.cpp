@@ -18,17 +18,19 @@ using std::vector;
 
 namespace Potree {
 
-BINPointReader::BINPointReader(string path, AABB aabb, double scale,
+BINPointReader::BINPointReader(string path,
+                               AABB aabb,
+                               double scale,
                                PointAttributes pointAttributes)
-    : path(std::move(path)),
-      aabb(aabb),
-      scale(scale),
-      attributes(pointAttributes) {
+  : aabb(aabb)
+  , scale(scale)
+  , path(std::move(path))
+  , attributes(pointAttributes)
+{
   if (fs::is_directory(path)) {
     // if directory is specified, find all las and laz files inside directory
 
-    for (fs::directory_iterator it(path); it != fs::directory_iterator();
-         it++) {
+    for (fs::directory_iterator it(path); it != fs::directory_iterator(); it++) {
       fs::path filepath = it->path();
       if (fs::is_regular_file(filepath)) {
         files.push_back(filepath.string());
@@ -42,9 +44,14 @@ BINPointReader::BINPointReader(string path, AABB aabb, double scale,
   reader = new ifstream(*currentFile, ios::in | ios::binary);
 }
 
-BINPointReader::~BINPointReader() { close(); }
+BINPointReader::~BINPointReader()
+{
+  close();
+}
 
-void BINPointReader::close() {
+void
+BINPointReader::close()
+{
   if (reader != NULL) {
     reader->close();
     delete reader;
@@ -52,19 +59,25 @@ void BINPointReader::close() {
   }
 }
 
-long long BINPointReader::numPoints() {
+long long
+BINPointReader::numPoints()
+{
   // TODO
 
   return 0;
 }
 
-PointBuffer BINPointReader::readPointBatch(size_t maxBatchCount) {
+PointBuffer
+BINPointReader::readPointBatch(size_t maxBatchCount)
+{
   // TODO Implement
   std::cerr << "BINPointReader::readPointBatch not implemented..." << std::endl;
   return {};
 }
 
-bool BINPointReader::readNextPoint() {
+bool
+BINPointReader::readNextPoint()
+{
   bool hasPoints = reader->good();
 
   if (!hasPoints) {
@@ -99,23 +112,19 @@ bool BINPointReader::readNextPoint() {
         point.position.y = (iBuffer[1] * scale) + aabb.min.y;
         point.position.z = (iBuffer[2] * scale) + aabb.min.z;
       } else if (attribute == attributes::COLOR_PACKED) {
-        unsigned char* ucBuffer =
-            reinterpret_cast<unsigned char*>(buffer + offset);
+        unsigned char* ucBuffer = reinterpret_cast<unsigned char*>(buffer + offset);
         point.color.x = ucBuffer[0];
         point.color.y = ucBuffer[1];
         point.color.z = ucBuffer[2];
       } else if (attribute == attributes::INTENSITY) {
-        unsigned short* usBuffer =
-            reinterpret_cast<unsigned short*>(buffer + offset);
+        unsigned short* usBuffer = reinterpret_cast<unsigned short*>(buffer + offset);
         point.intensity = usBuffer[0];
       } else if (attribute == attributes::CLASSIFICATION) {
-        unsigned char* ucBuffer =
-            reinterpret_cast<unsigned char*>(buffer + offset);
+        unsigned char* ucBuffer = reinterpret_cast<unsigned char*>(buffer + offset);
         point.classification = ucBuffer[0];
       } else if (attribute == attributes::NORMAL_SPHEREMAPPED) {
         // see http://aras-p.info/texts/CompactNormalStorage.html
-        unsigned char* ucBuffer =
-            reinterpret_cast<unsigned char*>(buffer + offset);
+        unsigned char* ucBuffer = reinterpret_cast<unsigned char*>(buffer + offset);
         unsigned char bx = ucBuffer[0];
         unsigned char by = ucBuffer[1];
 
@@ -141,8 +150,7 @@ bool BINPointReader::readNextPoint() {
         point.normal.z = nz;
 
       } else if (attribute == attributes::NORMAL_OCT16) {
-        unsigned char* ucBuffer =
-            reinterpret_cast<unsigned char*>(buffer + offset);
+        unsigned char* ucBuffer = reinterpret_cast<unsigned char*>(buffer + offset);
         unsigned char bx = ucBuffer[0];
         unsigned char by = ucBuffer[1];
 
@@ -185,11 +193,13 @@ bool BINPointReader::readNextPoint() {
   return hasPoints;
 }
 
-AABB BINPointReader::getAABB() {
+AABB
+BINPointReader::getAABB()
+{
   AABB aabb;
   // TODO
 
   return aabb;
 }
 
-}  // namespace Potree
+} // namespace Potree

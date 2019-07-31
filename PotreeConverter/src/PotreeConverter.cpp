@@ -7,26 +7,31 @@
 #include "rapidjson/stringbuffer.h"
 
 #include "BINPointReader.hpp"
+#include "BatchedPotreeWriter.h"
 #include "LASPointReader.h"
 #include "PTXPointReader.h"
 #include "PlyPointReader.h"
 #include "PotreeConverter.h"
 #include "PotreeException.h"
 #include "PotreeWriter.h"
+#include "ThroughputCounter.hpp"
 #include "Transformation.h"
 #include "XYZPointReader.hpp"
+#include "definitions.hpp"
+#include "io/Cesium3DTilesPersistence.h"
+#include "io/Cesium3DTilesPostprocessing.h"
 #include "stuff.h"
-#include "ThroughputCounter.hpp"
+#include "ui/ProgressReporter.h"
+#include "util/Stats.h"
 
-#include <math.h>
 #include <chrono>
 #include <fstream>
+#include <iomanip>
 #include <map>
+#include <math.h>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <sstream>
-#include <iomanip>
 
 #include "TileSetWriter.h"
 
@@ -52,8 +57,9 @@ namespace Potree {
 
 constexpr auto PROCESS_COUNT = 1'000'000;
 
-static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
-    const std::optional<std::string> &sourceProjection) {
+static std::unique_ptr<SRSTransformHelper>
+get_transformation_helper(const std::optional<std::string>& sourceProjection)
+{
   if (!sourceProjection) {
     std::cout << "Source projection not specified, skipping point "
                  "transformation..."
@@ -61,8 +67,7 @@ static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
     return std::make_unique<IdentityTransform>();
   }
 
-  if (std::strcmp(sourceProjection->c_str(),
-                  "+proj=longlat +datum=WGS84 +no_defs") == 0) {
+  if (std::strcmp(sourceProjection->c_str(), "+proj=longlat +datum=WGS84 +no_defs") == 0) {
     std::cout << "Source projection is already WGS84, skipping point "
                  "transformation..."
               << std::endl;
@@ -71,9 +76,8 @@ static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
 
   try {
     return std::make_unique<Proj4Transform>(*sourceProjection);
-  } catch (const std::runtime_error &err) {
-    std::cerr << "Error while setting up coordinate transformation:\n"
-              << err.what() << std::endl;
+  } catch (const std::runtime_error& err) {
+    std::cerr << "Error while setting up coordinate transformation:\n" << err.what() << std::endl;
     std::cerr << "Skipping point transformation..." << std::endl;
   }
   return std::make_unique<IdentityTransform>();
@@ -82,23 +86,12 @@ static std::unique_ptr<SRSTransformHelper> get_transformation_helper(
 /// <summary>
 /// Verify that output directory is valid
 /// </summary>
-static void verifyWorkDir(const std::string &workDir, StoreOption storeOption) {
+static void
+verifyWorkDir(const std::string& workDir)
+{
   if (fs::exists(workDir)) {
-    const auto rootFile = workDir + "/r.json";
-    if (fs::exists(rootFile) && storeOption == StoreOption::ABORT_IF_EXISTS) {
-      throw std::runtime_error{
-          "Output directory is not empty. Specify --overwrite if you want to "
-          "overwrite the contents of the output folder!"};
-    }
-
-    if (storeOption == StoreOption::INCREMENTAL) {
-        std::cout << "Appending to existing output directory..." << std::endl;
-        return;
-    }
-
-    std::cout << "Output directory not empty, removing existing files..."
-              << std::endl;
-    for (auto &entry : fs::directory_iterator{workDir}) {
+    std::cout << "Output directory not empty, removing existing files..." << std::endl;
+    for (auto& entry : fs::directory_iterator{ workDir }) {
       fs::remove_all(entry);
     }
   } else {
@@ -107,47 +100,32 @@ static void verifyWorkDir(const std::string &workDir, StoreOption storeOption) {
   }
 }
 
-PointReader *PotreeConverter::createPointReader(
-    const string& path, const PointAttributes &pointAttributes) const {
-  PointReader *reader = NULL;
+PointReader*
+PotreeConverter::createPointReader(const string& path, const PointAttributes& pointAttributes) const
+{
+  PointReader* reader = NULL;
   if (iEndsWith(path, ".las") || iEndsWith(path, ".laz")) {
     reader = new LASPointReader(path, pointAttributes);
-  } else if (iEndsWith(path, ".ptx")) {
-    reader = new PTXPointReader(path);
-  } else if (iEndsWith(path, ".ply")) {
-    reader = new PlyPointReader(path);
-  } else if (iEndsWith(path, ".xyz") || iEndsWith(path, ".txt")) {
-    reader = new XYZPointReader(path, format, colorRange, intensityRange);
-  } else if (iEndsWith(path, ".pts")) {
-    vector<double> intensityRange;
-
-    if (this->intensityRange.size() == 0) {
-      intensityRange.push_back(-2048);
-      intensityRange.push_back(+2047);
-    }
-
-    reader = new XYZPointReader(path, format, colorRange, intensityRange);
-  } else if (iEndsWith(path, ".bin")) {
-    reader = new BINPointReader(path, aabb, scale, pointAttributes);
   }
 
   return reader;
 }
 
-PotreeConverter::PotreeConverter(string executablePath, string workDir,
-                                 vector<string> sources) :
-  _ui(&_ui_state) {
-  this->executablePath = executablePath;
+PotreeConverter::PotreeConverter(const string& workDir, vector<string> sources)
+  : _ui(&_ui_state)
+{
   this->workDir = workDir;
   this->sources = sources;
 }
 
-void PotreeConverter::prepare() {
-  verifyWorkDir(workDir, storeOption);
+void
+PotreeConverter::prepare()
+{
+  verifyWorkDir(workDir);
 
   // if sources contains directories, use files inside the directory instead
   vector<string> sourceFiles;
-  for (const auto &source : sources) {
+  for (const auto& source : sources) {
     fs::path pSource(source);
     if (fs::is_directory(pSource)) {
       fs::directory_iterator it(pSource);
@@ -167,19 +145,24 @@ void PotreeConverter::prepare() {
     } else {
       std::cout << "Can't open input file \"" << source << "\"" << std::endl;
     }
-  } 
+  }
 
-  //Remove input files that don't exist and notify user
-  sourceFiles.erase(std::remove_if(sourceFiles.begin(), sourceFiles.end(), [](const auto& path) { 
-    if(fs::exists(path)) return false;
-    std::cout << "Can't open input file \"" << path << "\"" << std::endl;
-    return true;
-  }), sourceFiles.end());
+  // Remove input files that don't exist and notify user
+  sourceFiles.erase(std::remove_if(sourceFiles.begin(),
+                                   sourceFiles.end(),
+                                   [](const auto& path) {
+                                     if (fs::exists(path))
+                                       return false;
+                                     std::cout << "Can't open input file \"" << path << "\""
+                                               << std::endl;
+                                     return true;
+                                   }),
+                    sourceFiles.end());
 
   this->sources = sourceFiles;
 
   pointAttributes.add(attributes::POSITION_CARTESIAN);
-  for (const auto &attribute : outputAttributes) {
+  for (const auto& attribute : outputAttributes) {
     if (attribute == "RGB") {
       pointAttributes.add(attributes::COLOR_PACKED);
     } else if (attribute == "RGB_FROM_INTENSITY") {
@@ -194,274 +177,58 @@ void PotreeConverter::prepare() {
   }
 
   const auto attributesDescription = pointAttributes.toString();
-  std::cout << "Writing the following point attributes: "
-            << attributesDescription << std::endl;
+  std::cout << "Writing the following point attributes: " << attributesDescription << std::endl;
 }
 
-void PotreeConverter::cleanUp() {
+void
+PotreeConverter::cleanUp()
+{
   const auto tempPath = workDir + "/temp";
   if (fs::exists(tempPath)) {
     fs::remove(tempPath);
   }
 }
 
-AABB PotreeConverter::calculateAABB() {
+AABB
+PotreeConverter::calculateAABB()
+{
   AABB aabb;
-  if (aabbValues.size() == 6) {
-    Vector3<double> userMin(aabbValues[0], aabbValues[1], aabbValues[2]);
-    Vector3<double> userMax(aabbValues[3], aabbValues[4], aabbValues[5]);
-    aabb = AABB(userMin, userMax);
-  } else {
-    for (string source : sources) {
-      PointReader *reader = createPointReader(source, pointAttributes);
+  for (string source : sources) {
+    PointReader* reader = createPointReader(source, pointAttributes);
 
-      AABB sourceAABB = reader->getAABB();
-      aabb.update(sourceAABB.min);
-      aabb.update(sourceAABB.max);
+    AABB sourceAABB = reader->getAABB();
+    aabb.update(sourceAABB.min);
+    aabb.update(sourceAABB.max);
 
-      reader->close();
-      delete reader;
-    }
+    reader->close();
+    delete reader;
   }
 
   return aabb;
 }
 
-void PotreeConverter::generatePage(string name) {
-  string pagedir = this->workDir;
-  string templateSourcePath =
-      this->executablePath + "/resources/page_template/viewer_template.html";
-  string mapTemplateSourcePath =
-      this->executablePath + "/resources/page_template/lasmap_template.html";
-  string templateDir = this->executablePath + "/resources/page_template";
-
-  if (!this->pageTemplatePath.empty()) {
-    templateSourcePath = this->pageTemplatePath + "/viewer_template.html";
-    mapTemplateSourcePath = this->pageTemplatePath + "/lasmap_template.html";
-    templateDir = this->pageTemplatePath;
-  }
-
-  string templateTargetPath = pagedir + "/" + name + ".html";
-  string mapTemplateTargetPath = pagedir + "/lasmap_" + name + ".html";
-
-  Potree::copyDir(fs::path(templateDir), fs::path(pagedir));
-  fs::remove(pagedir + "/viewer_template.html");
-  fs::remove(pagedir + "/lasmap_template.html");
-
-  if (!this->sourceListingOnly) {  // change viewer template
-    ifstream in(templateSourcePath);
-    ofstream out(templateTargetPath);
-
-    string line;
-    while (getline(in, line)) {
-      if (line.find("<!-- INCLUDE POINTCLOUD -->") != string::npos) {
-        out << "\t\tPotree.loadPointCloud(\"pointclouds/" << name
-            << "/cloud.js\", \"" << name << "\", e => {" << endl;
-        out << "\t\t\tlet pointcloud = e.pointcloud;\n";
-        out << "\t\t\tlet material = pointcloud.material;\n";
-
-        out << "\t\t\tviewer.scene.addPointCloud(pointcloud);" << endl;
-
-        out << "\t\t\t"
-            << "material.pointColorType = Potree.PointColorType." << material
-            << "; // any Potree.PointColorType.XXXX \n";
-        out << "\t\t\tmaterial.size = 1;\n";
-        out << "\t\t\tmaterial.pointSizeType = "
-               "Potree.PointSizeType.ADAPTIVE;\n";
-        out << "\t\t\tmaterial.shape = Potree.PointShape.SQUARE;\n";
-
-        out << "\t\t\tviewer.fitToScreen();" << endl;
-        out << "\t\t});" << endl;
-      } else if (line.find("<!-- INCLUDE SETTINGS HERE -->") != string::npos) {
-        out << std::boolalpha;
-        out << "\t\t"
-            << "document.title = \"" << title << "\";\n";
-        out << "\t\t"
-            << "viewer.setEDLEnabled(" << edlEnabled << ");\n";
-        if (showSkybox) {
-          out << "\t\t"
-              << "viewer.setBackground(\"skybox\"); // [\"skybox\", "
-                 "\"gradient\", \"black\", \"white\"];\n";
-        } else {
-          out << "\t\t"
-              << "viewer.setBackground(\"gradient\"); // [\"skybox\", "
-                 "\"gradient\", \"black\", \"white\"];\n";
-        }
-
-        string descriptionEscaped = string(description);
-        std::replace(descriptionEscaped.begin(), descriptionEscaped.end(), '`',
-                     '\'');
-
-        out << "\t\t"
-            << "viewer.setDescription(`" << descriptionEscaped << "`);\n";
-      } else {
-        out << line << endl;
-      }
-    }
-
-    in.close();
-    out.close();
-  }
-
-  // change lasmap template
-  // if(!this->projection.empty()){
-  //	ifstream in( mapTemplateSourcePath );
-  //	ofstream out( mapTemplateTargetPath );
-  //
-  //	string line;
-  //	while(getline(in, line)){
-  //		if(line.find("<!-- INCLUDE SOURCE -->") != string::npos){
-  //			out << "\tvar source = \"" << "pointclouds/" << name <<
-  //"/sources.json" << "\";"; 		}else{ 			out << line <<
-  // endl;
-  //		}
-  //
-  //	}
-  //
-  //	in.close();
-  //	out.close();
-  //}
-
-  //{ // write settings
-  //	stringstream ssSettings;
-  //
-  //	ssSettings << "var sceneProperties = {" << endl;
-  //	ssSettings << "\tpath: \"" << "../resources/pointclouds/" << name <<
-  //"/cloud.js\"," << endl;
-  //	ssSettings << "\tcameraPosition: null, 		// other options:
-  // cameraPosition: [10,10,10]," << endl; 	ssSettings << "\tcameraTarget:
-  // null,
-  //// other options: cameraTarget: [0,0,0]," << endl; 	ssSettings << "\tfov:
-  /// 60, / field of view in degrees," << endl; 	ssSettings <<
-  /// "\tsizeType:
-  //\"Adaptive\",	// other options: \"Fixed\", \"Attenuated\"" << endl;
-  //	ssSettings << "\tquality: null, 			// other
-  // options:
-  //\"Circles\", \"Interpolation\", \"Splats\"" << endl; 	ssSettings <<
-  //"\tmaterial: \"RGB\", 		// other options: \"Height\",
-  //\"Intensity\",
-  //\"Classification\"" << endl; 	ssSettings << "\tpointLimit: 1,
-  //// max number of points in millions" << endl; 	ssSettings <<
-  ///"\tpointSize: 1, / " << endl; 	ssSettings << "\tnavigation: \"Orbit\",
-  /// // other
-  // options: \"Orbit\", \"Flight\"" << endl; 	ssSettings << "\tuseEDL: false,
-  //" << endl; 	ssSettings << "};" << endl;
-  //
-  //
-  //	ofstream fSettings;
-  //	fSettings.open(pagedir + "/examples/" + name + ".js", ios::out);
-  //	fSettings << ssSettings.str();
-  //	fSettings.close();
-  //}
-}
-
-static void writeSources(string path, vector<string> sourceFilenames,
-                         vector<int> numPoints, vector<AABB> boundingBoxes,
-                         string projection) {
-  Document d(rapidjson::kObjectType);
-
-  AABB bb;
-
-  Value jProjection(projection.c_str(), (rapidjson::SizeType)projection.size());
-
-  Value jSources(rapidjson::kObjectType);
-  jSources.SetArray();
-  for (int i = 0; i < sourceFilenames.size(); i++) {
-    string &source = sourceFilenames[i];
-    int points = numPoints[i];
-    AABB boundingBox = boundingBoxes[i];
-
-    bb.update(boundingBox);
-
-    Value jSource(rapidjson::kObjectType);
-
-    Value jName(source.c_str(), (rapidjson::SizeType)source.size());
-    Value jPoints(points);
-    Value jBounds(rapidjson::kObjectType);
-
-    {
-      Value bbMin(rapidjson::kObjectType);
-      Value bbMax(rapidjson::kObjectType);
-
-      bbMin.SetArray();
-      bbMin.PushBack(boundingBox.min.x, d.GetAllocator());
-      bbMin.PushBack(boundingBox.min.y, d.GetAllocator());
-      bbMin.PushBack(boundingBox.min.z, d.GetAllocator());
-
-      bbMax.SetArray();
-      bbMax.PushBack(boundingBox.max.x, d.GetAllocator());
-      bbMax.PushBack(boundingBox.max.y, d.GetAllocator());
-      bbMax.PushBack(boundingBox.max.z, d.GetAllocator());
-
-      jBounds.AddMember("min", bbMin, d.GetAllocator());
-      jBounds.AddMember("max", bbMax, d.GetAllocator());
-    }
-
-    jSource.AddMember("name", jName, d.GetAllocator());
-    jSource.AddMember("points", jPoints, d.GetAllocator());
-    jSource.AddMember("bounds", jBounds, d.GetAllocator());
-
-    jSources.PushBack(jSource, d.GetAllocator());
-  }
-
-  Value jBoundingBox(rapidjson::kObjectType);
-  {
-    Value bbMin(rapidjson::kObjectType);
-    Value bbMax(rapidjson::kObjectType);
-
-    bbMin.SetArray();
-    bbMin.PushBack(bb.min.x, d.GetAllocator());
-    bbMin.PushBack(bb.min.y, d.GetAllocator());
-    bbMin.PushBack(bb.min.z, d.GetAllocator());
-
-    bbMax.SetArray();
-    bbMax.PushBack(bb.max.x, d.GetAllocator());
-    bbMax.PushBack(bb.max.y, d.GetAllocator());
-    bbMax.PushBack(bb.max.z, d.GetAllocator());
-
-    jBoundingBox.AddMember("min", bbMin, d.GetAllocator());
-    jBoundingBox.AddMember("max", bbMax, d.GetAllocator());
-  }
-
-  d.AddMember("bounds", jBoundingBox, d.GetAllocator());
-  d.AddMember("projection", jProjection, d.GetAllocator());
-  d.AddMember("sources", jSources, d.GetAllocator());
-
-  StringBuffer buffer;
-  // PrettyWriter<StringBuffer> writer(buffer);
-  Writer<StringBuffer> writer(buffer);
-  d.Accept(writer);
-
-  if (!fs::exists(fs::path(path))) {
-    fs::path pcdir(path);
-    fs::create_directories(pcdir);
-  }
-
-  ofstream sourcesOut(path + "/sources.json", ios::out);
-  sourcesOut << buffer.GetString();
-  sourcesOut.close();
-}
-
-size_t PotreeConverter::get_total_points_count() const {
+size_t
+PotreeConverter::get_total_points_count() const
+{
   size_t total_count = 0;
-  for(auto& source : sources) {
-    PointReader *reader = createPointReader(source, pointAttributes);
+  for (auto& source : sources) {
+    PointReader* reader = createPointReader(source, pointAttributes);
     total_count += reader->numPoints();
     delete reader;
   }
   return total_count;
 }
 
-void PotreeConverter::convert() {
-  auto start = high_resolution_clock::now();
+void
+PotreeConverter::convert()
+{
+  const auto prepare_start = high_resolution_clock::now();
 
   prepare();
 
-  size_t pointsProcessed = 0;
-  size_t pointsSinceLastProcessing = 0;
+  const auto total_points_count = get_total_points_count();
 
-  _ui_state.set_processed_points(0);
-  _ui_state.set_total_points(get_total_points_count());
+  std::cout << "Total points: " << total_points_count << std::endl;
 
   // We don't transform the AABBs here, since this would break the process of
   // partitioning the points. Instead, we will transform only upon writing the
@@ -479,25 +246,46 @@ void PotreeConverter::convert() {
     cout << "spacing calculated from diagonal: " << spacing << endl;
   }
 
-  if (pageName.size() > 0) {
-    generatePage(pageName);
-    workDir = workDir + "/pointclouds/" + pageName;
-  }
+  auto& progress_reporter = _ui_state.get_progress_reporter();
+  progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
+  progress_reporter.register_progress_counter<size_t>(progress::INDEXING, total_points_count);
 
-  PotreeWriter writer{this->workDir,   aabb,    spacing,
-                      maxDepth,        scale,   outputFormat,
-                      pointAttributes, quality, *transformation, max_memory_usage_MiB};
+  Cesium3DTilesPersistence persistence{ workDir, pointAttributes, *transformation };
+
+  const auto max_depth =
+    (maxDepth <= 0) ? std::numeric_limits<uint32_t>::max() : static_cast<uint32_t>(maxDepth);
+
+  // PotreeWriter writer{ this->workDir,   aabb,
+  //                      spacing,         maxDepth,
+  //                      scale,           outputFormat,
+  //                      pointAttributes, quality,
+  //                      *transformation, max_memory_usage_MiB };
+  BatchedPotreeWriter writer{ this->workDir,      aabb,       spacing,         max_depth,
+                              pointAttributes,    quality,    *transformation, max_memory_usage_MiB,
+                              &progress_reporter, persistence };
+
+  std::atomic_bool draw_ui = true;
+  std::thread ui_thread{ [this, &draw_ui]() {
+    while (draw_ui) {
+      _ui.redraw();
+      std::this_thread::sleep_for(std::chrono::milliseconds{ 50 });
+    }
+  } };
+
+  const auto prepare_end = std::chrono::high_resolution_clock::now();
+  const auto prepare_duration =
+    std::chrono::duration_cast<std::chrono::milliseconds>(prepare_end - prepare_start);
+
+  const auto indexing_start = std::chrono::high_resolution_clock::now();
 
   vector<AABB> boundingBoxes;
   vector<int> numPoints;
   vector<string> sourceFilenames;
 
-  ThroughputCounter point_throughput_counter;
+  for (const auto& source : sources) {
+    // cout << "READING:  " << source << endl;
 
-  for (const auto &source : sources) {
-    //cout << "READING:  " << source << endl;
-
-    PointReader *reader = createPointReader(source, pointAttributes);
+    PointReader* reader = createPointReader(source, pointAttributes);
     // TODO We should issue a warning here if 'pointAttributes' do not match the
     // attributes available in the current file!
 
@@ -507,35 +295,21 @@ void PotreeConverter::convert() {
 
     // NOTE Points from the source file(s) are read here
     while (true) {
+      // if (progress_reporter.get_progress<size_t>(progress::LOADING) >= 10'000'000) {
+      //  break;
+      //}
+
       auto pointBatch = reader->readPointBatch();
-      if (pointBatch.empty()) break;
+      if (pointBatch.empty())
+        break;
 
-      pointsProcessed += pointBatch.count();
-      pointsSinceLastProcessing += pointBatch.count();
-      point_throughput_counter.push_entry(pointBatch.count());
-      
-      _ui_state.set_current_mode("INDEXING");
-      _ui_state.set_processed_points(pointsProcessed);
-      _ui_state.set_progress(static_cast<float>(pointsProcessed) / _ui_state.get_total_points());
-      _ui_state.set_points_per_second(static_cast<float>(point_throughput_counter.get_throughput_per_second()));
-      _ui.redraw();
+      writer.cache(pointBatch);
 
-      writer.add(pointBatch);
-
-      if (pointsSinceLastProcessing >= PROCESS_COUNT) {
-        pointsSinceLastProcessing -= PROCESS_COUNT;
-
-        writer.processStore();
-        writer.waitUntilProcessed();
-
-        auto end = high_resolution_clock::now();
-        long long duration = duration_cast<milliseconds>(end - start).count();
-        float seconds = duration / 1'000.0f;
+      if (writer.needs_indexing()) {
+        writer.index();
+        writer.wait_until_indexed();
       }
       if (writer.needs_flush()) {
-        _ui_state.set_current_mode("FLUSHING");
-        _ui.redraw();
-
         writer.flush();
       }
     }
@@ -543,25 +317,33 @@ void PotreeConverter::convert() {
     delete reader;
   }
 
-  _ui_state.set_current_mode("FINISHING");
-  _ui.redraw();
   writer.flush();
   writer.close();
 
+  const auto indexing_end = high_resolution_clock::now();
+  const auto indexing_duration =
+    std::chrono::duration_cast<std::chrono::milliseconds>(indexing_end - indexing_start);
 
-  float percent = (float)writer.numAccepted / (float)pointsProcessed;
-  percent = percent * 100;
+  const auto postprocessing_start = std::chrono::high_resolution_clock::now();
 
-  auto end = high_resolution_clock::now();
-  long long duration = duration_cast<milliseconds>(end - start).count();
+  do_cesium_3dtiles_postprocessing(
+    workDir, aabb, spacing, *transformation, pointAttributes, &progress_reporter);
 
-  std::stringstream ss;
-  ss << "Conversion finished! " << pointsProcessed << " points processed, " << writer.numAccepted << " points (" << std::fixed <<
-   std::setprecision(2) << percent << " %) written to output. Took " << (duration / 1000.0f) << "s.";
+  const auto postprocessing_end = std::chrono::high_resolution_clock::now();
 
-  _ui_state.push_message(ss.str());
-  _ui_state.set_current_mode("DONE");
-  _ui.redraw();
+  const auto postprocessing_duration = std::chrono::duration_cast<std::chrono::milliseconds>(
+    postprocessing_end - postprocessing_start);
+
+  draw_ui = false;
+  ui_thread.join();
+
+  PerformanceStats stats;
+  stats.prepare_duration = prepare_duration;
+  stats.indexing_duration = indexing_duration;
+  stats.postprocessing_duration = postprocessing_duration;
+  stats.files_written = progress_reporter.get_progress<size_t>(progress::POSTPROCESSING);
+  stats.points_processed = total_points_count;
+  dump_perf_stats(stats, workDir);
 }
 
-}  // namespace Potree
+} // namespace Potree
