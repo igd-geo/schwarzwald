@@ -19,29 +19,30 @@ namespace Potree {
 class PointAttribute;
 class PointAttributes;
 
-class LIBLASReader {
- private:
+class LIBLASReader
+{
+private:
   size_t _numPoints;
   const PointAttributes& _requestedAttributes;
 
- public:
+public:
   laszip_POINTER laszip_reader;
   laszip_header* header;
   laszip_point* point;
   int colorScale;
   double coordinates[3];
-  long long pointsRead = 0;
+  uint64_t pointsRead = 0ull;
 
-  LIBLASReader(const std::string& path,
-               const PointAttributes& requestedAttributes)
-      : _requestedAttributes(requestedAttributes) {
+  LIBLASReader(const std::string& path, const PointAttributes& requestedAttributes)
+    : _requestedAttributes(requestedAttributes)
+  {
     // TODO Error handling
     laszip_create(&laszip_reader);
 
     laszip_BOOL request_reader = 1;
     laszip_request_compatibility_mode(laszip_reader, request_reader);
 
-    {  // read first x points to find if color is 1 or 2 bytes
+    { // read first x points to find if color is 1 or 2 bytes
       laszip_BOOL is_compressed = iEndsWith(path, ".laz") ? 1 : 0;
       laszip_open_reader(laszip_reader, path.c_str(), &is_compressed);
 
@@ -73,7 +74,8 @@ class LIBLASReader {
     laszip_seek_point(laszip_reader, 0);
   }
 
-  ~LIBLASReader() {
+  ~LIBLASReader()
+  {
     laszip_close_reader(laszip_reader);
     laszip_destroy(laszip_reader);
   }
@@ -93,7 +95,8 @@ class LIBLASReader {
   bool hasAttributes(const PointAttributes& attributes,
                      PointAttributes* missingAttributes = nullptr) const;
 
-  bool readPoint() {
+  bool readPoint()
+  {
     if (pointsRead < numPoints()) {
       laszip_read_point(laszip_reader);
       pointsRead++;
@@ -104,11 +107,12 @@ class LIBLASReader {
     }
   }
 
-  Point GetPoint() {
+  Point GetPoint()
+  {
     laszip_get_coordinates(laszip_reader, coordinates);
 
     Point p;
-    p.position = {coordinates[0], coordinates[1], coordinates[2]};
+    p.position = { coordinates[0], coordinates[1], coordinates[2] };
     p.intensity = point->intensity;
     p.classification = point->classification;
 
@@ -125,7 +129,7 @@ class LIBLASReader {
 
   AABB getAABB();
 
- private:
+private:
   bool hasAttribute(const PointAttribute& attribute) const;
 
   bool hasColor() const;
@@ -133,8 +137,9 @@ class LIBLASReader {
   bool hasNormals() const;
 };
 
-class LASPointReader : public PointReader {
- private:
+class LASPointReader : public PointReader
+{
+private:
   AABB aabb;
   std::string path;
   std::unique_ptr<LIBLASReader> reader;
@@ -142,9 +147,8 @@ class LASPointReader : public PointReader {
   std::vector<std::string>::iterator currentFile;
   const PointAttributes& _requestedAttributes;
 
- public:
-  LASPointReader(const std::string& path,
-                 const PointAttributes& requestedAttributes);
+public:
+  LASPointReader(const std::string& path, const PointAttributes& requestedAttributes);
 
   ~LASPointReader();
 
@@ -159,6 +163,6 @@ class LASPointReader : public PointReader {
   Vector3<double> getScale();
 };
 
-}  // namespace Potree
+} // namespace Potree
 
 #endif

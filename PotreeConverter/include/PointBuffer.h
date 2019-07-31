@@ -16,12 +16,45 @@ namespace Potree {
 /// multiple points at once in a structure-of-array fashion. Compared to storing
 /// all points as Point structures, this has better performance for data access
 /// </summary>
-struct PointBuffer {
+struct PointBuffer
+{
+  struct PointConstReference;
+
   /// <summary>
-  /// Reference to a single point inside the PointBuffer
+  /// Mutable indirect reference to a single point inside the PointBuffer
   /// </summary>
-  struct PointReference {
+  struct PointReference
+  {
     friend struct PointBuffer;
+    friend struct PointConstReference;
+
+    PointReference(const PointReference&) = default;
+    PointReference& operator=(const PointReference&) = default;
+
+    Vector3<double>& position() const;
+    Vector3<uint8_t>* rgbColor() const;
+    Vector3<float>* normal() const;
+    uint16_t* intensity() const;
+    uint8_t* classification() const;
+
+  private:
+    PointReference(PointBuffer* pointBuffer, size_t index);
+
+    PointBuffer* _pointBuffer;
+    size_t _index;
+  };
+
+  /// <summary>
+  /// Constant indirect reference to a single point inside the PointBuffer
+  /// </summary>
+  struct PointConstReference
+  {
+    friend struct PointBuffer;
+
+    PointConstReference(const PointReference& point_reference);
+
+    PointConstReference(const PointConstReference&) = default;
+    PointConstReference& operator=(const PointConstReference&) = default;
 
     const Vector3<double>& position() const;
     const Vector3<uint8_t>* rgbColor() const;
@@ -29,8 +62,8 @@ struct PointBuffer {
     const uint16_t* intensity() const;
     const uint8_t* classification() const;
 
-   private:
-    PointReference(PointBuffer const* pointBuffer, size_t index);
+  private:
+    PointConstReference(PointBuffer const* pointBuffer, size_t index);
 
     PointBuffer const* _pointBuffer;
     size_t _index;
@@ -46,7 +79,8 @@ struct PointBuffer {
   /// vectors, their count has to be equal to the specified count, otherwise a
   /// invalid_argument error is thrown
   /// </summary>
-  PointBuffer(size_t count, std::vector<Vector3<double>> positions,
+  PointBuffer(size_t count,
+              std::vector<Vector3<double>> positions,
               std::vector<Vector3<uint8_t>> rgbColors = {},
               std::vector<Vector3<float>> normals = {},
               std::vector<uint16_t> intensities = {},
@@ -64,7 +98,7 @@ struct PointBuffer {
   /// this PointBuffer that are not defined in the given point are filled with
   /// default values
   /// </summary>
-  void push_point(PointReference point);
+  void push_point(PointConstReference point);
 
   /// <summary>
   /// Push a range of point attributes into this PointBuffer. Throws an
@@ -76,6 +110,16 @@ struct PointBuffer {
                    gsl::span<Vector3<float>> normals = {},
                    gsl::span<uint16_t> intensities = {},
                    gsl::span<uint8_t> classifications = {});
+
+  /// <summary>
+  /// Returns a constant indirect reference to the point with the given index
+  /// </summary>
+  PointConstReference get_point(size_t point_index) const;
+
+  /// <summary>
+  /// Returns a mutable indirect reference to the point with the given index
+  /// </summary>
+  PointReference get_point(size_t point_index);
 
   /// <summary>
   /// Appends the contents of the given PointBuffer to this PointBuffer. This
@@ -99,9 +143,7 @@ struct PointBuffer {
   const std::vector<Vector3<uint8_t>>& rgbColors() const { return _rgbColors; }
   const std::vector<Vector3<float>>& normals() const { return _normals; }
   const std::vector<uint16_t>& intensities() const { return _intensities; }
-  const std::vector<uint8_t>& classifications() const {
-    return _classifications;
-  }
+  const std::vector<uint8_t>& classifications() const { return _classifications; }
 
   bool hasColors() const;
   bool hasNormals() const;
@@ -111,30 +153,51 @@ struct PointBuffer {
   void verify() const;
 
   /// <summary>
-  /// Returns the raw size in bytes of the contents (positions, normals etc.) of this PointBuffer. This does NOT
-  /// include the in-memory size of a PointBuffer structure itself, but rather the allocated memory of all the
-  /// vectors of the PointBuffer
+  /// Returns the raw size in bytes of the contents (positions, normals etc.) of this PointBuffer.
+  /// This does NOT include the in-memory size of a PointBuffer structure itself, but rather the
+  /// allocated memory of all the vectors of the PointBuffer
   /// </summary>
   size_t content_byte_size() const;
 
-  struct PointConstIterator {
-    PointConstIterator(PointBuffer const& pointBuffer, size_t idx);
+  struct PointIterator
+  {
+    PointIterator(PointBuffer& pointBuffer, size_t idx);
 
     PointReference operator*() const;
+    PointIterator& operator++();
+    PointIterator operator+(size_t idx) const;
+
+    bool operator==(const PointIterator& other) const;
+    bool operator!=(const PointIterator& other) const;
+
+  private:
+    PointBuffer* _pointBuffer;
+    size_t _index;
+  };
+
+  struct PointConstIterator
+  {
+    PointConstIterator(PointBuffer const& pointBuffer, size_t idx);
+
+    PointConstReference operator*() const;
     PointConstIterator& operator++();
+    PointConstIterator operator+(size_t idx) const;
 
     bool operator==(const PointConstIterator& other) const;
     bool operator!=(const PointConstIterator& other) const;
 
-   private:
+  private:
     PointBuffer const* _pointBuffer;
     size_t _index;
   };
 
+  PointIterator begin();
+  PointIterator end();
+
   PointConstIterator begin() const;
   PointConstIterator end() const;
 
- private:
+private:
   size_t _count;
   std::vector<Vector3<double>> _positions;
   std::vector<Vector3<uint8_t>> _rgbColors;
@@ -143,4 +206,4 @@ struct PointBuffer {
   std::vector<uint8_t> _classifications;
 };
 
-}  // namespace Potree
+} // namespace Potree

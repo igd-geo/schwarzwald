@@ -164,6 +164,8 @@ bool SparseGrid::add(const Vector3<double> &p) {
   SparseGrid::iterator it = find(key);
   if (it == end()) {
     it = this->insert(value_type(key, new GridCell(this, index))).first;
+    it->second->add(p);
+    return true;
   }
 
   // TODO_LG isDistant checks the distance of the current point to all points in
@@ -171,7 +173,7 @@ bool SparseGrid::add(const Vector3<double> &p) {
   // threshold value, the point can't be inserted into that grid cell because it
   // is too close to other points
   if (isDistant(p, it->second)) {
-    this->operator[](key)->add(p);
+    it->second->add(p);
     numAccepted++;
     return true;
   } else {
@@ -205,6 +207,7 @@ size_t SparseGrid::content_byte_size() const {
   const auto cells_byte_size = std::accumulate(begin(), end(), size_t{0}, [](auto accum, const auto& kv_pair) {
     return accum + kv_pair.second->content_byte_size();
   });
+  return map_byte_size + cells_byte_size;
 }
 
 }  // namespace Potree

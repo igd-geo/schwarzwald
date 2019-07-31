@@ -1,5 +1,6 @@
 #pragma once
 
+#include "PointBuffer.h"
 #include "Vector3.h"
 #include "proj_api.h"
 
@@ -15,7 +16,8 @@ class AABB;
 /// <summary>
 /// Spatial reference systems that the SRSTransformHelper can transform into
 /// </summary>
-enum class TargetSRS {
+enum class TargetSRS
+{
   /// <summary>
   /// WGS84 specified with latitude, longitude (radians) and height over
   /// ellipsoid (meters)
@@ -30,15 +32,25 @@ enum class TargetSRS {
 /// <summary>
 /// Utility class for transforming positions between spatial reference systems
 /// </summary>
-struct SRSTransformHelper {
+struct SRSTransformHelper
+{
   virtual ~SRSTransformHelper();
 
   /// <summary>
   /// Transforms a range of positions into the target SRS. Transformation
   /// modifies the source points
   /// </summary>
-  virtual void transformPositionsTo(
-      TargetSRS targetSRS, gsl::span<Vector3<double>> positions) const = 0;
+  virtual void transformPositionsTo(TargetSRS targetSRS,
+                                    gsl::span<Vector3<double>> positions) const = 0;
+
+  /// <summary>
+  /// Transforms a range of position from the given SRS back into source coordinate space
+  /// </summary>
+  virtual void transformPositionToSourceFrom(TargetSRS currentSRS,
+                                             gsl::span<Vector3<double>> positions) const = 0;
+
+  virtual void transformPointsTo(TargetSRS targetSRS,
+                                 gsl::span<Potree::PointBuffer::PointReference> points) const = 0;
 
   /// <summary>
   /// Transforms a range of axis-aligned bounding boxes into the target SRS.
@@ -46,35 +58,42 @@ struct SRSTransformHelper {
   /// preserved after the transformation, which can result in an increase in
   /// volume of the AABBs
   /// </summary>
-  virtual void transformAABBsTo(TargetSRS targetSRS,
-                                gsl::span<AABB> aabbs) const = 0;
+  virtual void transformAABBsTo(TargetSRS targetSRS, gsl::span<AABB> aabbs) const = 0;
 };
 
 /// <summary>
 /// Identity transformation, i.e. a transformation that does nothing
 /// </summary>
-struct IdentityTransform : SRSTransformHelper {
+struct IdentityTransform : SRSTransformHelper
+{
   virtual ~IdentityTransform();
 
-  void transformPositionsTo(
-      TargetSRS targetSRS, gsl::span<Vector3<double>> positions) const override;
-  void transformAABBsTo(TargetSRS targetSRS,
-                        gsl::span<AABB> aabbs) const override;
+  void transformPositionsTo(TargetSRS targetSRS,
+                            gsl::span<Vector3<double>> positions) const override;
+  void transformPositionToSourceFrom(TargetSRS currentSRS,
+                                     gsl::span<Vector3<double>> positions) const override;
+  void transformPointsTo(TargetSRS targetSRS,
+                         gsl::span<Potree::PointBuffer::PointReference> points) const override;
+  void transformAABBsTo(TargetSRS targetSRS, gsl::span<AABB> aabbs) const override;
 };
 
 /// <summary>
 /// Transformation based on proj4 coordinate system conversion
 /// </summary>
-struct Proj4Transform : SRSTransformHelper {
+struct Proj4Transform : SRSTransformHelper
+{
   explicit Proj4Transform(const std::string& sourceTransformation);
   virtual ~Proj4Transform();
 
-  void transformPositionsTo(
-      TargetSRS targetSRS, gsl::span<Vector3<double>> positions) const override;
-  void transformAABBsTo(TargetSRS targetSRS,
-                        gsl::span<AABB> aabbs) const override;
+  void transformPositionsTo(TargetSRS targetSRS,
+                            gsl::span<Vector3<double>> positions) const override;
+  void transformPositionToSourceFrom(TargetSRS currentSRS,
+                                     gsl::span<Vector3<double>> positions) const override;
+  void transformPointsTo(TargetSRS targetSRS,
+                         gsl::span<Potree::PointBuffer::PointReference> points) const override;
+  void transformAABBsTo(TargetSRS targetSRS, gsl::span<AABB> aabbs) const override;
 
- private:
+private:
   projPJ getTargetTransformation(TargetSRS targetSRS) const;
 
   projPJ _sourceTransformation;
@@ -87,6 +106,10 @@ struct Proj4Transform : SRSTransformHelper {
 /// points. This sets the origin of the points to the smallest point. The
 /// smallest point prior to subtraction is returned
 /// </summary>
-Vector3<double> setOriginToSmallestPoint(std::vector<Vector3<double>>& points);
+Vector3<double>
+setOriginToSmallestPoint(std::vector<Vector3<double>>& points);
 
-}  // namespace Potree
+Vector3<double>
+setOriginToSmallestPoint(gsl::span<Potree::PointBuffer::PointReference> points);
+
+} // namespace Potree

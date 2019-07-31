@@ -1,26 +1,32 @@
 
 #include "PNTSWriter.h"
-#include <rapidjson/filewritestream.h>
-#include <rapidjson/writer.h>
+#include "PNTSReader.h"
 #include "Transformation.h"
 #include "rapidjson/prettywriter.h"
 #include "rapidjson/stringbuffer.h"
 #include "stuff.h"
+#include <rapidjson/document.h>
+#include <rapidjson/error/en.h>
+#include <rapidjson/filewritestream.h>
+#include <rapidjson/writer.h>
 
 #include <sstream>
 
 using namespace rapidjson;
 
-template <typename T>
-void writeBinary(const T& obj, std::ofstream& stream) {
+template<typename T>
+void
+writeBinary(const T& obj, std::ofstream& stream)
+{
   const auto mem = reinterpret_cast<const char*>(&obj);
   const auto size = sizeof(T);
   stream.write(mem, size);
 }
 
 namespace {
-static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
-    const Potree::PointAttribute& attribute) {
+static Potree::attributes::PointAttributeBase::Ptr
+createPointAttributeCache(const Potree::PointAttribute& attribute)
+{
   switch (attribute) {
     case Potree::attributes::POSITION_CARTESIAN:
       return std::make_unique<Potree::attributes::PositionAttribute>();
@@ -35,17 +41,16 @@ static Potree::attributes::PointAttributeBase::Ptr createPointAttributeCache(
       return nullptr;
   }
 }
-}  // namespace
+} // namespace
 
-Potree::PNTSWriter::PNTSWriter(const string& filePath,
-                               const PointAttributes& pointAttributes)
-    : _filePath(filePath) {
+Potree::PNTSWriter::PNTSWriter(const string& filePath, const PointAttributes& pointAttributes)
+  : _filePath(filePath)
+{
   for (auto& desiredPointAttribute : pointAttributes.attributes) {
     auto attributeCache = createPointAttributeCache(desiredPointAttribute);
     if (!attributeCache) {
       std::cerr << "Could not create attribute cache for PointAttribute "
-                << desiredPointAttribute.name
-                << "! Attribute will be skipped..." << std::endl;
+                << desiredPointAttribute.name << "! Attribute will be skipped..." << std::endl;
       continue;
     }
     _featuretable.perPointAttributes.push_back(std::move(attributeCache));
@@ -54,12 +59,17 @@ Potree::PNTSWriter::PNTSWriter(const string& filePath,
   // TODO Create global attributes (how should we define them?)
 }
 
-Potree::PNTSWriter::~PNTSWriter() { close(); }
+Potree::PNTSWriter::~PNTSWriter()
+{
+  close();
+}
 
 /*
 Writes a Point to the Batch Table
 */
-void Potree::PNTSWriter::writePoints(const PointBuffer& points) {
+void
+Potree::PNTSWriter::write_points(const PointBuffer& points)
+{
   const auto numPoints = points.count();
   if (!numPoints) {
     std::cout << "[PNTWriter::writePoints] No points to write..." << std::endl;
@@ -71,25 +81,31 @@ void Potree::PNTSWriter::writePoints(const PointBuffer& points) {
   for (auto& localAttribute : _featuretable.perPointAttributes) {
     localAttribute->extractFromPoints(points);
   }
+}
 
-  std::vector<size_t> attributeEntries;
-  std::transform(_featuretable.perPointAttributes.begin(),
-                 _featuretable.perPointAttributes.end(),
-                 std::back_inserter(attributeEntries),
-                 [](const auto& feature) { return feature->getNumEntries(); });
-  const auto diff =
-      std::adjacent_find(attributeEntries.begin(), attributeEntries.end(),
-                         [](size_t l, size_t r) { return l != r; });
-  if (diff != attributeEntries.end()) {
-    throw std::runtime_error{"Shits fucked up yo!"};
+void
+Potree::PNTSWriter::write_points(gsl::span<PointBuffer::PointReference> points)
+{
+  const auto num_points = points.size();
+  if (!num_points) {
+    std::cout << "[PNTSWriter::write_points] Received empty point range..." << std::endl;
+    return;
+  }
+
+  _featuretable.numPoints += num_points;
+
+  for (auto& local_attribute : _featuretable.perPointAttributes) {
+    local_attribute->extractFromPoints(points);
   }
 }
 
-void Potree::PNTSWriter::flush(const Vector3<double>& localCenter) {
-  std::ofstream writer{_filePath, std::ios::out | std::ios::binary};
+void
+Potree::PNTSWriter::flush(const Vector3<double>& localCenter)
+{
+  std::ofstream writer{ _filePath, std::ios::out | std::ios::binary };
   if (!writer.is_open()) {
-    std::cerr << "Could not write .pnts file \"" << _filePath << "\" ("
-              << strerror(errno) << ")" << std::endl;
+    std::cerr << "Could not write .pnts file \"" << _filePath << "\" (" << strerror(errno) << ")"
+              << std::endl;
     return;
   }
   // std::cout << "Writing \"" << _filePath << "\"..." << std::endl;
@@ -97,8 +113,7 @@ void Potree::PNTSWriter::flush(const Vector3<double>& localCenter) {
   constexpr auto HEADER_SIZE = 28u;
 
   const auto featureTableBlob = createFeatureTableBlob(localCenter);
-  const auto totalSize =
-      static_cast<uint32_t>(featureTableBlob.bytes.size()) + HEADER_SIZE;
+  const auto totalSize = static_cast<uint32_t>(featureTableBlob.bytes.size()) + HEADER_SIZE;
 
   // TODO Batch table
   const auto batchTableJSONSize = 0u;
@@ -121,11 +136,14 @@ void Potree::PNTSWriter::flush(const Vector3<double>& localCenter) {
   writer.close();
 }
 
-void Potree::PNTSWriter::close() {}
+void
+Potree::PNTSWriter::close()
+{}
 
-Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
-    const Vector3<double>& localCenter)  // create a featuretable before
-                                         // this method
+Potree::PNTSWriter::FeatureTableBlob
+Potree::PNTSWriter::createFeatureTableBlob(
+  const Vector3<double>& localCenter) // create a featuretable before
+                                      // this method
 {
   Document jsonHeader;
   auto& jsonAllocator = jsonHeader.GetAllocator();
@@ -141,13 +159,14 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
 
   // We also set the RTC_CENTER property. This prevents jitter when rendering
   // the points
-  Value localCenterArray{kArrayType};
+  Value localCenterArray{ kArrayType };
   localCenterArray.PushBack(localCenter.x, jsonAllocator);
   localCenterArray.PushBack(localCenter.y, jsonAllocator);
   localCenterArray.PushBack(localCenter.z, jsonAllocator);
   jsonHeader.AddMember("RTC_CENTER", localCenterArray, jsonAllocator);
 
-  struct AttributeDescription {
+  struct AttributeDescription
+  {
     gsl::span<const std::byte> binaryRange;
     uint32_t alignedOffset;
     std::string attributeName;
@@ -157,8 +176,7 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
 
   for (auto& perPointAttribute : _featuretable.perPointAttributes) {
     const auto attributeBytesRange = perPointAttribute->getBinaryDataRange();
-    const auto attributeByteSize =
-        static_cast<uint32_t>(attributeBytesRange.size());
+    const auto attributeByteSize = static_cast<uint32_t>(attributeBytesRange.size());
 
     if (attributeBytesRange.empty()) {
       // TODO This raises a general question: If multiple source files are
@@ -179,25 +197,21 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
     if (perPointAttribute->getNumEntries() != _featuretable.numPoints) {
       // std::stringstream ss;
       std::cerr << "Feature [" << perPointAttribute->getAttributeNameForJSON()
-                << "] has wrong number of entries (is: "
-                << perPointAttribute->getNumEntries()
-                << "; should be: " << _featuretable.numPoints << ") on node \""
-                << _filePath << "\"" << std::endl;
+                << "] has wrong number of entries (is: " << perPointAttribute->getNumEntries()
+                << "; should be: " << _featuretable.numPoints << ") on node \"" << _filePath << "\""
+                << std::endl;
       continue;
       // throw std::runtime_error{ss.str()};
     }
 
-    const auto alignmentRequirement =
-        perPointAttribute->getAlignmentRequirement();
+    const auto alignmentRequirement = perPointAttribute->getAlignmentRequirement();
     assert(alignmentRequirement > 0);
-    const auto alignedOffset =
-        align(currentAttributeOffset, alignmentRequirement);
+    const auto alignedOffset = align(currentAttributeOffset, alignmentRequirement);
 
     AttributeDescription attributeDescription;
     attributeDescription.alignedOffset = alignedOffset;
     attributeDescription.binaryRange = attributeBytesRange;
-    attributeDescription.attributeName =
-        perPointAttribute->getAttributeNameForJSON();
+    attributeDescription.attributeName = perPointAttribute->getAttributeNameForJSON();
     attributeDescriptions.push_back(attributeDescription);
 
     currentAttributeOffset = alignedOffset + attributeByteSize;
@@ -209,20 +223,19 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
 
   for (auto& attributeDescription : attributeDescriptions) {
     // Add the JSON entry containing the byte offset
-    Value key{attributeDescription.attributeName.c_str(),
-              static_cast<SizeType>(attributeDescription.attributeName.size()),
-              jsonAllocator};
+    Value key{ attributeDescription.attributeName.c_str(),
+               static_cast<SizeType>(attributeDescription.attributeName.size()),
+               jsonAllocator };
     Value obj(kObjectType);
-    obj.AddMember("byteOffset",
-                  static_cast<int>(attributeDescription.alignedOffset),
-                  jsonAllocator);
+    obj.AddMember(
+      "byteOffset", static_cast<int>(attributeDescription.alignedOffset), jsonAllocator);
     jsonHeader.AddMember(key, obj, jsonAllocator);
 
     // Copy the binary data
-    const auto startInBinaryBody =
-        binaryBody.data() + attributeDescription.alignedOffset;
+    const auto startInBinaryBody = binaryBody.data() + attributeDescription.alignedOffset;
     std::copy(attributeDescription.binaryRange.begin(),
-              attributeDescription.binaryRange.end(), startInBinaryBody);
+              attributeDescription.binaryRange.end(),
+              startInBinaryBody);
   }
 
   // TODO Global attributes for the JSON header
@@ -235,7 +248,7 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
   const uint64_t jsonHeaderSize = jsonBuffer.GetSize();
 
   // JSON header has to be 8-byte aligned
-  const auto alignedJsonHeaderSize = align(jsonHeaderSize, uint64_t{8});
+  const auto alignedJsonHeaderSize = align(jsonHeaderSize, uint64_t{ 8 });
 
   FeatureTableBlob featureTableBlob;
   featureTableBlob.binaryByteLength = binaryBufferSize;
@@ -243,186 +256,362 @@ Potree::PNTSWriter::FeatureTableBlob Potree::PNTSWriter::createFeatureTableBlob(
 
   featureTableBlob.bytes.resize(alignedJsonHeaderSize + binaryBufferSize);
   // Copy JSON header and binary body into blob
-  std::copy(
-      reinterpret_cast<std::byte const*>(jsonHeaderString),
-      reinterpret_cast<std::byte const*>(jsonHeaderString + jsonHeaderSize),
-      featureTableBlob.bytes.data());
+  std::copy(reinterpret_cast<std::byte const*>(jsonHeaderString),
+            reinterpret_cast<std::byte const*>(jsonHeaderString + jsonHeaderSize),
+            featureTableBlob.bytes.data());
   // Write some spaces for the JSON header alignment
   std::generate(featureTableBlob.bytes.data() + jsonHeaderSize,
-                featureTableBlob.bytes.data() + alignedJsonHeaderSize, []() {
+                featureTableBlob.bytes.data() + alignedJsonHeaderSize,
+                []() {
                   return (std::byte)0x20; /*0x20 = space*/
                 });
 
-  std::copy(binaryBody.begin(), binaryBody.end(),
-            featureTableBlob.bytes.data() + alignedJsonHeaderSize);
+  std::copy(
+    binaryBody.begin(), binaryBody.end(), featureTableBlob.bytes.data() + alignedJsonHeaderSize);
 
   return featureTableBlob;
 }
 
+void
+Potree::transform_pnts_file_coordinates(const std::string& file_path,
+                                        Recenter recenter,
+                                        const SRSTransformHelper& transform_helper,
+                                        const PointAttributes& points_attributes)
+{
+
+  auto pnts_file = readPNTSFile(file_path);
+  if (!pnts_file) {
+    std::cerr << "Could not read file " << file_path << std::endl;
+    return;
+  }
+  if (!fs::remove(file_path)) {
+    std::cerr << "[transform_pnts_file_coordinates] Could not remove file " << file_path
+              << std::endl;
+    return;
+  }
+
+  // Apply offset from original PNTS file
+  for (auto& position : pnts_file->points.positions()) {
+    position += pnts_file->rtc_center;
+  }
+
+  transform_helper.transformPositionsTo(TargetSRS::CesiumWorld,
+                                        gsl::make_span(pnts_file->points.positions()));
+
+  Vector3<double> local_center;
+  if (recenter == Recenter::Yes) {
+    local_center = setOriginToSmallestPoint(pnts_file->points.positions());
+  }
+
+  PNTSWriter writer{ file_path, points_attributes };
+  writer.write_points(pnts_file->points);
+  writer.flush(local_center);
+}
+
 #pragma region attributes
 
-void Potree::attributes::PositionAttribute::extractFromPoints(
-    const PointBuffer& points) {
-  if (!points.count()) return;
+void
+Potree::attributes::PositionAttribute::extractFromPoints(const PointBuffer& points)
+{
+  if (!points.count())
+    return;
 
   _positions.reserve(_positions.size() + static_cast<size_t>(points.count()));
-  std::transform(points.positions().begin(), points.positions().end(),
+  std::transform(points.positions().begin(),
+                 points.positions().end(),
                  std::back_inserter(_positions),
                  [](const Vector3<double>& position) -> Vector3<float> {
-                   return {static_cast<float>(position.x),
-                           static_cast<float>(position.y),
-                           static_cast<float>(position.z)};
+                   return { static_cast<float>(position.x),
+                            static_cast<float>(position.y),
+                            static_cast<float>(position.z) };
                  });
 }
 
-std::string Potree::attributes::PositionAttribute::getAttributeNameForJSON()
-    const {
+void
+Potree::attributes::PositionAttribute::extractFromPoints(
+  gsl::span<PointBuffer::PointReference> points)
+{
+  if (!points.size())
+    return;
+
+  _positions.reserve(_positions.size() + static_cast<size_t>(points.size()));
+  std::transform(points.begin(),
+                 points.end(),
+                 std::back_inserter(_positions),
+                 [](const auto& point_reference) -> Vector3<float> {
+                   const auto& position = point_reference.position();
+                   return { static_cast<float>(position.x),
+                            static_cast<float>(position.y),
+                            static_cast<float>(position.z) };
+                 });
+}
+
+std::string
+Potree::attributes::PositionAttribute::getAttributeNameForJSON() const
+{
   return "POSITION";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::PositionAttribute::getBinaryDataRange() const {
+Potree::attributes::PositionAttribute::getBinaryDataRange() const
+{
   const auto begin = reinterpret_cast<std::byte const*>(_positions.data());
   const auto end = begin + vector_byte_size(_positions);
-  return {begin, end};
+  return { begin, end };
 }
 
-uint32_t Potree::attributes::PositionAttribute::getAlignmentRequirement()
-    const {
-  return 4u;  // Positions are stored as float values
+uint32_t
+Potree::attributes::PositionAttribute::getAlignmentRequirement() const
+{
+  return 4u; // Positions are stored as float values
 }
 
-void Potree::attributes::PositionQuantizedAttribute::extractFromPoints(
-    const PointBuffer& points) {
+void
+Potree::attributes::PositionQuantizedAttribute::extractFromPoints(const PointBuffer& points)
+{
+  // TODO
+}
+
+void
+Potree::attributes::PositionQuantizedAttribute::extractFromPoints(
+  gsl::span<PointBuffer::PointReference> points)
+{
   // TODO
 }
 
 std::string
-Potree::attributes::PositionQuantizedAttribute::getAttributeNameForJSON()
-    const {
+Potree::attributes::PositionQuantizedAttribute::getAttributeNameForJSON() const
+{
   return "POSITION_QUANTIZED";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::PositionQuantizedAttribute::getBinaryDataRange() const {
+Potree::attributes::PositionQuantizedAttribute::getBinaryDataRange() const
+{
   // TODO
   return {};
 }
 
 uint32_t
-Potree::attributes::PositionQuantizedAttribute::getAlignmentRequirement()
-    const {
-  return uint32_t();  // TODO
+Potree::attributes::PositionQuantizedAttribute::getAlignmentRequirement() const
+{
+  return uint32_t(); // TODO
 }
 
-void Potree::attributes::RGBAAttribute::extractFromPoints(
-    const PointBuffer& points) {
-  if (!points.count()) return;
-  if (!points.hasColors()) return;
+void
+Potree::attributes::RGBAAttribute::extractFromPoints(const PointBuffer& points)
+{
+  if (!points.count())
+    return;
+  if (!points.hasColors())
+    return;
 
   _rgbaColors.reserve(_rgbaColors.size() + static_cast<size_t>(points.count()));
-  std::transform(
-      points.rgbColors().begin(), points.rgbColors().end(),
-      std::back_inserter(_rgbaColors),
-      [](const Vector3<uint8_t>& rgbColor) -> RGBA {
-        return {rgbColor.x, rgbColor.y, rgbColor.z, static_cast<uint8_t>(255)};
-      });
+  std::transform(points.rgbColors().begin(),
+                 points.rgbColors().end(),
+                 std::back_inserter(_rgbaColors),
+                 [](const Vector3<uint8_t>& rgbColor) -> RGBA {
+                   return { rgbColor.x, rgbColor.y, rgbColor.z, static_cast<uint8_t>(255) };
+                 });
 }
 
-std::string Potree::attributes::RGBAAttribute::getAttributeNameForJSON() const {
+void
+Potree::attributes::RGBAAttribute::extractFromPoints(gsl::span<PointBuffer::PointReference> points)
+{
+  if (!points.size())
+    return;
+  // Only checking the first point here, mixing PointReferences from different PointBuffers is
+  // weird...
+  if (!points[0].rgbColor())
+    return;
+
+  _rgbaColors.reserve(_rgbaColors.size() + static_cast<size_t>(points.size()));
+  std::transform(points.begin(),
+                 points.end(),
+                 std::back_inserter(_rgbaColors),
+                 [](const auto& point_reference) -> RGBA {
+                   const auto color = point_reference.rgbColor();
+                   assert(color != nullptr);
+                   return { color->x, color->y, color->z, static_cast<uint8_t>(255) };
+                 });
+}
+
+std::string
+Potree::attributes::RGBAAttribute::getAttributeNameForJSON() const
+{
   return "RGBA";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::RGBAAttribute::getBinaryDataRange() const {
+Potree::attributes::RGBAAttribute::getBinaryDataRange() const
+{
   const auto begin = reinterpret_cast<std::byte const*>(_rgbaColors.data());
   const auto end = begin + vector_byte_size(_rgbaColors);
-  return {begin, end};
+  return { begin, end };
 }
 
-uint32_t Potree::attributes::RGBAAttribute::getAlignmentRequirement() const {
+uint32_t
+Potree::attributes::RGBAAttribute::getAlignmentRequirement() const
+{
   return 1u;
 }
 
-void Potree::attributes::RGBAttribute::extractFromPoints(
-    const PointBuffer& points) {
-  if (!points.count()) return;
-  if (!points.hasColors()) return;
+void
+Potree::attributes::RGBAttribute::extractFromPoints(const PointBuffer& points)
+{
+  if (!points.count())
+    return;
+  if (!points.hasColors())
+    return;
 
   _rgbColors.reserve(_rgbColors.size() + static_cast<size_t>(points.count()));
-  std::transform(points.rgbColors().begin(), points.rgbColors().end(),
+  std::transform(points.rgbColors().begin(),
+                 points.rgbColors().end(),
                  std::back_inserter(_rgbColors),
                  [](const Vector3<uint8_t>& rgbColor) -> RGB {
-                   return {rgbColor.x, rgbColor.y, rgbColor.z};
+                   return { rgbColor.x, rgbColor.y, rgbColor.z };
                  });
 }
 
-std::string Potree::attributes::RGBAttribute::getAttributeNameForJSON() const {
+void
+Potree::attributes::RGBAttribute::extractFromPoints(gsl::span<PointBuffer::PointReference> points)
+{
+  if (!points.size())
+    return;
+  if (!points[0].rgbColor())
+    return;
+
+  _rgbColors.reserve(_rgbColors.size() + static_cast<size_t>(points.size()));
+  std::transform(points.begin(),
+                 points.end(),
+                 std::back_inserter(_rgbColors),
+                 [](const auto& point_reference) -> RGB {
+                   const auto color = point_reference.rgbColor();
+                   assert(color != nullptr);
+                   return { color->x, color->y, color->z };
+                 });
+}
+
+std::string
+Potree::attributes::RGBAttribute::getAttributeNameForJSON() const
+{
   return "RGB";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::RGBAttribute::getBinaryDataRange() const {
+Potree::attributes::RGBAttribute::getBinaryDataRange() const
+{
   const auto begin = reinterpret_cast<std::byte const*>(_rgbColors.data());
   const auto end = begin + vector_byte_size(_rgbColors);
-  return {begin, end};
+  return { begin, end };
 }
 
-uint32_t Potree::attributes::RGBAttribute::getAlignmentRequirement() const {
+uint32_t
+Potree::attributes::RGBAttribute::getAlignmentRequirement() const
+{
   return 1u;
 }
 
-void Potree::attributes::IntensityAttribute::extractFromPoints(
-    const PointBuffer& points) {
-  if (!points.count()) return;
-  if (!points.hasIntensities()) return;
+void
+Potree::attributes::IntensityAttribute::extractFromPoints(const PointBuffer& points)
+{
+  if (!points.count())
+    return;
+  if (!points.hasIntensities())
+    return;
 
-  _intensities.insert(_intensities.end(), points.intensities().begin(),
-                      points.intensities().end());
+  _intensities.insert(_intensities.end(), points.intensities().begin(), points.intensities().end());
 }
 
-std::string Potree::attributes::IntensityAttribute::getAttributeNameForJSON()
-    const {
+void
+Potree::attributes::IntensityAttribute::extractFromPoints(
+  gsl::span<PointBuffer::PointReference> points)
+{
+  if (!points.size())
+    return;
+  if (!points[0].intensity())
+    return;
+
+  _intensities.reserve(_intensities.size() + points.size());
+  std::transform(points.begin(),
+                 points.end(),
+                 std::back_inserter(_intensities),
+                 [](const auto& point_reference) -> uint16_t {
+                   const auto intensity = point_reference.intensity();
+                   assert(intensity != nullptr);
+                   return *intensity;
+                 });
+}
+
+std::string
+Potree::attributes::IntensityAttribute::getAttributeNameForJSON() const
+{
   return "INTENSITY";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::IntensityAttribute::getBinaryDataRange() const {
+Potree::attributes::IntensityAttribute::getBinaryDataRange() const
+{
   const auto begin = reinterpret_cast<std::byte const*>(_intensities.data());
   const auto end = begin + vector_byte_size(_intensities);
-  return {begin, end};
+  return { begin, end };
 }
 
-uint32_t Potree::attributes::IntensityAttribute::getAlignmentRequirement()
-    const {
+uint32_t
+Potree::attributes::IntensityAttribute::getAlignmentRequirement() const
+{
   return 2u;
 }
 
-void Potree::attributes::ClassificationAttribute::extractFromPoints(
-    const PointBuffer& points) {
-  if (!points.count()) return;
-  if (!points.hasClassifications()) return;
+void
+Potree::attributes::ClassificationAttribute::extractFromPoints(const PointBuffer& points)
+{
+  if (!points.count())
+    return;
+  if (!points.hasClassifications())
+    return;
 
-  _classifications.insert(_classifications.end(),
-                          points.classifications().begin(),
-                          points.classifications().end());
+  _classifications.insert(
+    _classifications.end(), points.classifications().begin(), points.classifications().end());
+}
+
+void
+Potree::attributes::ClassificationAttribute::extractFromPoints(
+  gsl::span<PointBuffer::PointReference> points)
+{
+  if (!points.size())
+    return;
+  if (!points[0].classification())
+    return;
+
+  _classifications.reserve(_classifications.size() + points.size());
+  std::transform(points.begin(),
+                 points.end(),
+                 std::back_inserter(_classifications),
+                 [](const auto& point_reference) -> uint16_t {
+                   const auto classification = point_reference.classification();
+                   assert(classification != nullptr);
+                   return *classification;
+                 });
 }
 
 std::string
-Potree::attributes::ClassificationAttribute::getAttributeNameForJSON() const {
+Potree::attributes::ClassificationAttribute::getAttributeNameForJSON() const
+{
   return "CLASSIFICATION";
 }
 
 gsl::span<const std::byte>
-Potree::attributes::ClassificationAttribute::getBinaryDataRange() const {
-  const auto begin =
-      reinterpret_cast<std::byte const*>(_classifications.data());
+Potree::attributes::ClassificationAttribute::getBinaryDataRange() const
+{
+  const auto begin = reinterpret_cast<std::byte const*>(_classifications.data());
   const auto end = begin + vector_byte_size(_classifications);
-  return {begin, end};
+  return { begin, end };
 }
 
-uint32_t Potree::attributes::ClassificationAttribute::getAlignmentRequirement()
-    const {
+uint32_t
+Potree::attributes::ClassificationAttribute::getAlignmentRequirement() const
+{
   return 1u;
 }
 

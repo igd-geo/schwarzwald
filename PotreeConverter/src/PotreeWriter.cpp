@@ -35,16 +35,21 @@ namespace fs = std::experimental::filesystem;
 namespace Potree {
 
 constexpr double GEOMETRIC_ERROR_CORRECTION_FACTOR = 2.0;
+constexpr size_t MAX_POINTS_CACHED_BEFORE_INDEXING = 10'000'000;
 
 /// <summary>
 /// Flush the given PointBuffer into a .pnts file. If desired, the points are
 /// appended to a potentially existing file
 /// </summary>
-static void flushPoints(PointBuffer &points, const std::string &filepath,
-                        const PointAttributes &pointAttributes,
-                        const SRSTransformHelper &transformHelper,
-                        bool appendToExistingFile, bool transformInPlace) {
-  const auto path = fs::path{filepath};
+static void
+flushPoints(PointBuffer& points,
+            const std::string& filepath,
+            const PointAttributes& pointAttributes,
+            const SRSTransformHelper& transformHelper,
+            bool appendToExistingFile,
+            bool transformInPlace)
+{
+  const auto path = fs::path{ filepath };
   const auto fileParentDirectory = path.parent_path();
   // TODO Make sure the root folder exists (this is the one specified as command
   // line argument)
@@ -52,7 +57,7 @@ static void flushPoints(PointBuffer &points, const std::string &filepath,
   //  fs::create_directories(workDir() + "/data/" + hierarchyPath());
   //}
 
-  PNTSWriter writer{filepath, pointAttributes};
+  PNTSWriter writer{ filepath, pointAttributes };
 
   std::optional<Vector3<double>> existingLocalOffsetToWorld;
 
@@ -84,13 +89,12 @@ static void flushPoints(PointBuffer &points, const std::string &filepath,
 
       const auto pntsFileContents = readPNTSFile(temppath);
       if (!pntsFileContents) {
-        std::cerr << "Could not append to \"" << filepath
-                  << "\", replacing .pnts file instead..." << std::endl;
+        std::cerr << "Could not append to \"" << filepath << "\", replacing .pnts file instead..."
+                  << std::endl;
       } else {
-        existingLocalOffsetToWorld =
-            std::make_optional(pntsFileContents->rtc_center);
+        existingLocalOffsetToWorld = std::make_optional(pntsFileContents->rtc_center);
         if (pntsFileContents->points.count()) {
-          writer.writePoints(pntsFileContents->points);
+          writer.write_points(pntsFileContents->points);
         }
       }
 
@@ -117,27 +121,27 @@ static void flushPoints(PointBuffer &points, const std::string &filepath,
       // Transform into the existing local coordinate system based on the points
       // that we append to
       localOffsetToWorld = *existingLocalOffsetToWorld;
-      for (auto &position : points.positions()) {
+      for (auto& position : points.positions()) {
         position -= localOffsetToWorld;
       }
     } else {
       localOffsetToWorld = setOriginToSmallestPoint(points.positions());
     }
-    writer.writePoints(points);
+    writer.write_points(points);
   } else {
     // TODO Figure out a way to get rid of this copy
     auto pointsCopy = points;
-    transformHelper.transformPositionsTo(
-        TargetSRS::CesiumWorld, gsl::make_span(pointsCopy.positions()));
+    transformHelper.transformPositionsTo(TargetSRS::CesiumWorld,
+                                         gsl::make_span(pointsCopy.positions()));
     if (existingLocalOffsetToWorld) {
       localOffsetToWorld = *existingLocalOffsetToWorld;
-      for (auto &position : pointsCopy.positions()) {
+      for (auto& position : pointsCopy.positions()) {
         position -= localOffsetToWorld;
       }
     } else {
       localOffsetToWorld = setOriginToSmallestPoint(pointsCopy.positions());
     }
-    writer.writePoints(pointsCopy);
+    writer.write_points(pointsCopy);
   }
 
   writer.flush(localOffsetToWorld);
@@ -155,9 +159,10 @@ static void flushPoints(PointBuffer &points, const std::string &filepath,
   // writer->close();
 }
 
-PWNode::PWNode(PotreeWriter *potreeWriter, AABB aabb,
-               const SRSTransformHelper &transformHelper)
-    : tileset(""), _transformHelper(transformHelper) {
+PWNode::PWNode(PotreeWriter* potreeWriter, AABB aabb, const SRSTransformHelper& transformHelper)
+  : tileset("")
+  , _transformHelper(transformHelper)
+{
   this->potreeWriter = potreeWriter;
   this->aabb = aabb;
   this->grid = new SparseGrid(aabb, spacing());
@@ -168,9 +173,14 @@ PWNode::PWNode(PotreeWriter *potreeWriter, AABB aabb,
   tileset.geometricError = spacing() * GEOMETRIC_ERROR_CORRECTION_FACTOR;
 }
 
-PWNode::PWNode(PotreeWriter *potreeWriter, int index, AABB aabb, int level,
-               const SRSTransformHelper &transformHelper)
-    : tileset(""), _transformHelper(transformHelper) {
+PWNode::PWNode(PotreeWriter* potreeWriter,
+               int index,
+               AABB aabb,
+               int level,
+               const SRSTransformHelper& transformHelper)
+  : tileset("")
+  , _transformHelper(transformHelper)
+{
   this->index = index;
   this->aabb = aabb;
   this->level = level;
@@ -183,8 +193,9 @@ PWNode::PWNode(PotreeWriter *potreeWriter, int index, AABB aabb, int level,
   tileset.geometricError = spacing() * GEOMETRIC_ERROR_CORRECTION_FACTOR;
 }
 
-PWNode::~PWNode() {
-  for (PWNode *child : children) {
+PWNode::~PWNode()
+{
+  for (PWNode* child : children) {
     if (child != NULL) {
       delete child;
     }
@@ -192,7 +203,9 @@ PWNode::~PWNode() {
   delete grid;
 }
 
-string PWNode::name() const {
+string
+PWNode::name() const
+{
   if (parent == NULL) {
     return "r";
   } else {
@@ -200,36 +213,57 @@ string PWNode::name() const {
   }
 }
 
-float PWNode::spacing() {
+float
+PWNode::spacing()
+{
   return float(potreeWriter->spacing / pow(2.0, float(level)));
 }
 
-string PWNode::workDir() const { return potreeWriter->workDir; }
+string
+PWNode::workDir() const
+{
+  return potreeWriter->workDir;
+}
 
-std::string PWNode::jsonPathAbsolute() const {
+std::string
+PWNode::jsonPathAbsolute() const
+{
   return workDir() + "/" + name() + ".json";
 }
-std::string PWNode::pntsPathAbsolute() const {
+std::string
+PWNode::pntsPathAbsolute() const
+{
   return workDir() + "/" + name() + ".pnts";
 }
 
-std::string PWNode::jsonPathRelative() const { return name() + ".json"; }
-std::string PWNode::pntsPathRelative() const { return name() + ".pnts"; }
+std::string
+PWNode::jsonPathRelative() const
+{
+  return name() + ".json";
+}
+std::string
+PWNode::pntsPathRelative() const
+{
+  return name() + ".pnts";
+}
 
-PointReader *PWNode::createReader(string path) {
-  PointReader *reader = NULL;
+PointReader*
+PWNode::createReader(string path)
+{
+  PointReader* reader = NULL;
   OutputFormat outputFormat = this->potreeWriter->outputFormat;
   if (outputFormat == OutputFormat::LAS || outputFormat == OutputFormat::LAZ) {
     reader = new LASPointReader(path, potreeWriter->pointAttributes);
   } else if (outputFormat == OutputFormat::BINARY) {
-    reader = new BINPointReader(path, aabb, potreeWriter->scale,
-                                potreeWriter->pointAttributes);
+    reader = new BINPointReader(path, aabb, potreeWriter->scale, potreeWriter->pointAttributes);
   }
 
   return reader;
 }
 
-void PWNode::loadFromDisk() {
+void
+PWNode::loadFromDisk()
+{
   // This loads the contents of a node from disk. Nodes are evicted from memory
   // if they are flushed and no points have been added since the last flush
   auto pntsFileContents = readPNTSFile(pntsPathAbsolute());
@@ -240,15 +274,19 @@ void PWNode::loadFromDisk() {
   }
 
   // Transform point positions back to world
-  auto &points = pntsFileContents->points;
-  for (auto &position : points.positions()) {
+  auto& points = pntsFileContents->points;
+  for (auto& position : points.positions()) {
     position += pntsFileContents->rtc_center;
   }
+
+  // Convert back to source projection space
+  _transformHelper.transformPositionToSourceFrom(TargetSRS::CesiumWorld,
+                                                 gsl::make_span(points.positions()));
 
   if (isLeafNode()) {
     store.append_buffer(points);
   } else {
-    for (auto &position : points.positions()) {
+    for (auto& position : points.positions()) {
       grid->addWithoutCheck(position);
     }
     cache.append_buffer(points);
@@ -259,18 +297,18 @@ void PWNode::loadFromDisk() {
   isInMemory = true;
 }
 
-PWNode *PWNode::createChild(int childIndex) {
+PWNode*
+PWNode::createChild(int childIndex)
+{
   AABB cAABB = childAABB(aabb, childIndex);
-  PWNode *child =
-      new PWNode(potreeWriter, childIndex, cAABB, level + 1, _transformHelper);
+  PWNode* child = new PWNode(potreeWriter, childIndex, cAABB, level + 1, _transformHelper);
   child->parent = this;
   children[childIndex] = child;
 
   // Write childs properties
   // TODO: correct geometric errors
 
-  child->tileset.boundingVolume =
-      boundingVolumeFromAABB(aabb, _transformHelper);
+  child->tileset.boundingVolume = boundingVolumeFromAABB(aabb, _transformHelper);
 
   child->tileset.url = child->jsonPathRelative();
 
@@ -287,7 +325,9 @@ PWNode *PWNode::createChild(int childIndex) {
   return child;
 }
 
-void PWNode::split() {  // Update tileset.json children ??
+void
+PWNode::split()
+{ // Update tileset.json children ??
   children.resize(8, nullptr);
 
   const auto jsonFilepath = jsonPathAbsolute();
@@ -306,15 +346,17 @@ void PWNode::split() {  // Update tileset.json children ??
   store.clear();
 }
 
-PWNode *PWNode::add(PointBuffer::PointReference point) {
+PWNode*
+PWNode::add(PointBuffer::PointConstReference point)
+{
   addCalledSinceLastFlush = true;
 
   if (!isInMemory) {
     loadFromDisk();
   }
 
-  if (isLeafNode()) {  // If the node is a leaf node just append the point
-                       // (split)
+  if (isLeafNode()) { // If the node is a leaf node just append the point
+                      // (split)
     store.push_point(point);
     if (int(store.count()) >= storeLimit) {
       split();
@@ -342,10 +384,10 @@ PWNode *PWNode::add(PointBuffer::PointReference point) {
 
       int childIndex = nodeIndex(aabb, point.position());
       if (childIndex >= 0) {
-        if (isLeafNode()) {  // TODO Redundant check?
+        if (isLeafNode()) { // TODO Redundant check?
           children.resize(8, NULL);
         }
-        PWNode *child = children[childIndex];
+        PWNode* child = children[childIndex];
 
         // create child node if not existent
         if (child == NULL) {
@@ -362,14 +404,16 @@ PWNode *PWNode::add(PointBuffer::PointReference point) {
   }
 }
 
-void PWNode::flush() {
+void
+PWNode::flush()
+{
   if (isLeafNode()) {
     if (addCalledSinceLastFlush) {
       // Leaf node, can't transform inplace
-      flushPoints(store, pntsPathAbsolute(), potreeWriter->pointAttributes,
-                  _transformHelper, false, false);
+      flushPoints(
+        store, pntsPathAbsolute(), potreeWriter->pointAttributes, _transformHelper, false, false);
       writeTilesetJSON(jsonPathAbsolute(), tileset);
-    } else if(!addCalledSinceLastFlush && isInMemory) {
+    } else if (!addCalledSinceLastFlush && isInMemory) {
       store.clear();
 
       isInMemory = false;
@@ -377,8 +421,8 @@ void PWNode::flush() {
   } else {
     if (addCalledSinceLastFlush) {
       // Interior node, cache is cleared after write so we can transform inplace
-      flushPoints(cache, pntsPathAbsolute(), potreeWriter->pointAttributes,
-                  _transformHelper, true, true);
+      flushPoints(
+        cache, pntsPathAbsolute(), potreeWriter->pointAttributes, _transformHelper, true, true);
       writeTilesetJSON(jsonPathAbsolute(), tileset);
       // if(cache.size() != this->numAccepted){
       //	cout << "cache " << cache.size() << " != " << this->numAccepted
@@ -396,20 +440,22 @@ void PWNode::flush() {
 
   addCalledSinceLastFlush = false;
 
-  for (PWNode *child : children) {
+  for (PWNode* child : children) {
     if (child != NULL) {
       child->flush();
     }
   }
 }
 
-vector<PWNode *> PWNode::getHierarchy(int levels) {
-  vector<PWNode *> hierarchy;
+vector<PWNode*>
+PWNode::getHierarchy(int levels)
+{
+  vector<PWNode*> hierarchy;
 
-  std::list<PWNode *> stack;
+  std::list<PWNode*> stack;
   stack.push_back(this);
   while (!stack.empty()) {
-    PWNode *node = stack.front();
+    PWNode* node = stack.front();
     stack.pop_front();
 
     if (node->level >= this->level + levels) {
@@ -417,7 +463,7 @@ vector<PWNode *> PWNode::getHierarchy(int levels) {
     }
     hierarchy.push_back(node);
 
-    for (PWNode *child : node->children) {
+    for (PWNode* child : node->children) {
       if (child != NULL) {
         stack.push_back(child);
       }
@@ -427,17 +473,21 @@ vector<PWNode *> PWNode::getHierarchy(int levels) {
   return hierarchy;
 }
 
-void PWNode::traverse(std::function<void(PWNode *)> callback) {
+void
+PWNode::traverse(std::function<void(PWNode*)> callback)
+{
   callback(this);
 
-  for (PWNode *child : this->children) {
+  for (PWNode* child : this->children) {
     if (child != NULL) {
       child->traverse(callback);
     }
   }
 }
 
-void PWNode::traverseBreadthFirst(std::function<void(PWNode *)> callback) {
+void
+PWNode::traverseBreadthFirst(std::function<void(PWNode*)> callback)
+{
   // https://en.wikipedia.org/wiki/Iterative_deepening_depth-first_search
 
   int currentLevel = 0;
@@ -445,17 +495,17 @@ void PWNode::traverseBreadthFirst(std::function<void(PWNode *)> callback) {
 
   do {
     // doing depth first search until node->level = curentLevel
-    stack<PWNode *> st;
+    stack<PWNode*> st;
     st.push(this);
     while (!st.empty()) {
-      PWNode *node = st.top();
+      PWNode* node = st.top();
       st.pop();
 
       if (node->level == currentLevel) {
         callback(node);
         visitedAtLevel++;
       } else if (node->level < currentLevel) {
-        for (PWNode *child : node->children) {
+        for (PWNode* child : node->children) {
           if (child != NULL) {
             st.push(child);
           }
@@ -468,7 +518,9 @@ void PWNode::traverseBreadthFirst(std::function<void(PWNode *)> callback) {
   } while (visitedAtLevel > 0);
 }
 
-PWNode *PWNode::findNode(string name) {
+PWNode*
+PWNode::findNode(string name)
+{
   string thisName = this->name();
 
   if (name.size() == thisName.size()) {
@@ -485,39 +537,54 @@ PWNode *PWNode::findNode(string name) {
   }
 }
 
-size_t PWNode::estimate_binary_size() const {
-  const auto self_size = cache.content_byte_size() + store.content_byte_size() + (grid ? grid->content_byte_size() : size_t{0});
-  const auto children_size = std::accumulate(children.begin(), children.end(), size_t{0}, [](auto accum, auto child) {
-    if(!child) return accum;
-    return accum + child->estimate_binary_size();
-  });
+size_t
+PWNode::estimate_binary_size() const
+{
+  const auto self_size = cache.content_byte_size() + store.content_byte_size() +
+                         (grid ? grid->content_byte_size() : size_t{ 0 });
+  const auto children_size =
+    std::accumulate(children.begin(), children.end(), size_t{ 0 }, [](auto accum, auto child) {
+      if (!child)
+        return accum;
+      return accum + child->estimate_binary_size();
+    });
 
   return self_size + children_size;
 }
 
-PotreeWriter::PotreeWriter(string workDir, ConversionQuality quality,
-                           const SRSTransformHelper &transform, uint32_t max_memory_usage_MiB)
-    : _transform(transform), _needs_flush(false), _max_memory_usage_MiB(max_memory_usage_MiB) {
+PotreeWriter::PotreeWriter(string workDir,
+                           ConversionQuality quality,
+                           const SRSTransformHelper& transform,
+                           uint32_t max_memory_usage_MiB)
+  : _transform(transform)
+  , _max_memory_usage_MiB(max_memory_usage_MiB)
+  , _needs_flush(false)
+{
   this->workDir = workDir;
   this->quality = quality;
 }
 
-PotreeWriter::PotreeWriter(string workDir, AABB aabb, float spacing,
-                           int maxDepth, double scale,
+PotreeWriter::PotreeWriter(string workDir,
+                           AABB aabb,
+                           float spacing,
+                           int maxDepth,
+                           double scale,
                            OutputFormat outputFormat,
                            PointAttributes pointAttributes,
                            ConversionQuality quality,
-                           const SRSTransformHelper &transform, uint32_t max_memory_usage_MiB)
-    : _transform(transform),
-      _needs_flush(false),
-      workDir(std::move(workDir)),
-      aabb(aabb),
-      spacing(spacing),
-      maxDepth(maxDepth),
-      outputFormat(outputFormat),
-      pointAttributes(pointAttributes),
-      quality(quality),
-      _max_memory_usage_MiB(max_memory_usage_MiB) {
+                           const SRSTransformHelper& transform,
+                           uint32_t max_memory_usage_MiB)
+  : aabb(aabb)
+  , workDir(std::move(workDir))
+  , spacing(spacing)
+  , maxDepth(maxDepth)
+  , outputFormat(outputFormat)
+  , pointAttributes(pointAttributes)
+  , quality(quality)
+  , _transform(transform)
+  , _max_memory_usage_MiB(max_memory_usage_MiB)
+  , _needs_flush(false)
+{
   if (this->scale == 0) {
     if (aabb.size.length() > 1'000'000) {
       this->scale = 0.01;
@@ -533,7 +600,9 @@ PotreeWriter::PotreeWriter(string workDir, AABB aabb, float spacing,
   root = new PWNode(this, aabb, transform);
 }
 
-string PotreeWriter::getExtension() {
+string
+PotreeWriter::getExtension()
+{
   if (outputFormat == OutputFormat::LAS) {
     return ".las";
   } else if (outputFormat == OutputFormat::LAZ) {
@@ -545,37 +614,46 @@ string PotreeWriter::getExtension() {
   return "";
 }
 
-void PotreeWriter::waitUntilProcessed() {
+bool
+PotreeWriter::needs_indexing() const
+{
+  return store.count() >= MAX_POINTS_CACHED_BEFORE_INDEXING;
+}
+
+void
+PotreeWriter::wait_until_indexed()
+{
   if (storeThread.joinable()) {
     storeThread.join();
   }
 }
 
-void PotreeWriter::add(const PointBuffer &points) {
+void
+PotreeWriter::cache(const PointBuffer& points)
+{
   store.append_buffer(points);
-
-  if (store.count() > 10'000) {
-    processStore();
-  }
 }
 
 /*
 
 */
-void PotreeWriter::processStore() {
+void
+PotreeWriter::index()
+{
   auto movedStore = std::move(store);
   store = {};
 
-  waitUntilProcessed();
+  wait_until_indexed();
 
   const auto current_size = root->estimate_binary_size();
   const auto current_size_MiB = (current_size / (1024.0 * 1024.0));
-  //std::cout << "Tree structure binary size: " << std::setprecision(2) << current_size_MiB << "MiB (maximum " << _max_memory_usage_MiB << " MiB)" << std::endl;
+  // std::cout << "Tree structure binary size: " << std::setprecision(2) << current_size_MiB << "MiB
+  // (maximum " << _max_memory_usage_MiB << " MiB)" << std::endl;
   _needs_flush = (current_size_MiB >= _max_memory_usage_MiB);
 
   storeThread = thread([this, pointsStore = std::move(movedStore)] {
     for (auto point : pointsStore) {
-      PWNode *acceptedBy = root->add(point);
+      PWNode* acceptedBy = root->add(point);
       if (acceptedBy) {
         tightAABB.update(point.position());
 
@@ -586,8 +664,10 @@ void PotreeWriter::processStore() {
   });
 }
 
-void PotreeWriter::flush() {
-  processStore();
+void
+PotreeWriter::flush()
+{
+  index();
 
   if (storeThread.joinable()) {
     storeThread.join();
@@ -595,13 +675,19 @@ void PotreeWriter::flush() {
 
   root->flush();
 
-  root->traverse([](PWNode *node) { node->addedSinceLastFlush = false; });
+  root->traverse([](PWNode* node) { node->addedSinceLastFlush = false; });
 
   _needs_flush = false;
 }
 
-bool PotreeWriter::needs_flush() const {
+bool
+PotreeWriter::needs_flush() const
+{
   return _needs_flush;
 }
 
-}  // namespace Potree
+void
+PotreeWriter::close()
+{}
+
+} // namespace Potree

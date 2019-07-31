@@ -4,6 +4,7 @@ set(RAPIDJSON_INCLUDE_DIR lib/rapidjson/include)
 set(ARGUMENTS_INCLUDE_DIR lib/arguments)
 
 file(GLOB_RECURSE files src/*.cpp include/*.h include/*.hpp )
+file(GLOB_RECURSE test_files test/*.h test/*.cpp)
 file(GLOB_RECURSE lib_rapidjson_files ${RAPIDJSON_INCLUDE_DIR}/* )
 file(GLOB_RECURSE lib_argument_files ${ARGUMENTS_INCLUDE_DIR}/* )
 
@@ -72,6 +73,33 @@ if(UNIX)
 				-lstdc++fs)
 else()
 	target_link_libraries(PotreeConverter 
+		PUBLIC 
+				${LASZIP_LIBRARY} 
+				${TERMINALPP_LIBRARY} 
+				proj 
+				Microsoft.GSL::GSL 
+				Boost::system 
+		PRIVATE 
+				glm)
+endif()
+
+# filter the main file from the 'files' list so that test build doesn't get multiple main definitions
+set(files_without_main ${files})
+list(FILTER files_without_main EXCLUDE REGEX "main.cpp")
+add_executable(PotreeConverterTest ${files_without_main} ${test_files} ${lib_rapidjson_files} ${lib_argument_files})
+
+if(UNIX)
+	target_link_libraries(PotreeConverterTest  
+		PUBLIC 	${LASZIP_LIBRARY} 
+				${TERMINALPP_LIBRARY} 
+				proj 
+				Microsoft.GSL::GSL 
+				Boost::system
+		PRIVATE 
+				glm 
+				-lstdc++fs)
+else()
+	target_link_libraries(PotreeConverterTest 
 		PUBLIC 
 				${LASZIP_LIBRARY} 
 				${TERMINALPP_LIBRARY} 
