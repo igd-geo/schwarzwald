@@ -128,8 +128,8 @@ PotreeConverter::prepare()
   for (const auto& source : sources) {
     fs::path pSource(source);
     if (fs::is_directory(pSource)) {
-      fs::directory_iterator it(pSource);
-      for (; it != fs::directory_iterator(); it++) {
+      fs::recursive_directory_iterator it(pSource);
+      for (; it != fs::recursive_directory_iterator(); it++) {
         fs::path pDirectoryEntry = it->path();
         if (fs::is_regular_file(pDirectoryEntry)) {
           string filepath = pDirectoryEntry.string();
@@ -253,7 +253,10 @@ PotreeConverter::convert()
   Cesium3DTilesPersistence persistence{ workDir, pointAttributes, *transformation };
 
   const auto max_depth =
-    (maxDepth <= 0) ? std::numeric_limits<uint32_t>::max() : static_cast<uint32_t>(maxDepth);
+    (maxDepth <= 0)
+      ? (100u)
+      : static_cast<uint32_t>(maxDepth); // TODO max_depth parameter with uint32_t max
+                                         // results in only root level being created...
 
   // PotreeWriter writer{ this->workDir,   aabb,
   //                      spacing,         maxDepth,
