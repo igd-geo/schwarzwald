@@ -7,7 +7,7 @@ HunterGate(
     SHA1 "0b8c31bfdf0fd2fa87b4f743aabcd73904afa256"
 )
 
-project(Potree)
+project(PointcloudTilerRoot)
 
 set(LASZIP_INCLUDE_DIRS "" CACHE STRING "Include directory for LASzip")
 set(LASZIP_LIBRARY "" CACHE STRING "Path to LASzip library file")
@@ -27,9 +27,9 @@ if(UNIX)
 endif()
 
 
-add_subdirectory(PotreeConverter)
+add_subdirectory(PointcloudTiler)
 
-if (MSVC_VERSION GREATER_EQUAL "1900")
+if (MSVC_VERSION GREATER_EQUAL "1900") 
     include(CheckCXXCompilerFlag)
     CHECK_CXX_COMPILER_FLAG("/std:c++latest" _cpp_latest_flag_supported)
     if (_cpp_latest_flag_supported)

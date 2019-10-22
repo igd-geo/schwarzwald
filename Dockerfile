@@ -32,16 +32,15 @@ RUN cmake -DCMAKE_BUILD_TYPE=Release .
 RUN make
 
 WORKDIR /data
-RUN mkdir PotreeConverter
-WORKDIR /data/PotreeConverter
-ADD . /data/PotreeConverter
+RUN mkdir PointcloudTiler
+WORKDIR /data/PointcloudTiler
+ADD . /data/PointcloudTiler
 RUN mkdir build
 RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so -DTERMINALPP_INCLUDE_DIRS=/data/terminalpp/include -DTERMINALPP_LIBRARY=/data/terminalpp/libterminalpp.a .. 
 RUN cd build && make
-RUN cp -R /data/PotreeConverter/PotreeConverter/resources/ /data
 
 # copy libproj.so dependency to a temporary directory
-RUN ldd /data/PotreeConverter/build/Release/PotreeConverter | grep 'libproj.so' | awk '{print $3}' | xargs -I '{}' cp -v '{}' /tmp/
+RUN ldd /data/PointcloudTiler/build/Release/PointcloudTiler | grep 'libproj.so' | awk '{print $3}' | xargs -I '{}' cp -v '{}' /tmp/
 
 # after building, create smaller image that only contains the binary
 # and its dependencies
@@ -53,6 +52,6 @@ COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /usr/lib/liblaszi
 COPY --from=build /tmp/libproj.so* /usr/lib/
 
 # copy binary
-COPY --from=build /data/PotreeConverter/build/Release/PotreeConverter /potree-3d-tiles/PotreeConverter/build/Release/PotreeConverter
+COPY --from=build /data/PointcloudTiler/build/Release/PointcloudTiler /pointcloud-tiler/PointcloudTiler/build/Release/PointcloudTiler
 
-ENTRYPOINT ["/potree-3d-tiles/PotreeConverter/build/Release/PotreeConverter"]
+ENTRYPOINT ["/pointcloud-tiler/PointcloudTiler/build/Release/PointcloudTiler"]

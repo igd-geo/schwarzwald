@@ -1,9 +1,9 @@
-Potree.v11.suo
-Potree.v12.suo
-Potree.sdf
-PotreeConverter/bin
-PotreeConverter/obj
-Potree.opensdf
+PointcloudTiler.v11.suo
+PointcloudTiler.v12.suo
+PointcloudTiler.sdf
+PointcloudTiler/bin
+PointcloudTiler/obj
+PointcloudTiler.opensdf
 bin/
 obj
 build/*
@@ -22,6 +22,6 @@ cmake/*
 _3rdParty/
 CMakeFiles/
 
-PotreeConverter/Makefile
+PointcloudTiler/Makefile
 CMakeCache.txt
 cmake_install.cmake
