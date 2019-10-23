@@ -257,7 +257,7 @@ create_tileset_for_interior_node(const OctreeNode &node,
         child_node->children.begin(), child_node->children.end(),
         [](const auto &child_of_child) { return child_of_child != nullptr; });
 
-    if (max_level == 0 && child_has_children) {
+    if (max_level == 1 && child_has_children) {
       tileset.children.push_back(
           create_tileset_for_leaf_node(*child_node, transformation));
     } else {
@@ -277,6 +277,7 @@ create_tileset_for_leaf_node(const OctreeNode &node,
   tileset.url = node.name + ".json";
   tileset.geometricError = node.spacing * spacing_correction_factor;
   tileset.boundingVolume = boundingVolumeFromAABB(node.bounds, transformation);
+  tileset.content_url = node.name + ".json";
 
   return tileset;
 }
