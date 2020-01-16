@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "stuff.h"
+#include "util/Algorithm.h"
 
 #include <vector>
 

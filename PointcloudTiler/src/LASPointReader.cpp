@@ -9,7 +9,25 @@
 #include "PointAttributes.hpp"
 #include "stuff.h"
 
-namespace fs = std::experimental::filesystem;
+struct PositionDestructure
+{
+  using TargetType_t = Vector3<double>;
+
+  template<typename Iter>
+  void operator()(laszip_POINTER las_reader, laszip_point* las_point, Iter out)
+  {
+    TargetType_t& out_val = *out;
+    laszip_get_coordinates(las_reader, reinterpret_cast<double*>(&out_val));
+  }
+};
+
+template<typename... Args>
+void
+las_point_destructure()
+{
+  // Args define how a single attribute is destructured, i.e. how one attribute of a
+  // LASPoint maps to an array entry in a PointBuffer
+}
 
 PointBuffer
 LIBLASReader::readNextBatch(size_t maxBatchSize)
@@ -33,12 +51,13 @@ LIBLASReader::readNextBatch(size_t maxBatchSize)
                      std::vector<Vector3<float>>&,
                      std::vector<uint16_t>&,
                      std::vector<uint8_t>&)>
-    readCurrentPoint = [this](size_t currentIdx,
-                              auto& positions,
-                              auto& colors,
-                              auto& normals,
-                              auto& intensities,
-                              auto& classifications) { laszip_read_point(laszip_reader); };
+    readCurrentPoint =
+      [this](size_t currentIdx,
+             auto& positions,
+             auto& colors,
+             auto& normals,
+             auto& intensities,
+             auto& classifications) { laszip_read_point(laszip_reader); }; // TODO This can throw
 
   std::vector<Vector3<double>> positions;
   std::vector<Vector3<uint8_t>> colors;
@@ -60,7 +79,7 @@ LIBLASReader::readNextBatch(size_t maxBatchSize)
                                     laszip_get_coordinates(laszip_reader, currentPositionPtr);
                                   });
 
-  if (_requestedAttributes.has(attributes::COLOR_PACKED)) {
+  if (has_attribute(_requestedAttributes, attributes::COLOR_PACKED)) {
     colors.reserve(batchSize);
 
     readCurrentPoint =
@@ -77,7 +96,7 @@ LIBLASReader::readNextBatch(size_t maxBatchSize)
                    });
   }
 
-  if (_requestedAttributes.has(attributes::INTENSITY)) {
+  if (has_attribute(_requestedAttributes, attributes::INTENSITY)) {
     intensities.reserve(batchSize);
 
     readCurrentPoint =
@@ -90,7 +109,7 @@ LIBLASReader::readNextBatch(size_t maxBatchSize)
                           auto& classifications) { intensities.push_back(point->intensity); });
   }
 
-  if (_requestedAttributes.has(attributes::COLOR_FROM_INTENSITY)) {
+  if (has_attribute(_requestedAttributes, attributes::COLOR_FROM_INTENSITY)) {
     colors.reserve(batchSize);
 
     readCurrentPoint = continueWith(
@@ -103,7 +122,7 @@ LIBLASReader::readNextBatch(size_t maxBatchSize)
              auto& classifications) { colors.push_back(intensityToRGB_Log(point->intensity)); });
   }
 
-  if (_requestedAttributes.has(attributes::CLASSIFICATION)) {
+  if (has_attribute(_requestedAttributes, attributes::CLASSIFICATION)) {
     classifications.reserve(batchSize);
 
     readCurrentPoint = continueWith(
@@ -137,12 +156,12 @@ LIBLASReader::hasAttributes(const PointAttributes& attributes,
                             PointAttributes* missingAttributes) const
 {
   auto foundMissingAttributes = false;
-  for (auto& attribute : attributes.attributes) {
+  for (auto& attribute : attributes) {
     if (!hasAttribute(attribute)) {
       foundMissingAttributes = true;
       if (!missingAttributes)
         break;
-      missingAttributes->add(attribute);
+      missingAttributes->push_back(attribute);
     }
   }
   return !foundMissingAttributes;
@@ -151,15 +170,7 @@ LIBLASReader::hasAttributes(const PointAttributes& attributes,
 AABB
 LIBLASReader::getAABB() const
 {
-  AABB aabb;
-
-  // TODO Implement AABB with coordinate transformation
-  // Point minp = transform(header->min_x, header->min_y, header->min_z);
-  // Point maxp = transform(header->max_x, header->max_y, header->max_z);
-  aabb.update({ header->min_x, header->min_y, header->min_z });
-  aabb.update({ header->max_x, header->max_y, header->max_z });
-
-  return aabb;
+  return _bounds;
 }
 
 Vector3<double>
@@ -247,7 +258,8 @@ LASPointReader::LASPointReader(const std::string& path, const PointAttributes& r
     //   std::cerr << "LAS/LAZ file \"" << path
     //             << "\" is missing the following requested attributes: ";
     //   std::cerr << missingAttributes.toString();
-    //   std::cerr << " These attributes will be filled with default values!" << std::endl;
+    //   std::cerr << " These attributes will be filled with default values!" <<
+    //   std::endl;
     // }
   }
 

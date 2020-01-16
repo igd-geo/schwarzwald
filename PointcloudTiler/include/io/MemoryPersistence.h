@@ -13,6 +13,9 @@ struct MemoryPersistence : IPointsPersistence
   void persist_points(gsl::span<PointBuffer::PointReference> points,
                       const AABB& bounds,
                       const std::string& node_name) override;
+  void persist_points(PointBuffer const& points,
+                      const AABB& bounds,
+                      const std::string& node_name) override;
   void persist_indices(gsl::span<MortonIndex64> indices, const std::string& node_name) override;
 
   void retrieve_points(const std::string& node_name, PointBuffer& points) override;

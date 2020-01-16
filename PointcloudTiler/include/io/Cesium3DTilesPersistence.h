@@ -1,9 +1,9 @@
 #pragma once
 
 #include "IPointsPersistence.h"
+#include "PointAttributes.hpp"
 
 struct SRSTransformHelper;
-class PointAttributes;
 
 /**
  * Sink for writing 3D Tiles files
@@ -16,6 +16,9 @@ struct Cesium3DTilesPersistence : IPointsPersistence
   ~Cesium3DTilesPersistence() override;
 
   void persist_points(gsl::span<PointBuffer::PointReference> points,
+                      const AABB& bounds,
+                      const std::string& node_name) override;
+  void persist_points(PointBuffer const& points,
                       const AABB& bounds,
                       const std::string& node_name) override;
   void persist_indices(gsl::span<MortonIndex64> indices, const std::string& node_name) override;

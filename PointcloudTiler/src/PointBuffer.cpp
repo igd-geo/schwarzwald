@@ -36,6 +36,84 @@ PointBuffer::PointBuffer(size_t count,
   }
 }
 
+PointBuffer::PointBuffer(gsl::span<PointReference> points)
+  : _count(points.size())
+{
+  if (!_count)
+    return;
+
+  const auto& first_point = points.at(0);
+
+  _positions.reserve(_count);
+  if (first_point.rgbColor() != nullptr) {
+    _rgbColors.reserve(_count);
+  }
+  if (first_point.normal() != nullptr) {
+    _normals.reserve(_count);
+  }
+  if (first_point.intensity() != nullptr) {
+    _intensities.reserve(_count);
+  }
+  if (first_point.classification() != nullptr) {
+    _classifications.reserve(_count);
+  }
+
+  for (auto& point : points) {
+    _positions.push_back(point.position());
+    if (point.rgbColor()) {
+      _rgbColors.push_back(*point.rgbColor());
+    }
+    if (point.normal()) {
+      _normals.push_back(*point.normal());
+    }
+    if (point.intensity()) {
+      _intensities.push_back(*point.intensity());
+    }
+    if (point.classification()) {
+      _classifications.push_back(*point.classification());
+    }
+  }
+}
+
+PointBuffer::PointBuffer(gsl::span<PointConstReference> points)
+  : _count(points.size())
+{
+  if (!_count)
+    return;
+
+  const auto& first_point = points.at(0);
+
+  _positions.reserve(_count);
+  if (first_point.rgbColor() != nullptr) {
+    _rgbColors.reserve(_count);
+  }
+  if (first_point.normal() != nullptr) {
+    _normals.reserve(_count);
+  }
+  if (first_point.intensity() != nullptr) {
+    _intensities.reserve(_count);
+  }
+  if (first_point.classification() != nullptr) {
+    _classifications.reserve(_count);
+  }
+
+  for (auto& point : points) {
+    _positions.push_back(point.position());
+    if (point.rgbColor()) {
+      _rgbColors.push_back(*point.rgbColor());
+    }
+    if (point.normal()) {
+      _normals.push_back(*point.normal());
+    }
+    if (point.intensity()) {
+      _intensities.push_back(*point.intensity());
+    }
+    if (point.classification()) {
+      _classifications.push_back(*point.classification());
+    }
+  }
+}
+
 void
 PointBuffer::push_point(PointConstReference point)
 {
@@ -288,14 +366,20 @@ PointBuffer::PointConstReference::classification() const
   return _pointBuffer->classifications().data() + _index;
 }
 
+PointBuffer::PointConstReference::PointConstReference()
+  : _pointBuffer(nullptr)
+  , _index(0)
+{}
+
+PointBuffer::PointConstReference::PointConstReference(
+  const PointBuffer::PointReference& point_reference)
+  : _pointBuffer(point_reference._pointBuffer)
+  , _index(point_reference._index)
+{}
+
 PointBuffer::PointConstReference::PointConstReference(PointBuffer const* pointBuffer, size_t index)
   : _pointBuffer(pointBuffer)
   , _index(index)
-{}
-
-PointBuffer::PointConstReference::PointConstReference(const PointReference& point_reference)
-  : _pointBuffer(point_reference._pointBuffer)
-  , _index(point_reference._index)
 {}
 #pragma endregion
 
@@ -338,6 +422,11 @@ PointBuffer::PointReference::classification() const
   return _pointBuffer->classifications().data() + _index;
 }
 
+PointBuffer::PointReference::PointReference()
+  : _pointBuffer(nullptr)
+  , _index(0)
+{}
+
 PointBuffer::PointReference::PointReference(PointBuffer* pointBuffer, size_t index)
   : _pointBuffer(pointBuffer)
   , _index(index)
@@ -375,9 +464,86 @@ PointBuffer::PointConstIterator::operator!=(const PointConstIterator& other) con
 }
 
 PointBuffer::PointConstIterator
-PointBuffer::PointConstIterator::operator+(size_t idx) const
+PointBuffer::PointConstIterator::operator+(std::ptrdiff_t idx) const
 {
   return { *_pointBuffer, _index + idx };
+}
+
+PointBuffer::PointConstIterator
+PointBuffer::PointConstIterator::operator++(int)
+{
+  auto iter = *this;
+  ++(*this);
+  return iter;
+}
+
+PointBuffer::PointConstIterator&
+PointBuffer::PointConstIterator::operator--()
+{
+  --_index;
+  return *this;
+}
+
+PointBuffer::PointConstIterator
+PointBuffer::PointConstIterator::operator--(int)
+{
+  auto iter = *this;
+  --(*this);
+  return iter;
+}
+
+PointBuffer::PointConstIterator
+PointBuffer::PointConstIterator::operator-(std::ptrdiff_t count) const
+{
+  return { *_pointBuffer, static_cast<size_t>(_index - count) };
+}
+
+PointBuffer::PointConstIterator&
+PointBuffer::PointConstIterator::operator+=(std::ptrdiff_t count)
+{
+  _index = static_cast<size_t>(_index + count);
+  return *this;
+}
+
+PointBuffer::PointConstIterator&
+PointBuffer::PointConstIterator::operator-=(std::ptrdiff_t count)
+{
+  _index = static_cast<size_t>(_index - count);
+  return *this;
+}
+
+std::ptrdiff_t
+operator-(const PointBuffer::PointConstIterator& l, const PointBuffer::PointConstIterator& r)
+{
+  return l._index - r._index;
+}
+
+PointBuffer::PointConstReference PointBuffer::PointConstIterator::operator[](
+  std::ptrdiff_t idx) const
+{
+  return PointConstReference{ _pointBuffer, static_cast<size_t>(_index + idx) };
+}
+
+bool
+operator<(const PointBuffer::PointConstIterator& l, const PointBuffer::PointConstIterator& r)
+{
+  return l._index < r._index;
+}
+bool
+operator<=(const PointBuffer::PointConstIterator& l, const PointBuffer::PointConstIterator& r)
+{
+  return l._index <= r._index;
+}
+bool
+operator>(const PointBuffer::PointConstIterator& l, const PointBuffer::PointConstIterator& r)
+{
+  return l._index > r._index;
+  ;
+}
+bool
+operator>=(const PointBuffer::PointConstIterator& l, const PointBuffer::PointConstIterator& r)
+{
+  return l._index >= r._index;
 }
 
 #pragma endregion
@@ -413,9 +579,85 @@ PointBuffer::PointIterator::operator!=(const PointIterator& other) const
 }
 
 PointBuffer::PointIterator
-PointBuffer::PointIterator::operator+(size_t idx) const
+PointBuffer::PointIterator::operator+(std::ptrdiff_t idx) const
 {
-  return { *_pointBuffer, _index + idx };
+  return { *_pointBuffer, static_cast<size_t>(_index + idx) };
+}
+
+PointBuffer::PointIterator
+PointBuffer::PointIterator::operator++(int)
+{
+  auto iter = *this;
+  ++(*this);
+  return iter;
+}
+
+PointBuffer::PointIterator&
+PointBuffer::PointIterator::operator--()
+{
+  --_index;
+  return *this;
+}
+
+PointBuffer::PointIterator
+PointBuffer::PointIterator::operator--(int)
+{
+  auto iter = *this;
+  --(*this);
+  return iter;
+}
+
+PointBuffer::PointIterator
+PointBuffer::PointIterator::operator-(std::ptrdiff_t count) const
+{
+  return { *_pointBuffer, static_cast<size_t>(_index - count) };
+}
+
+PointBuffer::PointIterator&
+PointBuffer::PointIterator::operator+=(std::ptrdiff_t count)
+{
+  _index = static_cast<size_t>(_index + count);
+  return *this;
+}
+
+PointBuffer::PointIterator&
+PointBuffer::PointIterator::operator-=(std::ptrdiff_t count)
+{
+  _index = static_cast<size_t>(_index - count);
+  return *this;
+}
+
+std::ptrdiff_t
+operator-(const PointBuffer::PointIterator& l, const PointBuffer::PointIterator& r)
+{
+  return l._index - r._index;
+}
+
+PointBuffer::PointReference PointBuffer::PointIterator::operator[](std::ptrdiff_t idx) const
+{
+  return PointReference{ _pointBuffer, static_cast<size_t>(_index + idx) };
+}
+
+bool
+operator<(const PointBuffer::PointIterator& l, const PointBuffer::PointIterator& r)
+{
+  return l._index < r._index;
+}
+bool
+operator<=(const PointBuffer::PointIterator& l, const PointBuffer::PointIterator& r)
+{
+  return l._index <= r._index;
+}
+bool
+operator>(const PointBuffer::PointIterator& l, const PointBuffer::PointIterator& r)
+{
+  return l._index > r._index;
+  ;
+}
+bool
+operator>=(const PointBuffer::PointIterator& l, const PointBuffer::PointIterator& r)
+{
+  return l._index >= r._index;
 }
 
 #pragma endregion

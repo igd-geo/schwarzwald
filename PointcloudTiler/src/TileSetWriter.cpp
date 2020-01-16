@@ -1,4 +1,5 @@
 #include "TileSetWriter.h"
+#include "Definitions.h"
 #include "type_util.h"
 
 #include <rapidjson/document.h>
@@ -7,29 +8,27 @@
 
 #include <experimental/filesystem>
 #include <fstream>
-namespace fs = std::experimental::filesystem;
 
 using namespace rapidjson;
 
-template <typename Alloc>
-static Value writeBoundingVolume(const BoundingVolume_t &boundingVolume,
-                                 Alloc &alloc) {
-  Value boundingVolumeObj{kObjectType};
-  Value boundingVolumeArr{kArrayType};
+template<typename Alloc>
+static Value
+writeBoundingVolume(const BoundingVolume_t& boundingVolume, Alloc& alloc)
+{
+  Value boundingVolumeObj{ kObjectType };
+  Value boundingVolumeArr{ kArrayType };
 
   const auto boundingVolumeAsArray = boundingVolumeToArray(boundingVolume);
   for (auto entry : boundingVolumeAsArray) {
     boundingVolumeArr.PushBack(entry, alloc);
   }
 
-  std::visit(overloaded{[&](const BoundingRegion &br) {
-                          boundingVolumeObj.AddMember("region",
-                                                      boundingVolumeArr, alloc);
+  std::visit(overloaded{ [&](const BoundingRegion& br) {
+                          boundingVolumeObj.AddMember("region", boundingVolumeArr, alloc);
                         },
-                        [&](const BoundingBox &bb) {
-                          boundingVolumeObj.AddMember("box", boundingVolumeArr,
-                                                      alloc);
-                        }},
+                         [&](const BoundingBox& bb) {
+                           boundingVolumeObj.AddMember("box", boundingVolumeArr, alloc);
+                         } },
              boundingVolume);
 
   return boundingVolumeObj;
@@ -38,16 +37,18 @@ static Value writeBoundingVolume(const BoundingVolume_t &boundingVolume,
 /**
  * Converts the given Tileset into JSON tree structure
  */
-template <typename Alloc>
-static Value write_tileset(const Tileset &tileset, Alloc &alloc) {
-  Value root{kObjectType};
+template<typename Alloc>
+static Value
+write_tileset(const Tileset& tileset, Alloc& alloc)
+{
+  Value root{ kObjectType };
 
   auto boundingVolumeObj = writeBoundingVolume(tileset.boundingVolume, alloc);
   root.AddMember("boundingVolume", boundingVolumeObj, alloc);
   root.AddMember("geometricError", tileset.geometricError, alloc);
   root.AddMember("refine", "ADD", alloc);
 
-  Value content{kObjectType};
+  Value content{ kObjectType };
   // optional: add bounding box for that object
 
   // HACK If the child_url is not set, the Tileset refers to an external
@@ -55,11 +56,11 @@ static Value write_tileset(const Tileset &tileset, Alloc &alloc) {
   // use the type system to guarantee this instead of this hack :)
   auto content_uri = [&]() {
     if (tileset.content_url.empty()) {
-      return Value{tileset.child_url.c_str(),
-                   static_cast<rapidjson::SizeType>(tileset.child_url.size())};
+      return Value{ tileset.child_url.c_str(),
+                    static_cast<rapidjson::SizeType>(tileset.child_url.size()) };
     }
-    return Value{tileset.content_url.c_str(),
-                 static_cast<rapidjson::SizeType>(tileset.content_url.size())};
+    return Value{ tileset.content_url.c_str(),
+                  static_cast<rapidjson::SizeType>(tileset.content_url.size()) };
   }();
   content.AddMember("uri", content_uri, alloc);
   root.AddMember("content", content, alloc);
@@ -68,8 +69,8 @@ static Value write_tileset(const Tileset &tileset, Alloc &alloc) {
   if (tileset.children.empty())
     return root;
 
-  Value children{kArrayType};
-  for (auto &child : tileset.children) {
+  Value children{ kArrayType };
+  for (auto& child : tileset.children) {
     children.PushBack(write_tileset(child, alloc), alloc);
   }
   root.AddMember("children", children, alloc);
@@ -77,13 +78,14 @@ static Value write_tileset(const Tileset &tileset, Alloc &alloc) {
   return root;
 }
 
-bool writeTilesetJSON(const std::string &filepath, const Tileset &ts) {
-  // std::cout << "Writing tileset JSON \"" << filepath << "\"..." << std::endl;
+bool
+writeTilesetJSON(const std::string& filepath, const Tileset& ts)
+{
 
   Document document;
   document.SetObject();
 
-  auto &alloc = document.GetAllocator();
+  auto& alloc = document.GetAllocator();
 
   // Tileset
   // https://github.com/AnalyticalGraphicsInc/3d-tiles/blob/master/schema/tileset.schema.json
@@ -104,7 +106,8 @@ bool writeTilesetJSON(const std::string &filepath, const Tileset &ts) {
   */
   Value assetobj(kObjectType);
   Value version(ts.version.c_str(), (rapidjson::SizeType)ts.version.size());
-  assetobj.AddMember("version", version,
+  assetobj.AddMember("version",
+                     version,
                      alloc); // defines the JSON schema for tileset.json and
                              // the base set of tile formats
   if (!ts.tilesetVersion.empty()) {
@@ -146,7 +149,8 @@ bool writeTilesetJSON(const std::string &filepath, const Tileset &ts) {
   At runtime, the geometric error is used to compute screen space error (SSE),
   i.e., the error measured in pixels. minimum = 0
   */
-  document.AddMember("geometricError", ts.geometricError,
+  document.AddMember("geometricError",
+                     ts.geometricError,
                      alloc); // error when the entire tileset is not rendered
 
   auto root_tileset = write_tileset(ts, alloc);
@@ -156,8 +160,8 @@ bool writeTilesetJSON(const std::string &filepath, const Tileset &ts) {
     std::error_code removeErrorCode;
     auto success = fs::remove(filepath, removeErrorCode);
     if (!success) {
-      std::cerr << "Could not remove file \"" << filepath << "\" ("
-                << removeErrorCode.message() << ")" << std::endl;
+      std::cerr << "Could not remove file \"" << filepath << "\" (" << removeErrorCode.message()
+                << ")" << std::endl;
       return false;
     }
   }
@@ -176,21 +180,22 @@ bool writeTilesetJSON(const std::string &filepath, const Tileset &ts) {
   FileWriteStream os(filePtr, writeBuffer, sizeof(writeBuffer));
   */
 
-  struct Stream {
+  struct Stream
+  {
     std::ofstream of;
 
-    explicit Stream(const std::string &filepath)
-        : of{filepath, std::ios::binary} {}
+    explicit Stream(const std::string& filepath)
+      : of{ filepath, std::ios::binary }
+    {}
 
     typedef char Ch;
     void Put(Ch ch) { of.put(ch); }
     void Flush() {}
   };
 
-  Stream fs{filepath};
+  Stream fs{ filepath };
   if (!fs.of.is_open()) {
-    std::cerr << "Error writing tileset JSON to \"" << filepath << "\""
-              << std::endl;
+    std::cerr << "Error writing tileset JSON to \"" << filepath << "\"" << std::endl;
     return false;
   }
 

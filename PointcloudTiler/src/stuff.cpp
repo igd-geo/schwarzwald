@@ -238,46 +238,6 @@ iEndsWith(const std::string& str, const std::string& suffix)
   return icompare(tstr, suffix);
 }
 
-std::vector<std::string>
-split(std::string str, std::vector<char> delimiters)
-{
-  std::vector<std::string> tokens;
-
-  auto isDelimiter = [&delimiters](char ch) {
-    for (auto& delimiter : delimiters) {
-      if (ch == delimiter) {
-        return true;
-      }
-    }
-
-    return false;
-  };
-
-  size_t start = 0;
-  for (size_t i = 0; i < str.size(); i++) {
-    if (isDelimiter(str[i])) {
-      if (start < i) {
-        auto token = str.substr(start, i - start);
-        tokens.push_back(token);
-      }
-
-      start = i + 1;
-    }
-  }
-
-  if (start < str.size()) {
-    tokens.push_back(str.substr(start));
-  }
-
-  return tokens;
-}
-
-std::vector<std::string>
-split(std::string str, char delimiter)
-{
-  return split(str, { delimiter });
-}
-
 // see
 // https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
 std::string

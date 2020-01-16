@@ -28,6 +28,16 @@ get_bounds_from_node_name(const std::string& node_name, const AABB& root_bounds)
   return current_bounds;
 }
 
+AABB
+get_bounds_from_morton_index(const DynamicMortonIndex& morton_index, const AABB& root_bounds)
+{
+  auto current_bounds = root_bounds;
+  for (auto octant : morton_index) {
+    current_bounds = get_octant_bounds(octant, current_bounds);
+  }
+  return current_bounds;
+}
+
 uint8_t
 get_octant(const Vector3<double>& position, const AABB& bounds)
 {

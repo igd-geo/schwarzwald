@@ -2,13 +2,15 @@
 
 #include "SparseGrid.h"
 #include "Tiler.h"
-#include "io/LASPersistence.h"
+#include "io/BinaryPersistence.h"
 #include "io/MemoryPersistence.h"
 #include "octree/OctreeAlgorithms.h"
 #include "ui/ProgressReporter.h"
 
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/format.hpp>
 #include <boost/functional/hash.hpp>
+#include <boost/scope_exit.hpp>
 #include <random>
 #include <unordered_set>
 
@@ -86,8 +88,14 @@ TEST_CASE("Tiler works", "[Tiler]")
   const auto sampling_strategy = make_sampling_strategy<RandomSortedGridSampling>(MaxPointsPerNode);
   MemoryPersistence persistence;
 
-  Tiler writer{ bounds,  spacing_at_root, 40, MaxPointsPerNode, sampling_strategy,
-                nullptr, persistence };
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = spacing_at_root;
+  tiler_meta_parameters.max_depth = 40;
+  tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
+  tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
+                                                       // out-of-core processing
+
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
 
   writer.cache(dataset);
   writer.index();
@@ -152,8 +160,13 @@ TEST_CASE("Tiler with deep tree works", "[Tiler]")
   const auto sampling_strategy = make_sampling_strategy<RandomSortedGridSampling>(MaxPointsPerNode);
   MemoryPersistence persistence;
 
-  Tiler writer{ bounds,  spacing_at_root, 40, MaxPointsPerNode, sampling_strategy,
-                nullptr, persistence };
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = spacing_at_root;
+  tiler_meta_parameters.max_depth = 40;
+  tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
+  tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
+                                                       // out-of-core processing
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
 
   writer.cache(dataset);
   writer.index();
@@ -214,8 +227,13 @@ TEST_CASE("Tiler with GridCenter sampling", "[Tiler]")
   const auto sampling_strategy = make_sampling_strategy<GridCenterSampling>(MaxPointsPerNode);
   MemoryPersistence persistence;
 
-  Tiler writer{ bounds,  spacing_at_root, 40, MaxPointsPerNode, sampling_strategy,
-                nullptr, persistence };
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = spacing_at_root;
+  tiler_meta_parameters.max_depth = 40;
+  tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
+  tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
+                                                       // out-of-core processing
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
 
   writer.cache(dataset);
   writer.index();
@@ -270,8 +288,14 @@ TEST_CASE("Tiler with PossionDisk sampling", "[Tiler]")
   const auto sampling_strategy = make_sampling_strategy<PoissonDiskSampling>(MaxPointsPerNode);
   MemoryPersistence persistence;
 
-  Tiler writer{ bounds,  spacing_at_root, 40, MaxPointsPerNode, sampling_strategy,
-                nullptr, persistence };
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = spacing_at_root;
+  tiler_meta_parameters.max_depth = 40;
+  tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
+  tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
+                                                       // out-of-core processing
+
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
 
   writer.cache(dataset);
   writer.index();
@@ -346,7 +370,7 @@ TEST_CASE("Tiler with PossionDisk sampling", "[Tiler]")
   REQUIRE(num_processed_points == NumPoints);
 }
 
-TEST_CASE("Tiler with LAS writer", "[Tiler]")
+TEST_CASE("Tiler with BinaryPersistence writer", "[Tiler]")
 {
   constexpr size_t NumPoints = 1'000'000;
   constexpr size_t MaxPointsPerNode = 20'000;
@@ -357,11 +381,38 @@ TEST_CASE("Tiler with LAS writer", "[Tiler]")
   const auto sampling_strategy = make_sampling_strategy<RandomSortedGridSampling>(MaxPointsPerNode);
   // MemoryPersistence persistence;
   PointAttributes attributes;
-  attributes.add(attributes::POSITION_CARTESIAN);
-  LASPersistence persistence{ "/home/pbormann/data/tmp", attributes };
+  attributes.push_back(attributes::POSITION_CARTESIAN);
 
-  Tiler writer{ bounds,  spacing_at_root, 40, MaxPointsPerNode, sampling_strategy,
-                nullptr, persistence };
+  const auto tmp_directory =
+    (boost::format("./tmp_%1%") %
+     (std::chrono::high_resolution_clock::now().time_since_epoch().count()))
+      .str();
+  if (!fs::exists(tmp_directory)) {
+    if (!fs::create_directories(tmp_directory)) {
+      FAIL("Could not create temporary output directory");
+    }
+  }
+
+  BOOST_SCOPE_EXIT(&tmp_directory)
+  {
+    std::error_code ec;
+    fs::remove_all(tmp_directory, ec);
+    if (ec) {
+      UNSCOPED_INFO("Could not remove temporary output directory");
+    }
+  }
+  BOOST_SCOPE_EXIT_END
+
+  BinaryPersistence persistence{ tmp_directory, attributes };
+
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = spacing_at_root;
+  tiler_meta_parameters.max_depth = 40;
+  tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
+  tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
+                                                       // out-of-core processing
+
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
 
   writer.cache(dataset);
   writer.index();

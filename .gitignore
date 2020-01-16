@@ -13,6 +13,7 @@ test/converted
 .vs/
 CMakeSettings.json
 .vscode
+.clangd
 
 !cmake/
 cmake/*

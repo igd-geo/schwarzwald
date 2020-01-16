@@ -4,6 +4,7 @@
 #include <math.h>
 
 #include "Vector3.h"
+#include "concepts/MemoryIntrospection.h"
 
 // Axis Aligned Bounding Box
 struct AABB
@@ -46,7 +47,14 @@ struct AABB
     update(aabb.max);
   }
 
-  void makeCubic() { max = min + extent().maxValue(); }
+  void makeCubic()
+  {
+    const auto max_extent = extent().maxValue();
+    const auto half_length = max_extent / 2;
+    const auto center = getCenter();
+    min = { center.x - half_length, center.y - half_length, center.z - half_length };
+    max = { center.x + half_length, center.y + half_length, center.z + half_length };
+  }
 
   Vector3<double> getCenter() const { return min + extent() / 2; }
 
@@ -54,9 +62,17 @@ struct AABB
 
   friend std::ostream& operator<<(std::ostream& output, const AABB& value)
   {
-    output << "min: " << value.min << std::endl;
-    output << "max: " << value.max << std::endl;
-    output << "size: " << value.extent() << std::endl;
+    output << "min: " << value.min << " max: " << value.max;
     return output;
   }
 };
+
+namespace concepts {
+
+template<>
+inline unit::byte
+size_in_memory(AABB const& aabb)
+{
+  return 2 * sizeof(Vector3<double>) * boost::units::information::byte;
+}
+}

@@ -46,7 +46,7 @@ createPointAttributeCache(const PointAttribute& attribute)
 PNTSWriter::PNTSWriter(const std::string& filePath, const PointAttributes& pointAttributes)
   : _filePath(filePath)
 {
-  for (auto& desiredPointAttribute : pointAttributes.attributes) {
+  for (auto& desiredPointAttribute : pointAttributes) {
     auto attributeCache = createPointAttributeCache(desiredPointAttribute);
     if (!attributeCache) {
       std::cerr << "Could not create attribute cache for PointAttribute "
@@ -72,7 +72,6 @@ PNTSWriter::write_points(const PointBuffer& points)
 {
   const auto numPoints = points.count();
   if (!numPoints) {
-    std::cout << "[PNTWriter::writePoints] No points to write..." << std::endl;
     return;
   }
 
@@ -88,7 +87,6 @@ PNTSWriter::write_points(gsl::span<PointBuffer::PointReference> points)
 {
   const auto num_points = points.size();
   if (!num_points) {
-    std::cout << "[PNTSWriter::write_points] Received empty point range..." << std::endl;
     return;
   }
 
@@ -108,7 +106,6 @@ PNTSWriter::flush(const Vector3<double>& localCenter)
               << std::endl;
     return;
   }
-  // std::cout << "Writing \"" << _filePath << "\"..." << std::endl;
 
   constexpr auto HEADER_SIZE = 28u;
 
@@ -418,8 +415,8 @@ attributes::RGBAAttribute::extractFromPoints(gsl::span<PointBuffer::PointReferen
 {
   if (!points.size())
     return;
-  // Only checking the first point here, mixing PointReferences from different PointBuffers is
-  // weird...
+  // Only checking the first point here, mixing PointReferences from different
+  // PointBuffers is weird...
   if (!points[0].rgbColor())
     return;
 

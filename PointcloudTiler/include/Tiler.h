@@ -1,11 +1,11 @@
 #pragma once
 
 #include "AABB.h"
+#include "Definitions.h"
 #include "IWriter.h"
 #include "PointAttributes.hpp"
 #include "PointBuffer.h"
 #include "Transformation.h"
-#include "definitions.hpp"
 #include "octree/Sampling.h"
 #include "util/Semaphore.h"
 #include "util/TaskSystem.h"
@@ -18,12 +18,19 @@
 struct ProgressReporter;
 struct IPointsPersistence;
 
+struct TilerMetaParameters
+{
+  float spacing_at_root;
+  uint32_t max_depth;
+  size_t max_points_per_node;
+  size_t internal_cache_size;
+  bool create_journal;
+};
+
 struct Tiler : IWriter
 {
   Tiler(const AABB& aabb,
-        float spacing_at_root,
-        uint32_t max_depth,
-        size_t max_points_per_node,
+        const TilerMetaParameters& meta_parameters,
         SamplingStrategy sampling_strategy,
         ProgressReporter* progress_reporter,
         IPointsPersistence& persistence);
@@ -36,19 +43,13 @@ struct Tiler : IWriter
 
   void cache(const PointBuffer& points) override;
 
-  void flush() override;
-
-  bool needs_flush() const override;
-
   void close() override;
 
 private:
   void run_worker();
 
   AABB _aabb;
-  float _spacing;
-  uint32_t _max_depth;
-  size_t _max_points_per_node;
+  TilerMetaParameters _meta_parameters;
   SamplingStrategy _sampling_strategy;
   ProgressReporter* _progress_reporter;
   IPointsPersistence& _persistence;

@@ -64,3 +64,25 @@ stable_partition_with_jumps(const Iter begin, const Iter end, Pred pred)
 
   return pivot_point;
 }
+
+/**
+ * Split a range into equally-sized chunks. Each chunk is expressed with a begin
+ * and end iterator. If 'num_chunks' does not equally divide the size of the range,
+ * the remainder will be in the last chunk. 'num_chunks' has to be >= the size of
+ * the range
+ */
+template<typename Iter>
+std::vector<std::pair<Iter, Iter>>
+split_range_into_chunks(size_t num_chunks, Iter begin, Iter end)
+{
+  const auto num_elements = std::distance(begin, end);
+  assert(num_elements >= static_cast<ptrdiff_t>(num_chunks));
+  const auto chunk_size = num_elements / num_chunks;
+  std::vector<std::pair<Iter, Iter>> chunks;
+  chunks.reserve(num_chunks);
+  for (size_t idx = 0; idx < num_chunks - 1; ++idx) {
+    chunks.push_back(std::make_pair(begin + (idx * chunk_size), begin + (idx + 1) * chunk_size));
+  }
+  chunks.push_back(std::make_pair(begin + (num_chunks - 1) * chunk_size, end));
+  return chunks;
+}
