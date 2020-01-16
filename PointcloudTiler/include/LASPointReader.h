@@ -4,20 +4,18 @@
 #include <string>
 #include <vector>
 
-#include "laszip_api.h"
-
 #include "Point.h"
+#include "PointAttributes.hpp"
 #include "PointReader.h"
+#include "laszip_api.h"
 #include "proj_api.h"
 #include "stuff.h"
-
-class PointAttribute;
-class PointAttributes;
 
 class LIBLASReader
 {
 private:
   size_t _numPoints;
+  AABB _bounds;
   const PointAttributes& _requestedAttributes;
 
 public:
@@ -48,6 +46,9 @@ public:
       } else {
         _numPoints = header->number_of_point_records;
       }
+
+      _bounds.update({ header->min_x, header->min_y, header->min_z });
+      _bounds.update({ header->max_x, header->max_y, header->max_z });
 
       laszip_get_point_pointer(laszip_reader, &point);
 

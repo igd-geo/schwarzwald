@@ -12,6 +12,16 @@ MemoryPersistence::persist_points(gsl::span<PointBuffer::PointReference> points,
 }
 
 void
+MemoryPersistence::persist_points(PointBuffer const& points,
+                                  const AABB& bounds,
+                                  const std::string& node_name)
+{
+  std::lock_guard<std::mutex> lock{ _lock };
+  auto& buffer = _points_cache[node_name];
+  buffer = points;
+}
+
+void
 MemoryPersistence::persist_indices(gsl::span<MortonIndex64> indices, const std::string& node_name)
 {
   std::lock_guard<std::mutex> lock{ _lock };

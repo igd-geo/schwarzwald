@@ -54,8 +54,18 @@ operator==(const PointAttribute& lhs, const PointAttribute& rhs)
   return lhs.ordinal == rhs.ordinal;
 }
 
+bool
+has_attribute(PointAttributes const& attributes, PointAttribute const& attribute_to_find)
+{
+  return std::find_if(std::begin(attributes),
+                      std::end(attributes),
+                      [&attribute_to_find](const auto& ref_attribute) {
+                        return attribute_to_find.ordinal == ref_attribute.ordinal;
+                      }) != std::end(attributes);
+}
+
 std::string
-PointAttributes::toString() const
+print_attributes(PointAttributes const& attributes)
 {
   std::stringstream ss;
   ss << "[";
@@ -72,18 +82,18 @@ PointAttributes
 point_attributes_from_strings(const std::vector<std::string>& attribute_names)
 {
   PointAttributes point_attributes;
-  point_attributes.add(attributes::POSITION_CARTESIAN);
+  point_attributes.push_back(attributes::POSITION_CARTESIAN);
   for (const auto& attribute : attribute_names) {
     if (attribute == "RGB") {
-      point_attributes.add(attributes::COLOR_PACKED);
+      point_attributes.push_back(attributes::COLOR_PACKED);
     } else if (attribute == "RGB_FROM_INTENSITY") {
-      point_attributes.add(attributes::COLOR_FROM_INTENSITY);
+      point_attributes.push_back(attributes::COLOR_FROM_INTENSITY);
     } else if (attribute == "INTENSITY") {
-      point_attributes.add(attributes::INTENSITY);
+      point_attributes.push_back(attributes::INTENSITY);
     } else if (attribute == "CLASSIFICATION") {
-      point_attributes.add(attributes::CLASSIFICATION);
+      point_attributes.push_back(attributes::CLASSIFICATION);
     } else if (attribute == "NORMAL") {
-      point_attributes.add(attributes::NORMAL_OCT16);
+      point_attributes.push_back(attributes::NORMAL_OCT16);
     }
   }
   return point_attributes;

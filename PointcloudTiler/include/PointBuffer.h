@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Vector3.h"
+#include "concepts/MemoryIntrospection.h"
 
 #include <gsl/gsl>
 #include <optional>
@@ -26,6 +27,7 @@ struct PointBuffer
     friend struct PointBuffer;
     friend struct PointConstReference;
 
+    PointReference();
     PointReference(const PointReference&) = default;
     PointReference& operator=(const PointReference&) = default;
 
@@ -49,8 +51,8 @@ struct PointBuffer
   {
     friend struct PointBuffer;
 
+    PointConstReference();
     PointConstReference(const PointReference& point_reference);
-
     PointConstReference(const PointConstReference&) = default;
     PointConstReference& operator=(const PointConstReference&) = default;
 
@@ -71,6 +73,15 @@ struct PointBuffer
   /// Creates an empty point buffer
   /// </summary>
   PointBuffer();
+
+  /// <summary>
+  /// Creates a PointBuffer from the given range of PointReferences
+  /// </summary>
+  explicit PointBuffer(gsl::span<PointReference> points);
+  /// <summary>
+  /// Creates a PointBuffer from the given range of PointConstReferences
+  /// </summary>
+  explicit PointBuffer(gsl::span<PointConstReference> points);
 
   /// <summary>
   /// Creates a new PointBuffer storing count points. For all passed attribute
@@ -151,9 +162,10 @@ struct PointBuffer
   void verify() const;
 
   /// <summary>
-  /// Returns the raw size in bytes of the contents (positions, normals etc.) of this PointBuffer.
-  /// This does NOT include the in-memory size of a PointBuffer structure itself, but rather the
-  /// allocated memory of all the vectors of the PointBuffer
+  /// Returns the raw size in bytes of the contents (positions, normals etc.) of
+  /// this PointBuffer. This does NOT include the in-memory size of a
+  /// PointBuffer structure itself, but rather the allocated memory of all the
+  /// vectors of the PointBuffer
   /// </summary>
   size_t content_byte_size() const;
 
@@ -163,10 +175,22 @@ struct PointBuffer
 
     PointReference operator*() const;
     PointIterator& operator++();
-    PointIterator operator+(size_t idx) const;
+    PointIterator operator++(int);
+    PointIterator& operator--();
+    PointIterator operator--(int);
+    PointIterator operator+(std::ptrdiff_t count) const;
+    PointIterator operator-(std::ptrdiff_t count) const;
+    PointIterator& operator+=(std::ptrdiff_t count);
+    PointIterator& operator-=(std::ptrdiff_t count);
+    friend std::ptrdiff_t operator-(const PointIterator& l, const PointIterator& r);
+    PointReference operator[](std::ptrdiff_t idx) const;
 
     bool operator==(const PointIterator& other) const;
     bool operator!=(const PointIterator& other) const;
+    friend bool operator<(const PointIterator& l, const PointIterator& r);
+    friend bool operator<=(const PointIterator& l, const PointIterator& r);
+    friend bool operator>(const PointIterator& l, const PointIterator& r);
+    friend bool operator>=(const PointIterator& l, const PointIterator& r);
 
   private:
     PointBuffer* _pointBuffer;
@@ -179,10 +203,22 @@ struct PointBuffer
 
     PointConstReference operator*() const;
     PointConstIterator& operator++();
-    PointConstIterator operator+(size_t idx) const;
+    PointConstIterator operator++(int);
+    PointConstIterator& operator--();
+    PointConstIterator operator--(int);
+    PointConstIterator operator+(std::ptrdiff_t count) const;
+    PointConstIterator operator-(std::ptrdiff_t count) const;
+    PointConstIterator& operator+=(std::ptrdiff_t count);
+    PointConstIterator& operator-=(std::ptrdiff_t count);
+    friend std::ptrdiff_t operator-(const PointConstIterator& l, const PointConstIterator& r);
+    PointConstReference operator[](std::ptrdiff_t idx) const;
 
     bool operator==(const PointConstIterator& other) const;
     bool operator!=(const PointConstIterator& other) const;
+    friend bool operator<(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator<=(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator>(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator>=(const PointConstIterator& l, const PointConstIterator& r);
 
   private:
     PointBuffer const* _pointBuffer;
@@ -203,3 +239,39 @@ private:
   std::vector<uint16_t> _intensities;
   std::vector<uint8_t> _classifications;
 };
+
+namespace std {
+template<>
+struct iterator_traits<::PointBuffer::PointIterator>
+{
+  using difference_type = std::ptrdiff_t;
+  using value_type = ::PointBuffer::PointReference;
+  using iterator_category = std::forward_iterator_tag;
+};
+
+template<>
+struct iterator_traits<::PointBuffer::PointConstIterator>
+{
+  using difference_type = std::ptrdiff_t;
+  using value_type = ::PointBuffer::PointConstReference;
+  using iterator_category = std::forward_iterator_tag;
+};
+} // namespace std
+
+namespace concepts {
+
+namespace detail {
+template<>
+constexpr bool has_constant_size_impl<::PointBuffer> = false;
+}
+
+template<>
+inline unit::byte
+size_in_memory(PointBuffer const& point_buffer)
+{
+  return (sizeof(size_t) * boost::units::information::byte) +
+         size_in_memory(point_buffer.positions()) + size_in_memory(point_buffer.rgbColors()) +
+         size_in_memory(point_buffer.normals()) + size_in_memory(point_buffer.intensities()) +
+         size_in_memory(point_buffer.classifications());
+}
+}

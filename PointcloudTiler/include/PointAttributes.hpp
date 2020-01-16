@@ -46,31 +46,12 @@ constexpr PointAttribute NORMAL = { 6, "NORMAL", 3, 12 };
 constexpr PointAttribute COLOR_FROM_INTENSITY = { 7, "COLOR_FROM_INTENSITY", 3, 3 };
 } // namespace attributes
 
-class PointAttributes
-{
-public:
-  std::vector<PointAttribute> attributes;
-  int byteSize;
+using PointAttributes = std::vector<PointAttribute>;
 
-  PointAttributes() { byteSize = 0; }
-
-  void add(PointAttribute attribute)
-  {
-    attributes.push_back(attribute);
-    byteSize += attribute.byteSize;
-  }
-
-  bool has(const PointAttribute& attribute) const
-  {
-    return std::find(attributes.begin(), attributes.end(), attribute) != attributes.end();
-  }
-
-  int size() { return (int)attributes.size(); }
-
-  PointAttribute& operator[](int i) { return attributes[i]; }
-
-  std::string toString() const;
-};
+bool
+has_attribute(PointAttributes const& attributes, PointAttribute const& attribute_to_find);
+std::string
+print_attributes(PointAttributes const& attributes);
 
 PointAttributes
 point_attributes_from_strings(const std::vector<std::string>& attribute_names);

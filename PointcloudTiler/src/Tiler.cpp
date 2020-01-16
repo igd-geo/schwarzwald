@@ -5,99 +5,116 @@
 #include "PointBuffer.h"
 #include "TileSetWriter.h"
 #include "Tileset.h"
-#include "definitions.hpp"
 #include "io/IPointsPersistence.h"
+#include "io/stdout_helper.h"
+#include "octree/Node.h"
 #include "octree/OctreeAlgorithms.h"
 #include "octree/OctreeIndexWriter.h"
 #include "stuff.h"
 #include "ui/ProgressReporter.h"
 #include "util/Async.h"
+#include "util/Debugging.h"
+#include "util/Parallel.h"
 
 #include <algorithm>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/scope_exit.hpp>
 #include <cmath>
 #include <experimental/filesystem>
 #include <functional>
 #include <future>
 #include <iomanip>
+#include <map>
 #include <numeric>
 #include <queue>
 #include <stdint.h>
 #include <unordered_map>
 
-constexpr size_t MAX_POINTS_CACHED_BEFORE_INDEXING = 10'000'000;
 constexpr uint32_t MAX_OCTREE_LEVELS = 21;
 
-/**
- * Description parameters for processing a specific octree node
- */
-struct OctreeNodeDescription
+struct NodeProcessingResult
 {
-  MortonIndex<MAX_OCTREE_LEVELS> key;
-  int32_t level; // root = -1, since it is only a single node it doesn't make sense
-                 // to have root be level 0, especially given the MortonIndex
-  AABB bounds;
-  std::vector<IndexedPoint<MAX_OCTREE_LEVELS>> indexed_points;
-  std::string root_node_name;
-  uint32_t max_depth;
+  NodeProcessingResult() {}
+  NodeProcessingResult(octree::NodeData data,
+                       octree::NodeStructure node,
+                       octree::NodeStructure root_node)
+    : data(std::move(data))
+    , node(node)
+    , root_node(root_node)
+  {}
+
+  octree::NodeData data;
+  octree::NodeStructure node;
+  octree::NodeStructure root_node;
 };
 
-// TODO Quick and dirty hack for the Tilesets
-std::unordered_map<std::string, std::unique_ptr<Tileset>> s_tilesets;
-std::mutex s_tilesets_lock;
-std::mutex s_points_cache_lock;
-
-static std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>
-merge_indexed_points_sorted(std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>&& l,
-                            std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>&& r)
+#ifdef PRECISE_VERIFICATION_MODE
+static void
+validate_points(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& points,
+                const std::string& node_name,
+                const AABB& bounds)
 {
-  if (l.empty())
-    return r;
-  if (r.empty())
-    return l;
-
-  std::vector<IndexedPoint<MAX_OCTREE_LEVELS>> merged;
-  merged.reserve(l.size() + r.size());
-  std::merge(l.begin(),
-             l.end(),
-             r.begin(),
-             r.end(),
-             std::back_inserter(merged),
-             [](const auto& idx_l, const auto& idx_r) {
-               return idx_l.morton_index.get() < idx_r.morton_index.get();
-             });
-  return merged;
-}
-
-static std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>
-merge_indexed_points_unsorted(std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>&& l,
-                              std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>&& r)
-{
-  if (l.empty())
-    return r;
-  if (r.empty())
-    return l;
-
-  l.insert(l.end(), r.begin(), r.end());
-  return l;
+  for (size_t idx = 0; idx < points.size(); ++idx) {
+    const auto& p = points[idx];
+    const auto& pos = p.point_reference.position();
+    if (!bounds.isInside(pos)) {
+      std::cerr << "validate_points failed @ node " << node_name << "(" << bounds << ")!\n"
+                << "\tPoint " << pos << " is outside of bounding box!\n";
+      std::exit(EXIT_FAILURE);
+    }
+  }
 }
 
 template<typename Iter>
 static void
-flush_indices(Iter indexed_points_begin,
-              Iter indexed_points_end,
-              const std::string& node_name,
-              IPointsPersistence& persistence)
+sorted_check(Iter begin, Iter end, const std::string& node_name)
 {
-  std::vector<MortonIndex<MAX_OCTREE_LEVELS>> indices;
-  const auto num_points_selected = std::distance(indexed_points_begin, indexed_points_end);
-  indices.reserve(num_points_selected);
-  std::transform(indexed_points_begin,
-                 indexed_points_end,
-                 std::back_inserter(indices),
-                 [](const auto& indexed_point) { return indexed_point.morton_index; });
-
-  persistence.persist_indices(gsl::make_span(indices), node_name);
+  if (!std::is_sorted(begin, end, [](const auto& l, const auto& r) {
+        return l.morton_index.get() < r.morton_index.get();
+      })) {
+    std::cerr << "sorted_check failed @ node " << node_name << "!\n";
+    std::exit(EXIT_FAILURE);
+  }
 }
+
+template<typename Iter>
+static void
+morton_check(Iter begin,
+             Iter end,
+             uint32_t level,
+             const std::string& node_name,
+             const AABB& node_bounds)
+{
+  for (auto next = begin + 1; next < end; ++next) {
+    const auto next_morton_idx = next->morton_index.truncate_to_level(level);
+    const auto cur_morton_idx = (next - 1)->morton_index.truncate_to_level(level);
+    if (cur_morton_idx.get() != next_morton_idx.get()) {
+      std::cerr << "morton_check failed @ node " << node_name << "(" << node_bounds << ")!\n"
+                << "\tPoint A: " << (next - 1)->point_reference.position() << " with Morton index "
+                << to_string(cur_morton_idx) << "\n"
+                << "\tPoint B: " << next->point_reference.position() << " with Morton index "
+                << to_string(next_morton_idx) << "\n";
+      std::exit(EXIT_FAILURE);
+    }
+  }
+}
+
+template<typename Iter>
+static void
+inside_check(Iter begin, Iter end, const std::string& node_name, const AABB& bounds)
+{
+  std::for_each(begin, end, [&](const auto& indexed_point) {
+    const auto& pos = indexed_point.point_reference.position();
+    if (!bounds.isInside(pos)) {
+      std::cerr << "validate_points failed @ node " << node_name << "(" << bounds << ")!\n"
+                << "\tPoint " << pos << " is outside of bounding box!\n";
+      std::exit(EXIT_FAILURE);
+    }
+  });
+}
+#endif
+
+std::mutex s_points_cache_lock;
 
 static std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>
 read_pnts_from_disk(const std::string& node_name,
@@ -114,69 +131,32 @@ read_pnts_from_disk(const std::string& node_name,
   auto new_points_buffer = std::make_unique<PointBuffer>(std::move(tmp_points));
   auto& points = *new_points_buffer;
 
-  // Storing points in LAS/LAZ files introduced quantization, we try to fix this
-  // here by clamping points into the bounding box of their octree node
-  for (auto& position : tmp_points.positions()) {
-    if (!node_bounds.isInside(position)) {
-      position.x = std::min(node_bounds.max.x, std::max(node_bounds.min.x, position.x));
-      position.y = std::min(node_bounds.max.y, std::max(node_bounds.min.y, position.x));
-      position.z = std::min(node_bounds.max.z, std::max(node_bounds.min.z, position.x));
-      // std::cout
-      //     << std::setprecision(16) << "At node " << current_node_name
-      //     << " the point [" << pos.x << ";" << pos.y << ";" << pos.z
-      //     << "] was not contained "
-      //     << "in the nodes bounding box (" << node_description.bounds.min.x
-      //     << ";" << node_description.bounds.min.y << ";"
-      //     << node_description.bounds.min.z << ") x ("
-      //     << node_description.bounds.max.x << ";"
-      //     << node_description.bounds.max.y << ";"
-      //     << node_description.bounds.max.z << ") after reading the "
-      //     << "point back from disk! This is a bug, terminating the program
-      //     now!"
-      //     << std::endl;
-      // std::terminate();
-    }
-  }
-
   s_points_cache_lock.lock();
   points_cache.push_back(std::move(new_points_buffer));
   s_points_cache_lock.unlock();
 
-  std::vector<MortonIndex<MAX_OCTREE_LEVELS>> octree_indices;
-  octree_indices.reserve(points.count());
-  calculate_morton_indices_for_points<MAX_OCTREE_LEVELS>(points.positions().begin(),
-                                                         points.positions().end(),
-                                                         std::back_inserter(octree_indices),
-                                                         octree_bounds);
-  // persistence.retrieve_indices(node_name, octree_indices);
+  std::vector<IndexedPoint<MortonIndex64Levels>> indexed_points;
+  indexed_points.reserve(points.count());
+  try {
+    index_points<MortonIndex64Levels>(
+      std::begin(points),
+      std::end(points),
+      std::back_inserter(indexed_points),
+      octree_bounds,
+      OutlierPointsBehaviour::ClampToBounds); // Clamp to fix floating point
+                                              // errors
+  } catch (const std::runtime_error& ex) {
+    throw std::runtime_error{
+      (boost::format("Indexing points of node %1% failed:\n%2%") % node_name % ex.what()).str()
+    };
+  }
 
-  // Points are still sorted here
-  return index_points(octree_indices, points);
-}
-
-static int32_t
-get_node_level_for_target_spacing(float spacing_at_root,
-                                  int32_t target_node_level,
-                                  const AABB& root_node_bounds)
-{
-  // Returns the last level (starting from root) at which the node size is >=
-  // target spacing. Target spacing is calculated from root spacing by halfing
-  // at each level Since the root node is level -1, spacing at level 0 is half
-  // spacing_at_root
-  const auto spacing_at_target_node = spacing_at_root / std::pow(2, target_node_level + 1);
-
-  return std::max(
-    -1,
-    (int)std::floor(std::log2f(root_node_bounds.extent().x / spacing_at_target_node)) -
-      1); // the root node (whole octree) is level '-1', so
-          // level 0 has a sidelength of half the max octree,
-          // hence we have to subtract one here
+  return indexed_points;
 }
 
 static void
-process_terminal_node(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& all_points,
-                      const std::string& node_name,
-                      const AABB& node_bounds,
+process_terminal_node(octree::NodeData const& all_points,
+                      octree::NodeStructure const& node,
                       size_t max_points_per_node,
                       size_t previously_taken_points_count,
                       IPointsPersistence& persistence,
@@ -190,8 +170,8 @@ process_terminal_node(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& all_po
     const auto dropped_count = all_points.size() - points_to_take;
     if (progress_reporter)
       progress_reporter->increment_progress<size_t>(progress::INDEXING, dropped_count);
-    std::cout << "Dropping " << dropped_count << " points at node " << node_name << "!"
-              << std::endl;
+
+    util::write_log(concat("Dropping ", dropped_count, " points at node ", node.name, "!\n"));
 
     std::vector<PointBuffer::PointReference> dropped_points;
     dropped_points.reserve(dropped_count);
@@ -199,11 +179,11 @@ process_terminal_node(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& all_po
                    all_points.end(),
                    std::back_inserter(dropped_points),
                    [](const auto& indexed_point) { return indexed_point.point_reference; });
-    persistence.persist_points(gsl::make_span(dropped_points), node_bounds, node_name + "_dropped");
+    persistence.persist_points(gsl::make_span(dropped_points), node.bounds, node.name + "_dropped");
   }
 
   std::vector<PointBuffer::PointReference> selected_points;
-  std::vector<MortonIndex<MAX_OCTREE_LEVELS>> selected_indices;
+  std::vector<MortonIndex64> selected_indices;
   selected_points.reserve(points_to_take);
   selected_indices.reserve(points_to_take);
   std::for_each(all_points.begin(), partition_point, [&](const auto& indexed_point) {
@@ -211,43 +191,47 @@ process_terminal_node(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& all_po
     selected_indices.push_back(indexed_point.morton_index);
   });
 
-  persistence.persist_points(gsl::make_span(selected_points), node_bounds, node_name);
-  // persistence.persist_indices(gsl::make_span(selected_indices), node_name);
+  persistence.persist_points(gsl::make_span(selected_points), node.bounds, node.name);
 
   if (progress_reporter)
     progress_reporter->increment_progress<size_t>(progress::INDEXING,
                                                   points_to_take - previously_taken_points_count);
 }
 
-static std::vector<OctreeNodeDescription>
-process_internal_node(std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& all_points,
-                      const std::string& node_name,
-                      const AABB& node_bounds,
-                      MortonIndex<MAX_OCTREE_LEVELS> node_key,
-                      int32_t node_level,
-                      const AABB& root_node_bounds,
-                      const std::string& root_node_name, // TODO Refactor this into Node structures
-                                                         // and pass 'currentNode' and 'rootNode'
-                      float spacing_at_root,
+static std::vector<NodeProcessingResult>
+process_internal_node(octree::NodeData& all_points,
+                      octree::NodeStructure const& node,
+                      octree::NodeStructure const& root_node,
                       size_t previously_taken_points_count,
-                      uint32_t max_depth,
                       SamplingStrategy& sampling_strategy,
                       IPointsPersistence& persistence,
-                      ProgressReporter* progress_reporter)
+                      ProgressReporter* progress_reporter,
+                      std::map<std::string, std::string>& timings)
 {
+
   // Use sampling strategy to select points
+  const auto filter_tbegin = std::chrono::high_resolution_clock::now();
   const auto partition_point = filter_points_for_octree_node(all_points.begin(),
                                                              all_points.end(),
-                                                             node_key,
-                                                             node_level,
-                                                             root_node_bounds,
-                                                             spacing_at_root,
+                                                             node.morton_index,
+                                                             node.level,
+                                                             root_node.bounds,
+                                                             root_node.max_spacing,
                                                              sampling_strategy);
+  if (debug::Journal::instance().is_enabled()) {
+    timings["filter_points_for_octree_node"] =
+      std::to_string((std::chrono::high_resolution_clock::now() - filter_tbegin).count());
+  }
+
+#ifdef PRECISE_VERIFICATION_MODE
+  sorted_check(std::begin(all_points), partition_point, node_name + " (taken points)");
+  sorted_check(partition_point, all_points_end, node_name + " (not taken points)");
+#endif
 
   // Persist the points
   const auto points_taken = std::distance(all_points.begin(), partition_point);
   std::vector<PointBuffer::PointReference> selected_points;
-  std::vector<MortonIndex<MAX_OCTREE_LEVELS>> selected_indices;
+  std::vector<MortonIndex64> selected_indices;
   selected_points.reserve(points_taken);
   selected_indices.reserve(points_taken);
   std::for_each(all_points.begin(), partition_point, [&](const auto& indexed_point) {
@@ -255,75 +239,156 @@ process_internal_node(std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& all_points,
     selected_indices.push_back(indexed_point.morton_index);
   });
 
-  persistence.persist_points(gsl::make_span(selected_points), node_bounds, node_name);
-  // persistence.persist_indices(gsl::make_span(selected_indices), node_name);
+  const auto persist_tbegin = std::chrono::high_resolution_clock::now();
+  persistence.persist_points(gsl::make_span(selected_points), node.bounds, node.name);
+  if (debug::Journal::instance().is_enabled()) {
+    timings["persist_points"] =
+      std::to_string((std::chrono::high_resolution_clock::now() - persist_tbegin).count());
+    timings["point_count_persist"] = std::to_string(points_taken);
+  }
+
+#ifdef PRECISE_VERIFICATION_MODE
+  inside_check(all_points.begin(), partition_point, node_name, node_bounds);
+#endif
 
   if (progress_reporter)
     progress_reporter->increment_progress<size_t>(progress::INDEXING,
                                                   points_taken - previously_taken_points_count);
 
   // Partition remaining points into the 8 child octants
-  const auto child_level = static_cast<uint32_t>(node_level + 1);
+  const auto child_partitioning_tstart = std::chrono::high_resolution_clock::now();
+  const auto child_level = static_cast<uint32_t>(node.level + 1);
   const auto child_ranges =
     partition_points_into_child_octants(partition_point, all_points.end(), child_level);
-  std::vector<OctreeNodeDescription> child_descriptions;
+  std::vector<NodeProcessingResult> child_descriptions;
   for (uint8_t idx = 0; idx < uint8_t(8); ++idx) {
     const auto& child_range = child_ranges.at(idx);
     if (child_range.first == child_range.second)
       continue;
 
-    auto child_key = node_key;
-    child_key.set_octant_at_level(child_level, idx);
+    auto child_node = node;
+    child_node.morton_index.set_octant_at_level(child_level, idx);
+    child_node.bounds = get_octant_bounds(idx, node.bounds);
+    child_node.level = child_level;
+    child_node.max_spacing /= 2;
+    child_node.name = concat(node.name, static_cast<char>('0' + idx));
 
     // Copy the indices into a new vector and pass it on to the child processing
-    std::vector<IndexedPoint<MAX_OCTREE_LEVELS>> child_indexed_points{ child_range.first,
-                                                                       child_range.second };
+    child_descriptions.emplace_back(
+      octree::NodeData{ child_range.first, child_range.second }, child_node, root_node);
 
-    const auto child_bounds = get_octant_bounds(idx, node_bounds);
+#ifdef PRECISE_VERIFICATION_MODE
+    validate_points(child_descriptions.back().indexed_points,
+                    node_name + (char)('0' + idx) + " (child)",
+                    child_descriptions.back().bounds);
+#endif
+  }
 
-    child_descriptions.push_back(OctreeNodeDescription{ child_key,
-                                                        static_cast<int32_t>(child_level),
-                                                        child_bounds,
-                                                        std::move(child_indexed_points),
-                                                        root_node_name,
-                                                        max_depth });
+  if (debug::Journal::instance().is_enabled()) {
+    timings["partition_child_octants"] = std::to_string(
+      (std::chrono::high_resolution_clock::now() - child_partitioning_tstart).count());
   }
 
   return child_descriptions;
 }
 
-static std::vector<OctreeNodeDescription>
-process_octree_node(OctreeNodeDescription&& node_description,
+static std::vector<NodeProcessingResult>
+process_octree_node(octree::NodeData&& node_data,
+                    octree::NodeStructure const& node,
+                    octree::NodeStructure const& root_node,
                     std::vector<std::unique_ptr<PointBuffer>>& points_cache,
-                    const AABB& root_bounds,
-                    float spacing_at_root,
                     size_t max_points_per_node,
                     SamplingStrategy& sampling_strategy,
                     ProgressReporter* progress_reporter,
                     IPointsPersistence& persistence)
 {
+  std::map<std::string, std::string> timings;
+  static auto s_journal_headers_written = false;
+  BOOST_SCOPE_EXIT(&timings, &node)
+  {
+    if (!debug::Journal::instance().is_enabled())
+      return;
+
+    if (!s_journal_headers_written) {
+      debug::Journal::instance().add_entry(boost::algorithm::join(keys(timings), ";"));
+
+      s_journal_headers_written = true;
+    }
+
+    debug::Journal::instance().add_entry(boost::algorithm::join(values(timings), ";"));
+  }
+  BOOST_SCOPE_EXIT_END
+
+  const auto t_begin = std::chrono::high_resolution_clock::now();
+
+  BOOST_SCOPE_EXIT(&timings, &t_begin, &node)
+  {
+    if (!debug::Journal::instance().is_enabled())
+      return;
+
+    timings["process_octree_node"] =
+      std::to_string((std::chrono::high_resolution_clock::now() - t_begin).count());
+    timings["name"] = node.name;
+  }
+  BOOST_SCOPE_EXIT_END
+
   const auto current_node_name =
-    node_description.root_node_name + to_string(node_description.key, node_description.level + 1);
+    concat(root_node.name, to_string(node.morton_index, node.level + 1));
 
   auto cached_points = read_pnts_from_disk(
-    current_node_name, root_bounds, node_description.bounds, points_cache, persistence);
+    current_node_name, root_node.bounds, node.bounds, points_cache, persistence);
+
+  if (debug::Journal::instance().is_enabled()) {
+    timings["read_pnts_from_disk"] =
+      std::to_string((std::chrono::high_resolution_clock::now() - t_begin).count());
+
+    timings["point_count_disk"] = std::to_string(cached_points.size());
+    timings["point_count_new"] = std::to_string(node_data.size());
+    timings["point_count_total"] = std::to_string(cached_points.size() + node_data.size());
+  }
+
   const auto cached_points_count = cached_points.size();
 
+#ifdef PRECISE_VERIFICATION_MODE
+  validate_points(node_description.indexed_points, current_node_name, node_description.bounds);
+  validate_points(cached_points, current_node_name + " (cached)", node_description.bounds);
+  sorted_check(std::begin(cached_points), std::end(cached_points), current_node_name + " (cached)");
+  sorted_check(std::begin(node_description.indexed_points),
+               std::end(node_description.indexed_points),
+               current_node_name);
+  if (node_description.level >= 0) {
+    morton_check(std::begin(node_description.indexed_points),
+                 std::end(node_description.indexed_points),
+                 static_cast<uint32_t>(node_description.level),
+                 current_node_name,
+                 node_description.bounds);
+    morton_check(std::begin(cached_points),
+                 std::end(cached_points),
+                 static_cast<uint32_t>(node_description.level),
+                 current_node_name + " (cached)",
+                 node_description.bounds);
+  }
+#endif
+
+  // TODO Only certain sampling modes (GRID_CENTER, RANDOM_SORTED_GRID) need to know the target
+  // level to sample from. This means that for all other sampling modes, we could rather check
+  // the level of this node (instead of the level to sample from) and base the distinction
+  // interior/terminal node on this
+
   const auto node_level_to_sample_from =
-    get_node_level_for_target_spacing(spacing_at_root, node_description.level, root_bounds);
+    octree::get_node_level_to_sample_from(node.level, root_node);
 
   // Depending on the level that we want to sample from, we have to do different
   // things
 
-  if (node_level_to_sample_from >= static_cast<int32_t>(node_description.max_depth)) {
+  if (node_level_to_sample_from >= static_cast<int32_t>(node.max_depth)) {
     // If we are at the max level or even deeper, we take all the points we can
     // and are done for this node
-    const auto all_points_for_this_node = merge_indexed_points_unsorted(
-      std::move(node_description.indexed_points), std::move(cached_points));
+    const auto all_points_for_this_node =
+      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
 
     process_terminal_node(all_points_for_this_node,
-                          current_node_name,
-                          node_description.bounds,
+                          node,
                           max_points_per_node,
                           cached_points_count,
                           persistence,
@@ -341,19 +406,17 @@ process_octree_node(OctreeNodeDescription&& node_description,
     // Fun fact: We don't have to adjust the loaded indices because if we ever
     // get to a node this deep again, the indices have been calculated with the
     // new root the last time also, so everything is as it should be
-    auto all_points_for_this_node = merge_indexed_points_unsorted(
-      std::move(node_description.indexed_points), std::move(cached_points));
+    auto all_points_for_this_node =
+      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
 
     // Set this node as the new root node
-    const auto new_max_depth = node_description.max_depth - node_description.level;
-    const auto new_root_node_name = current_node_name;
-    const auto new_root_bounds = node_description.bounds;
-    const auto new_spacing_at_root = spacing_at_root / std::pow(2, node_description.level + 1);
+    auto new_root_node = node;
+    new_root_node.max_depth = node.max_depth - node.level;
 
     // Compute new indices based upon this node as root node
     for (auto& indexed_point : all_points_for_this_node) {
       indexed_point.morton_index = calculate_morton_index<MAX_OCTREE_LEVELS>(
-        indexed_point.point_reference.position(), new_root_bounds);
+        indexed_point.point_reference.position(), new_root_node.bounds);
     }
 
     // Make sure everything is sorted again
@@ -363,76 +426,88 @@ process_octree_node(OctreeNodeDescription&& node_description,
       [](const auto& l, const auto& r) { return l.morton_index.get() < r.morton_index.get(); });
 
     return process_internal_node(all_points_for_this_node,
-                                 current_node_name,
-                                 node_description.bounds,
-                                 node_description.key,
-                                 -1, // this node is new root, so its level is -1
-                                 new_root_bounds,
-                                 new_root_node_name,
-                                 new_spacing_at_root,
+                                 node,
+                                 new_root_node,
                                  cached_points_count,
-                                 new_max_depth,
                                  sampling_strategy,
                                  persistence,
-                                 progress_reporter);
+                                 progress_reporter,
+                                 timings);
   }
 
-  auto all_points_for_this_node = merge_indexed_points_sorted(
-    std::move(node_description.indexed_points), std::move(cached_points));
+  auto all_points_for_this_node =
+    octree::merge_node_data_sorted(std::move(node_data), std::move(cached_points));
+
+#ifdef PRECISE_VERIFICATION_MODE
+  sorted_check(std::begin(all_points_for_this_node),
+               std::end(all_points_for_this_node),
+               current_node_name + " (combined)");
+#endif
 
   return process_internal_node(all_points_for_this_node,
-                               current_node_name,
-                               node_description.bounds,
-                               node_description.key,
-                               node_description.level,
-                               root_bounds,
-                               node_description.root_node_name,
-                               spacing_at_root,
+                               node,
+                               root_node,
                                cached_points_count,
-                               node_description.max_depth,
                                sampling_strategy,
                                persistence,
-                               progress_reporter);
+                               progress_reporter,
+                               timings);
 }
 
 template<typename Func>
 static void
-process_node_sync(OctreeNodeDescription&& node_description, Func&& process_call)
+process_node_sync(octree::NodeData&& node_data,
+                  octree::NodeStructure const& node,
+                  octree::NodeStructure const& root_node,
+                  Func&& process_call)
 {
-  auto child_nodes = process_call(std::move(node_description));
+  auto child_nodes = process_call(std::move(node_data), node, root_node);
 
-  for (auto& child_node : child_nodes) {
-    process_node_sync(std::move(child_node), process_call);
+  for (auto& child_node_description : child_nodes) {
+    process_node_sync(std::move(child_node_description.data),
+                      child_node_description.node,
+                      child_node_description.root_node,
+                      process_call);
   }
 }
 
 template<typename Func>
 static async::Awaitable<void>
-process_node_async(OctreeNodeDescription&& node_description,
+process_node_async(octree::NodeData&& node_data,
+                   octree::NodeStructure const& node,
+                   octree::NodeStructure const& root_node,
                    Func&& process_call,
                    TaskSystem& task_system)
 {
-  auto child_nodes = process_call(std::move(node_description));
+  auto child_nodes = process_call(std::move(node_data), node, root_node);
 
   constexpr size_t MinPointsForAsyncProcessing = 100'000;
 
-  // Sort child nodes by point cound in descending order. This way, we first process
-  // all nodes that require async processing and then process the sync nodes
+  // Sort child nodes by point cound in descending order. This way, we first
+  // process all nodes that require async processing and then process the sync
+  // nodes
   std::sort(std::begin(child_nodes), std::end(child_nodes), [](const auto& l, const auto& r) {
-    return r.indexed_points.size() < l.indexed_points.size();
+    return r.data.size() < l.data.size();
   });
 
   std::vector<async::Awaitable<void>> awaitables;
   awaitables.reserve(child_nodes.size());
-  for (auto& child_node : child_nodes) {
-    if (child_node.indexed_points.size() >= MinPointsForAsyncProcessing) {
-      auto sub_awaitable =
-        task_system.push([&, process_call, child_node{ std::move(child_node) }]() mutable {
-          return process_node_async(std::move(child_node), process_call, task_system);
+  for (auto& child_node_description : child_nodes) {
+    if (child_node_description.data.size() >= MinPointsForAsyncProcessing) {
+      auto sub_awaitable = task_system.push(
+        [&, process_call, child_node_description{ std::move(child_node_description) }]() mutable {
+          return process_node_async(std::move(child_node_description.data),
+                                    child_node_description.node,
+                                    child_node_description.root_node,
+                                    process_call,
+                                    task_system);
         });
       awaitables.push_back(async::flatten(std::move(sub_awaitable)));
     } else {
-      process_node_sync(std::move(child_node), process_call);
+      process_node_sync(std::move(child_node_description.data),
+                        child_node_description.node,
+                        child_node_description.root_node,
+                        process_call);
     }
   }
 
@@ -440,16 +515,12 @@ process_node_async(OctreeNodeDescription&& node_description,
 }
 
 Tiler::Tiler(const AABB& aabb,
-             float spacing_at_root,
-             uint32_t max_depth,
-             size_t max_points_per_node,
+             const TilerMetaParameters& meta_parameters,
              SamplingStrategy sampling_strategy,
              ProgressReporter* progress_reporter,
              IPointsPersistence& persistence)
   : _aabb(aabb)
-  , _spacing(spacing_at_root)
-  , _max_depth(max_depth)
-  , _max_points_per_node(max_points_per_node)
+  , _meta_parameters(meta_parameters)
   , _sampling_strategy(std::move(sampling_strategy))
   , _progress_reporter(progress_reporter)
   , _persistence(persistence)
@@ -457,7 +528,8 @@ Tiler::Tiler(const AABB& aabb,
   , _consumers(1)
   , _run_indexing_thread(true)
 {
-  const auto root_spacing_to_bounds_ratio = std::log2f(aabb.extent().x / spacing_at_root);
+  const auto root_spacing_to_bounds_ratio =
+    std::log2f(aabb.extent().x / meta_parameters.spacing_at_root);
   if (root_spacing_to_bounds_ratio >= MAX_OCTREE_LEVELS) {
     throw std::runtime_error{ "spacing at root node is too small compared to bounds of data!" };
   }
@@ -468,6 +540,9 @@ Tiler::Tiler(const AABB& aabb,
 void
 Tiler::index()
 {
+  if (!_store.count())
+    return;
+
   _consumers.wait();
   _indexing_point_cache = std::move(_store);
   _store = {};
@@ -476,12 +551,14 @@ Tiler::index()
 
 void
 Tiler::wait_until_indexed()
-{}
+{
+  _consumers.wait();
+}
 
 bool
 Tiler::needs_indexing() const
 {
-  return _store.count() >= MAX_POINTS_CACHED_BEFORE_INDEXING;
+  return _store.count() >= _meta_parameters.internal_cache_size;
 }
 
 void
@@ -490,20 +567,6 @@ Tiler::cache(const PointBuffer& points)
   _store.append_buffer(points);
   if (_progress_reporter)
     _progress_reporter->increment_progress<size_t>(progress::LOADING, points.count());
-}
-
-void
-Tiler::flush()
-{
-  if (!_store.count())
-    return;
-  index();
-}
-
-bool
-Tiler::needs_flush() const
-{
-  return false;
 }
 
 void
@@ -524,26 +587,34 @@ Tiler::run_worker()
   const auto concurrency = std::max(1u, std::thread::hardware_concurrency() - 1);
   task_system.run(concurrency);
 
-  auto run_async = [&](const auto& indexed_points) {
+  auto run_async = [&](octree::NodeData&& indexed_points) {
     // Async version
 
     std::vector<std::unique_ptr<PointBuffer>> points_cache;
 
-    const auto process_call = [&](OctreeNodeDescription&& node_desc) {
-      return process_octree_node(std::move(node_desc),
+    const auto process_call = [&](octree::NodeData&& node_data,
+                                  octree::NodeStructure const& node,
+                                  octree::NodeStructure const& root_node) {
+      return process_octree_node(std::move(node_data),
+                                 node,
+                                 root_node,
                                  points_cache,
-                                 _aabb,
-                                 _spacing,
-                                 _max_points_per_node,
+                                 _meta_parameters.max_points_per_node,
                                  _sampling_strategy,
                                  _progress_reporter,
                                  _persistence);
     };
 
-    OctreeNodeDescription root_node_desc{ MortonIndex<MAX_OCTREE_LEVELS>{}, -1,  _aabb,
-                                          std::move(indexed_points),        "r", _max_depth };
+    octree::NodeStructure root_node;
+    root_node.bounds = _aabb;
+    root_node.level = -1;
+    root_node.max_depth = _meta_parameters.max_depth;
+    root_node.max_spacing = _meta_parameters.spacing_at_root;
+    root_node.morton_index = {};
+    root_node.name = "r";
 
-    auto awaitable = process_node_async(std::move(root_node_desc), process_call, task_system);
+    auto awaitable = process_node_async(
+      std::move(indexed_points), root_node, root_node, process_call, task_system);
     awaitable.await();
   };
 
@@ -552,41 +623,21 @@ Tiler::run_worker()
     if (!_run_indexing_thread)
       break;
 
-    std::vector<MortonIndex<MAX_OCTREE_LEVELS>> octree_keys;
-    octree_keys.resize(_indexing_point_cache.count());
+    octree::NodeData root_node_points;
+    root_node_points.resize(_indexing_point_cache.count());
 
-    // Calculate morton indices in parallel
-    {
-      std::vector<async::Awaitable<void>> futures;
-      futures.reserve(concurrency);
+    // Index points in parallel
+    parallel::transform(std::begin(_indexing_point_cache),
+                        std::end(_indexing_point_cache),
+                        std::begin(root_node_points),
+                        [this](PointBuffer::PointReference point) {
+                          return index_point<MAX_OCTREE_LEVELS>(
+                            point, _aabb, OutlierPointsBehaviour::ClampToBounds);
+                        },
+                        task_system);
 
-      const auto keys_chunks =
-        split_range_into_chunks(concurrency, octree_keys.begin(), octree_keys.end());
-      const auto positions_chunks =
-        split_range_into_chunks(concurrency,
-                                _indexing_point_cache.positions().begin(),
-                                _indexing_point_cache.positions().end());
-
-      // This is parallel_for_each
-      for (size_t idx = 0; idx < concurrency; ++idx) {
-        const auto cur_points_chunk_begin = positions_chunks[idx].first;
-        const auto cur_points_chunk_end = positions_chunks[idx].second;
-        const auto cur_key_chunk_begin = keys_chunks[idx].first;
-        futures.push_back(task_system.push([=]() {
-          calculate_morton_indices_for_points<MAX_OCTREE_LEVELS>(
-            cur_points_chunk_begin, cur_points_chunk_end, cur_key_chunk_begin, _aabb);
-        }));
-      }
-
-      async::all(std::move(futures)).await();
-    }
-
-    auto indexed_points = index_points(octree_keys, _indexing_point_cache);
-
-    // Important to sort all points by their octree keys
-    std::sort(indexed_points.begin(), indexed_points.end(), [](const auto& l, const auto& r) {
-      return l.morton_index.get() < r.morton_index.get();
-    });
+    // Sort all points by their octree keys
+    std::sort(root_node_points.begin(), root_node_points.end());
 
     // Process root
     // Partition into 8 child ranges
@@ -595,7 +646,7 @@ Tiler::run_worker()
     // Make sure to sync threads at each level, no higher level must be
     // processed before lower levels
 
-    run_async(indexed_points);
+    run_async(std::move(root_node_points));
 
     _consumers.notify();
   }

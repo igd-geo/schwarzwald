@@ -31,6 +31,19 @@ Cesium3DTilesPersistence::persist_points(gsl::span<PointBuffer::PointReference> 
 }
 
 void
+Cesium3DTilesPersistence::persist_points(PointBuffer const& points,
+                                         const AABB& bounds,
+                                         const std::string& node_name)
+{
+  PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"), _point_attributes };
+  auto points_copy = points;
+  auto local_offset_to_world = setOriginToSmallestPoint(points_copy.positions());
+
+  writer.write_points(points_copy);
+  writer.flush(local_offset_to_world);
+}
+
+void
 Cesium3DTilesPersistence::persist_indices(gsl::span<MortonIndex64> indices,
                                           const std::string& node_name)
 {

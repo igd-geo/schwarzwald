@@ -20,6 +20,12 @@ struct IPointsPersistence
                               const AABB& bounds,
                               const std::string& node_name) = 0;
   /**
+   * Persist the given PointBuffer for the given node
+   */
+  virtual void persist_points(PointBuffer const& points,
+                              const AABB& bounds,
+                              const std::string& node_name) = 0;
+  /**
    * Persist the given range of point indices for the given node
    */
   virtual void persist_indices(gsl::span<MortonIndex64> indices, const std::string& node_name) = 0;

@@ -12,13 +12,18 @@
 #include "ThroughputCounter.hpp"
 #include "Tiler.h"
 #include "Transformation.h"
-#include "definitions.hpp"
+#include "io/BinaryPersistence.h"
+#include "io/CachedPersistence.h"
 #include "io/Cesium3DTilesPersistence.h"
+#include "io/LASFile.h"
 #include "io/LASPersistence.h"
+#include "io/stdout_helper.h"
 #include "stuff.h"
 #include "ui/ProgressReporter.h"
+#include "util/Debugging.h"
 #include "util/Stats.h"
 
+#include <boost/format.hpp>
 #include <chrono>
 #include <fstream>
 #include <iomanip>
@@ -30,58 +35,30 @@
 
 #include "TileSetWriter.h"
 
-namespace fs = std::experimental::filesystem;
 namespace rj = rapidjson;
 
 constexpr auto PROCESS_COUNT = 1'000'000;
-
-// static std::unique_ptr<SRSTransformHelper>
-// get_transformation_helper(const std::optional<std::string>& sourceProjection)
-// {
-//   if (!sourceProjection) {
-//     std::cout << "Source projection not specified, skipping point "
-//                  "transformation..."
-//               << std::endl;
-//     return std::make_unique<IdentityTransform>();
-//   }
-
-//   if (std::strcmp(sourceProjection->c_str(), "+proj=longlat +datum=WGS84
-//   +no_defs") == 0) {
-//     std::cout << "Source projection is already WGS84, skipping point "
-//                  "transformation..."
-//               << std::endl;
-//     return std::make_unique<IdentityTransform>();
-//   }
-
-//   try {
-//     return std::make_unique<Proj4Transform>(*sourceProjection);
-//   } catch (const std::runtime_error& err) {
-//     std::cerr << "Error while setting up coordinate transformation:\n" <<
-//     err.what() << std::endl; std::cerr << "Skipping point transformation..."
-//     << std::endl;
-//   }
-//   return std::make_unique<IdentityTransform>();
-// }
 
 /// <summary>
 /// Verify that output directory is valid
 /// </summary>
 static void
-verifyWorkDir(const std::string& workDir)
+prepare_output_directory(const std::string& output_directory)
 {
-  if (fs::exists(workDir)) {
-    std::cout << "Output directory not empty, removing existing files..." << std::endl;
-    for (auto& entry : fs::directory_iterator{ workDir }) {
+  if (fs::exists(output_directory)) {
+    // TODO We could add a progress bar here!
+    util::write_log("Output directory not empty, removing existing files\n");
+    for (auto& entry : fs::directory_iterator{ output_directory }) {
       fs::remove_all(entry);
     }
   } else {
-    std::cout << "Output directory does not exist, creating it..." << std::endl;
-    fs::create_directories(workDir);
+    util::write_log("Output directory does not exist, creating it\n");
+    fs::create_directories(output_directory);
   }
 }
 
 static void
-write_properties_json(const std::string& work_dir,
+write_properties_json(const std::string& output_directory,
                       const AABB& bounds,
                       float root_spacing,
                       const PerformanceStats& perf)
@@ -146,7 +123,7 @@ write_properties_json(const std::string& work_dir,
     void Flush() {}
   };
 
-  Stream fs{ work_dir + "/properties.json" };
+  Stream fs{ output_directory + "/properties.json" };
   if (!fs.of.is_open()) {
     std::cerr << "Error writing properties.json file!" << std::endl;
     return;
@@ -156,33 +133,32 @@ write_properties_json(const std::string& work_dir,
   document.Accept(writer);
 }
 
-PointReader*
-TilerProcess::createPointReader(const std::string& path,
-                                const PointAttributes& pointAttributes) const
+using PointFile = std::variant<LASFile>; // and more files
+
+PointFile
+open_point_file(const std::experimental::filesystem::path& path)
 {
-  PointReader* reader = NULL;
-  if (iEndsWith(path, ".las") || iEndsWith(path, ".laz")) {
-    reader = new LASPointReader(path, pointAttributes);
+  if (path.extension() == ".las" || path.extension() == ".laz") {
+    return { LASFile{ path, LASFile::OpenMode::Read } };
   }
-
-  return reader;
+  throw std::runtime_error{
+    (boost::format("Unsupported file extension '%1%'") % path.extension().string()).str()
+  };
 }
 
-TilerProcess::TilerProcess(const std::string& workDir, std::vector<std::string> sources)
-  : _ui(&_ui_state)
-{
-  this->workDir = workDir;
-  this->sources = sources;
-}
+TilerProcess::TilerProcess(Arguments const& args)
+  : _args(args)
+  , _ui(&_ui_state)
+{}
 
 void
 TilerProcess::prepare()
 {
-  verifyWorkDir(workDir);
+  prepare_output_directory(_args.output_directory);
 
   // if sources contains directories, use files inside the directory instead
-  std::vector<std::string> sourceFiles;
-  for (const auto& source : sources) {
+  std::vector<fs::path> filtered_source_files;
+  for (const auto& source : _args.sources) {
     fs::path pSource(source);
     if (fs::is_directory(pSource)) {
       fs::recursive_directory_iterator it(pSource);
@@ -193,43 +169,43 @@ TilerProcess::prepare()
           if (iEndsWith(filepath, ".las") || iEndsWith(filepath, ".laz") ||
               iEndsWith(filepath, ".xyz") || iEndsWith(filepath, ".pts") ||
               iEndsWith(filepath, ".ptx") || iEndsWith(filepath, ".ply")) {
-            sourceFiles.push_back(filepath);
+            filtered_source_files.push_back(filepath);
           }
         }
       }
     } else if (fs::is_regular_file(pSource)) {
-      sourceFiles.push_back(source);
+      filtered_source_files.push_back(source);
     } else {
-      std::cout << "Can't open input file \"" << source << "\"" << std::endl;
+      util::write_log(concat("Can't open input file \"", source, "\n"));
     }
   }
 
   // Remove input files that don't exist and notify user
-  sourceFiles.erase(std::remove_if(sourceFiles.begin(),
-                                   sourceFiles.end(),
-                                   [](const auto& path) {
-                                     if (fs::exists(path))
-                                       return false;
-                                     std::cout << "Can't open input file \"" << path << "\""
-                                               << std::endl;
-                                     return true;
-                                   }),
-                    sourceFiles.end());
+  filtered_source_files.erase(std::remove_if(filtered_source_files.begin(),
+                                             filtered_source_files.end(),
+                                             [](const auto& path) {
+                                               if (fs::exists(path))
+                                                 return false;
+                                               util::write_log(
+                                                 concat("Can't open input file \"", path, "\n"));
+                                               return true;
+                                             }),
+                              filtered_source_files.end());
 
-  this->sources = sourceFiles;
+  _args.sources = std::move(filtered_source_files);
 
-  pointAttributes = point_attributes_from_strings(outputAttributes);
+  _point_attributes = point_attributes_from_strings(_args.output_attributes);
 
-  const auto attributesDescription = pointAttributes.toString();
-  std::cout << "Writing the following point attributes: " << attributesDescription << std::endl;
+  const auto attributesDescription = print_attributes(_point_attributes);
+  util::write_log(concat("Writing the following point attributes: ", attributesDescription, "\n"));
 }
 
 void
 TilerProcess::cleanUp()
 {
-  const auto tempPath = workDir + "/temp";
-  if (fs::exists(tempPath)) {
-    fs::remove(tempPath);
+  const auto temp_path = _args.output_directory.append("/temp");
+  if (fs::exists(temp_path)) {
+    fs::remove(temp_path);
   }
 }
 
@@ -237,15 +213,12 @@ AABB
 TilerProcess::calculateAABB()
 {
   AABB aabb;
-  for (const auto& source : sources) {
-    PointReader* reader = createPointReader(source, pointAttributes);
+  for (const auto& source : _args.sources) {
+    auto point_file = open_point_file(source);
 
-    AABB sourceAABB = reader->getAABB();
-    aabb.update(sourceAABB.min);
-    aabb.update(sourceAABB.max);
-
-    reader->close();
-    delete reader;
+    const auto bounds = pc::get_bounds(point_file);
+    aabb.update(bounds.min);
+    aabb.update(bounds.max);
   }
 
   return aabb;
@@ -255,10 +228,9 @@ size_t
 TilerProcess::get_total_points_count() const
 {
   size_t total_count = 0;
-  for (auto& source : sources) {
-    PointReader* reader = createPointReader(source, pointAttributes);
-    total_count += reader->numPoints();
-    delete reader;
+  for (auto& source : _args.sources) {
+    auto point_file = open_point_file(source);
+    total_count += pc::get_point_count(point_file);
   }
   return total_count;
 }
@@ -272,50 +244,72 @@ TilerProcess::run()
 
   const auto total_points_count = get_total_points_count();
 
-  std::cout << "Total points: " << total_points_count << std::endl;
+  util::write_log(concat("Total points: ", total_points_count, "\n"));
 
   // We don't transform the AABBs here, since this would break the process of
   // partitioning the points. Instead, we will transform only upon writing the
   // bounding boxes to the JSON files
 
   AABB aabb = calculateAABB();
-  std::cout << "AABB: " << std::endl << aabb << std::endl;
+  util::write_log(concat("Bounds:\n", aabb, "\n"));
   aabb.makeCubic();
-  std::cout << "cubic AABB: " << std::endl << aabb << std::endl;
+  util::write_log(concat("Bounds (cubic):\n", aabb, "\n"));
 
-  if (diagonalFraction != 0) {
-    spacing = (float)(aabb.extent().length() / diagonalFraction);
-    std::cout << "spacing calculated from diagonal: " << spacing << std::endl;
+  if (_args.diagonal_fraction != 0) {
+    _args.spacing = (float)(aabb.extent().length() / _args.diagonal_fraction);
+    util::write_log(concat("Spacing calculated from diagonal: ", _args.spacing, "\n"));
   }
 
   auto& progress_reporter = _ui_state.get_progress_reporter();
   progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
   progress_reporter.register_progress_counter<size_t>(progress::INDEXING, total_points_count);
 
-  const auto persistence = [&]() -> std::unique_ptr<IPointsPersistence> {
-    if (outputFormat == OutputFormat::LAS) {
-      return std::make_unique<LASPersistence>(
-        workDir, pointAttributes, LASPersistence::Compressed::No);
-    } else if (outputFormat == OutputFormat::LAZ) {
-      return std::make_unique<LASPersistence>(
-        workDir, pointAttributes, LASPersistence::Compressed::Yes);
+  const auto persistence = [this]() -> std::unique_ptr<IPointsPersistence> {
+    auto binary_persistence =
+      std::make_unique<BinaryPersistence>(_args.output_directory,
+                                          _point_attributes,
+                                          _args.use_compression ? Compressed::Yes : Compressed::No);
+    if (!_args.cache_size) {
+      return binary_persistence;
     }
-    throw new std::runtime_error{ "Unrecognized OutputFormat!" };
+    return std::make_unique<CachedPersistence>(*_args.cache_size, std::move(binary_persistence));
   }();
 
   const auto max_depth =
-    (maxDepth <= 0)
+    (_args.max_depth <= 0)
       ? (100u)
-      : static_cast<uint32_t>(maxDepth); // TODO max_depth parameter with uint32_t max
-                                         // results in only root level being created...
+      : static_cast<uint32_t>(_args.max_depth); // TODO max_depth parameter with uint32_t max
+                                                // results in only root level being created...
 
-  std::cout << "Using " << samplingStrategy << " sampling" << std::endl;
-  auto sampling_strategy = make_sampling_strategy_from_name(samplingStrategy, max_points_per_node);
+  util::write_log(concat("Using ", _args.sampling_strategy, " sampling\n"));
+  auto sampling_strategy = [&]() -> SamplingStrategy {
+    if (_args.sampling_strategy == "RANDOM_GRID")
+      return RandomSortedGridSampling{ _args.max_points_per_node };
+    if (_args.sampling_strategy == "GRID_CENTER")
+      return GridCenterSampling{ _args.max_points_per_node };
+    if (_args.sampling_strategy == "MIN_DISTANCE")
+      return PoissonDiskSampling{ _args.max_points_per_node };
+    if (_args.sampling_strategy == "MIN_DISTANCE_FAST")
+      return AdaptivePoissonDiskSampling{ _args.max_points_per_node,
+                                          [](int32_t node_level) -> float {
+                                            if (node_level < 0)
+                                              return 0.25f;
+                                            if (node_level < 1)
+                                              return 0.5f;
+                                            return 1.f;
+                                          } };
+    throw std::invalid_argument{
+      (boost::format("Unrecognized sampling strategy %1%") % _args.sampling_strategy).str()
+    };
+  }();
 
-  Tiler tiler{
-    aabb,        spacing, max_depth, max_points_per_node, sampling_strategy, &progress_reporter,
-    *persistence
-  };
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = _args.spacing;
+  tiler_meta_parameters.max_depth = max_depth;
+  tiler_meta_parameters.max_points_per_node = _args.max_points_per_node;
+  tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
+
+  Tiler tiler{ aabb, tiler_meta_parameters, sampling_strategy, &progress_reporter, *persistence };
 
   std::atomic_bool draw_ui = true;
   std::thread ui_thread{ [this, &draw_ui]() {
@@ -331,40 +325,39 @@ TilerProcess::run()
 
   const auto indexing_start = std::chrono::high_resolution_clock::now();
 
-  std::vector<AABB> boundingBoxes;
-  std::vector<int> numPoints;
-  std::vector<std::string> sourceFilenames;
+  for (const auto& source : _args.sources) {
+    try {
+      auto point_file = open_point_file(source);
 
-  for (const auto& source : sources) {
-    PointReader* reader = createPointReader(source, pointAttributes);
-    // TODO We should issue a warning here if 'pointAttributes' do not match the
-    // attributes available in the current file!
+      std::visit(
+        [this, &tiler](auto& typed_file) {
+          // TODO Would love to chunk the full file range here, but this
+          // doesn't work because the iterator is not random access
+          auto begin = typed_file.cbegin();
+          const auto end = typed_file.cend();
+          while (begin != end) {
+            PointBuffer point_batch;
+            begin = pc::read_points(begin,
+                                    _args.max_batch_read_size,
+                                    pc::metadata(typed_file),
+                                    _point_attributes,
+                                    point_batch);
+            if (point_batch.empty())
+              break;
 
-    boundingBoxes.push_back(reader->getAABB());
-    numPoints.push_back(reader->numPoints());
-    sourceFilenames.push_back(fs::path(source).filename().string());
-
-    // NOTE Points from the source file(s) are read here
-    while (true) {
-      auto pointBatch = reader->readPointBatch();
-      if (pointBatch.empty())
-        break;
-
-      tiler.cache(pointBatch);
-
-      if (tiler.needs_indexing()) {
-        tiler.index();
-        tiler.wait_until_indexed();
-      }
-      if (tiler.needs_flush()) {
-        tiler.flush();
-      }
+            tiler.cache(point_batch);
+            if (tiler.needs_indexing()) {
+              tiler.index();
+            }
+          }
+        },
+        point_file);
+    } catch (std::exception const& ex) {
+      util::write_log(concat("Could not process file ", source.string(), "(", ex.what(), ")\n"));
     }
-    reader->close();
-    delete reader;
   }
 
-  tiler.flush();
+  tiler.index();
   tiler.close();
 
   const auto indexing_end = std::chrono::high_resolution_clock::now();
@@ -376,7 +369,7 @@ TilerProcess::run()
   stats.indexing_duration = indexing_duration;
   stats.points_processed = total_points_count;
 
-  write_properties_json(workDir, aabb, spacing, stats);
+  write_properties_json(_args.output_directory, aabb, _args.spacing, stats);
 
   draw_ui = false;
   ui_thread.join();

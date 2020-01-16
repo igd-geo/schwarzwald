@@ -3,15 +3,20 @@
 #include <optional>
 #include <string>
 
+#include "Definitions.h"
 #include "PointAttributes.hpp"
-#include "definitions.hpp"
+
+struct ConverterArguments {
+  std::string source_folder;
+  std::string output_folder;
+  OutputFormat output_format;
+  PointAttributes output_attributes;
+  std::optional<std::string> source_projection;
+  std::optional<uint32_t> max_depth;
+  bool delete_source_files;
+};
 
 /**
  * Run conversion process
  */
-void
-run_conversion(const std::string& source_folder,
-               const std::string& target_folder,
-               OutputFormat target_format,
-               const PointAttributes& attributes,
-               std::optional<std::string> projection, std::optional<uint32_t> max_depth);
+void run_conversion(const ConverterArguments &args);

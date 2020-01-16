@@ -1,47 +1,52 @@
 #pragma once
 
 #include "AABB.h"
+#include "Definitions.h"
 #include "PointAttributes.hpp"
 #include "PointReader.h"
-#include "definitions.hpp"
 #include "ui/TerminalUI.hpp"
 
 #include <cstdint>
+#include <experimental/filesystem>
 #include <optional>
 #include <string>
 #include <vector>
 
-class SparseGrid;
-
-class TilerProcess
+struct TilerProcess
 {
+  struct Arguments
+  {
+    std::vector<fs::path> sources;
+    fs::path output_directory;
+    float spacing;
+    int levels;
+    int diagonal_fraction;
+    uint32_t max_depth;
+    size_t max_points_per_node;
+    size_t internal_cache_size;
+    size_t max_batch_read_size;
+    std::vector<std::string> output_attributes;
+    std::string sampling_strategy;
+    std::string executable_path;
+    std::optional<unit::byte> cache_size;
+    bool use_compression;
+    uint32_t max_memory_usage_MiB;
+  };
+
+  explicit TilerProcess(Arguments const& args);
+
+  void run();
+
 private:
-  AABB aabb;
-  std::vector<std::string> sources;
-  std::string workDir;
-  PointAttributes pointAttributes;
+  Arguments _args;
+  AABB _bounds;
+  PointAttributes _point_attributes;
 
   UIState _ui_state;
   TerminalUI _ui;
 
-  PointReader* createPointReader(const std::string& source,
-                                 const PointAttributes& pointAttributes) const;
   void prepare();
   void cleanUp();
   AABB calculateAABB();
   size_t get_total_points_count() const;
-
-public:
-  float spacing;
-  int maxDepth;
-  size_t max_points_per_node;
-  OutputFormat outputFormat;
-  std::vector<std::string> outputAttributes;
-  int diagonalFraction = 250;
-  std::string samplingStrategy;
-  uint32_t max_memory_usage_MiB;
-
-  TilerProcess(const std::string& workDir, std::vector<std::string> sources);
-
-  void run();
 };

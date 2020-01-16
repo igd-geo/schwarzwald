@@ -1,16 +1,19 @@
 #pragma once
 
 #include "AABB.h"
+#include "DynamicMortonIndex.h"
 #include "MortonIndex.h"
 #include "PointBuffer.h"
 #include "Sampling.h"
 #include "stuff.h"
 
+#include <boost/format.hpp>
 #include <unordered_set>
 #include <vector>
 
 /**
- * A reference to a cached point in a PointBuffer, together with the points octree index
+ * A reference to a cached point in a PointBuffer, together with the points
+ * octree index
  */
 template<unsigned int MaxLevels>
 struct IndexedPoint
@@ -20,23 +23,32 @@ struct IndexedPoint
 };
 
 /**
- * Returns a collection of IndexedPoints from the given set of MortonIndices and the given
- * PointBuffer
+ * IndexedPoint using 64-bit MortonIndex
  */
+using IndexedPoint64 = IndexedPoint<21>;
+
 template<unsigned int MaxLevels>
-std::vector<IndexedPoint<MaxLevels>>
-index_points(const std::vector<MortonIndex<MaxLevels>>& morton_indices, PointBuffer& points)
+bool
+operator<(const IndexedPoint<MaxLevels>& l, const IndexedPoint<MaxLevels>& r)
 {
-  assert(morton_indices.size() == points.count());
-
-  std::vector<IndexedPoint<MaxLevels>> indexed_points;
-  indexed_points.reserve(points.count());
-  for (size_t idx = 0; idx < points.count(); ++idx) {
-    indexed_points.push_back(IndexedPoint<MaxLevels>{ points.get_point(idx), morton_indices[idx] });
-  }
-
-  return indexed_points;
+  return l.morton_index.get() < r.morton_index.get();
 }
+
+/**
+ * What to do with outlier points (i.e. points that are read from the source
+ * file but are not within the bounds of the source file)
+ */
+enum class OutlierPointsBehaviour
+{
+  /**
+   * Clamp points to the bounding box
+   */
+  ClampToBounds,
+  /**
+   * Abort program when an outlier point is found
+   */
+  Abort
+};
 
 /**
  * Returns the bounding box of the given octant of the parent bounding box
@@ -45,8 +57,8 @@ AABB
 get_octant_bounds(uint8_t octant, const AABB& parent_bounds);
 
 /**
- * Returns the bounding box of the octree node with the given name. Names must follow the form
- * 'r01234567'
+ * Returns the bounding box of the octree node with the given name. Names must
+ * follow the form 'r01234567'
  */
 AABB
 get_bounds_from_node_name(const std::string& node_name, const AABB& root_bounds);
@@ -58,7 +70,8 @@ uint8_t
 get_octant(const Vector3<double>& position, const AABB& bounds);
 
 /**
- * Calculates the MortonIndex for a given position starting from 'node_bounds' as root node
+ * Calculates the MortonIndex for a given position starting from 'node_bounds'
+ * as root node
  */
 template<unsigned int MaxLevels>
 MortonIndex<MaxLevels>
@@ -112,9 +125,13 @@ get_bounds_from_morton_index(const MortonIndex<MaxLevels>& key,
   return bounds;
 }
 
+AABB
+get_bounds_from_morton_index(const DynamicMortonIndex& morton_index, const AABB& root_bounds);
+
 /**
- * Calculates an index into the octree spanned by the given bounding box for each of the given
- * points. The index represents the octant at each level of the octree that a point belongs to.
+ * Calculates an index into the octree spanned by the given bounding box for
+ * each of the given points. The index represents the octant at each level of
+ * the octree that a point belongs to.
  */
 template<unsigned int MaxLevels, typename KeysIter, typename PointsIter>
 void
@@ -128,11 +145,60 @@ calculate_morton_indices_for_points(PointsIter points_begin, //*points_begin is 
   });
 }
 
+template<unsigned int MaxLevels>
+IndexedPoint<MaxLevels>
+index_point(PointBuffer::PointReference point,
+            const AABB& bounds,
+            OutlierPointsBehaviour outlier_points_behaviour)
+{
+  const auto is_outlier = [](const Vector3<double>& position, const AABB& bounds) {
+    return !bounds.isInside(position);
+  };
+
+  auto& position = point.position();
+  if (is_outlier(position, bounds)) {
+
+    if (outlier_points_behaviour == OutlierPointsBehaviour::Abort) {
+      throw std::runtime_error{
+        (boost::format("Found outlier point:\n\tPoint: %1%\n\tBounds: %2%\n") % position % bounds)
+          .str()
+      };
+    }
+
+    position.x = std::min(bounds.max.x, std::max(bounds.min.x, position.x));
+    position.y = std::min(bounds.max.y, std::max(bounds.min.y, position.y));
+    position.z = std::min(bounds.max.z, std::max(bounds.min.z, position.z));
+  }
+
+  return IndexedPoint<MaxLevels>{ point, calculate_morton_index<MaxLevels>(position, bounds) };
+}
+
 /**
- * Partitions the given range of points into two ranges where the first range [begin,center)
- * contains all points that belong to the given octree node and the second range [center, end)
- * contains all points that don't belong to this node. Returns 'center'. Partitioning is stable,
- * i.e. it preserves the relative order between elements within the two ranges.
+ * Generates IndexedPoint objects for each point in the given PointBuffer and
+ * stores them in the given output iterator.
+ */
+template<unsigned int MaxLevels, typename OutIter>
+void
+index_points(PointBuffer::PointIterator points_begin,
+             PointBuffer::PointIterator points_end,
+             OutIter indexed_points_begin,
+             const AABB& bounds,
+             OutlierPointsBehaviour outlier_points_behaviour)
+{
+  std::transform(points_begin,
+                 points_end,
+                 indexed_points_begin,
+                 [&bounds, outlier_points_behaviour](PointBuffer::PointReference point_reference) {
+                   return index_point<MaxLevels>(point_reference, bounds, outlier_points_behaviour);
+                 });
+}
+
+/**
+ * Partitions the given range of points into two ranges where the first range
+ * [begin,center) contains all points that belong to the given octree node and
+ * the second range [center, end) contains all points that don't belong to this
+ * node. Returns 'center'. Partitioning is stable, i.e. it preserves the
+ * relative order between elements within the two ranges.
  *
  * The octree root node has 'node_level' -1, the first children start at level 0
  */
@@ -157,10 +223,11 @@ filter_points_for_octree_node(Iter points_begin, // *Iter is IndexedPoint<MaxLev
 }
 
 /**
- * Given a range of indexed points, partitions the range into 8 ranges where each sub-range contains
- * only points that fall into the specific octant at 'level_to_partition_at'. This assumes that all
- * points in the input range are sorted in ascending order by their MortonIndex and that the
- * parent node (at 'level_to_partition_at - 1') is equal for all points.
+ * Given a range of indexed points, partitions the range into 8 ranges where
+ * each sub-range contains only points that fall into the specific octant at
+ * 'level_to_partition_at'. This assumes that all points in the input range are
+ * sorted in ascending order by their MortonIndex and that the parent node (at
+ * 'level_to_partition_at - 1') is equal for all points.
  *
  * 'Iter' has to dereference to IndexedPoint<N> for arbitrary N
  */
@@ -172,8 +239,8 @@ partition_points_into_child_octants(Iter begin, Iter end, uint32_t level_to_part
   auto current_begin = begin;
 
   for (uint8_t octant = 0; octant < 8; ++octant) {
-    // End iterator is at the first element whose octant index on the current level is larger than
-    // octant
+    // End iterator is at the first element whose octant index on the current
+    // level is larger than octant
     const auto current_end =
       std::find_if(current_begin, end, [octant, level_to_partition_at](const auto& indexed_point) {
         return indexed_point.morton_index.get_octant_at_level(level_to_partition_at) > octant;
