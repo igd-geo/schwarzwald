@@ -105,7 +105,8 @@ TEST_CASE("LASPersistence store and retrieve to LAS does not modify points")
     const auto node_bounds = get_bounds_from_morton_index(points_begin->morton_index, bounds, 0);
 
     auto point_references = point_references_from_indexed_points(points_begin, points_end);
-    persistence.persist_points(gsl::make_span(point_references), node_bounds, node_name);
+    persistence.persist_points(
+      std::begin(point_references), std::end(point_references), node_bounds, node_name);
 
     PointBuffer retrieved_points;
     persistence.retrieve_points(node_name, retrieved_points);

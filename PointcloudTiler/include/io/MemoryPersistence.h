@@ -1,6 +1,9 @@
 #pragma once
 
-#include "IPointsPersistence.h"
+#include "AABB.h"
+#include "PointAttributes.hpp"
+#include "PointBuffer.h"
+#include "octree/MortonIndex.h"
 
 #include <mutex>
 #include <unordered_map>
@@ -8,24 +11,33 @@
 /**
  * Persists points in memory
  */
-struct MemoryPersistence : IPointsPersistence
+struct MemoryPersistence
 {
-  void persist_points(gsl::span<PointBuffer::PointReference> points,
-                      const AABB& bounds,
-                      const std::string& node_name) override;
-  void persist_points(PointBuffer const& points,
-                      const AABB& bounds,
-                      const std::string& node_name) override;
-  void persist_indices(gsl::span<MortonIndex64> indices, const std::string& node_name) override;
+  MemoryPersistence();
+  MemoryPersistence(const MemoryPersistence&) = delete;
+  MemoryPersistence(MemoryPersistence&&) = default;
+  MemoryPersistence& operator=(const MemoryPersistence&) = delete;
+  MemoryPersistence& operator=(MemoryPersistence&&) = default;
 
-  void retrieve_points(const std::string& node_name, PointBuffer& points) override;
-  void retrieve_indices(const std::string& node_name, std::vector<MortonIndex64>& indices) override;
+  template<typename Iter>
+  void persist_points(Iter points_begin,
+                      Iter points_end,
+                      const AABB& bounds,
+                      const std::string& node_name)
+  {
+    std::lock_guard<std::mutex> lock{ *_lock };
+    auto& buffer = _points_cache[node_name];
+    std::for_each(
+      points_begin, points_end, [&buffer](const auto& point_ref) { buffer.push_point(point_ref); });
+  }
+
+  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
+
+  void retrieve_points(const std::string& node_name, PointBuffer& points);
 
   const auto& get_points() const { return _points_cache; }
-  const auto& get_indices() const { return _indices_cache; }
 
 private:
-  std::mutex _lock;
+  std::unique_ptr<std::mutex> _lock;
   std::unordered_map<std::string, PointBuffer> _points_cache;
-  std::unordered_map<std::string, std::vector<MortonIndex64>> _indices_cache;
 };

@@ -6,8 +6,7 @@
 #include "TileSetWriter.h"
 #include "Tileset.h"
 #include "Transformation.h"
-#include "io/BinaryPersistence.h"
-#include "io/LASPersistence.h"
+#include "io/PointsPersistence.h"
 #include "io/stdout_helper.h"
 #include "octree/DynamicMortonIndex.h"
 #include "octree/OctreeAlgorithms.h"
@@ -234,7 +233,7 @@ get_transformation_helper(const std::optional<std::string>& sourceProjection)
   return std::make_unique<IdentityTransform>();
 }
 
-static std::unique_ptr<IPointsPersistence>
+static std::optional<PointsPersistence>
 get_persistence_for_file(const fs::path& file_path,
                          const std::string& source_folder,
                          const PointAttributes& attributes)
@@ -242,19 +241,23 @@ get_persistence_for_file(const fs::path& file_path,
   const auto extension = file_path.extension();
 
   if (extension == ".bin") {
-    return std::make_unique<BinaryPersistence>(source_folder, attributes, Compressed::No);
+    return std::make_optional<PointsPersistence>(
+      BinaryPersistence{ source_folder, attributes, Compressed::No });
   }
   if (extension == ".binz") {
-    return std::make_unique<BinaryPersistence>(source_folder, attributes, Compressed::Yes);
+    return std::make_optional<PointsPersistence>(
+      BinaryPersistence{ source_folder, attributes, Compressed::Yes });
   }
   if (extension == ".las") {
-    return std::make_unique<LASPersistence>(source_folder, attributes, Compressed::No);
+    return std::make_optional<PointsPersistence>(
+      LASPersistence{ source_folder, attributes, Compressed::No });
   }
   if (extension == ".laz") {
-    return std::make_unique<LASPersistence>(source_folder, attributes, Compressed::Yes);
+    return std::make_optional<PointsPersistence>(
+      LASPersistence{ source_folder, attributes, Compressed::Yes });
   }
 
-  return nullptr;
+  return std::nullopt;
 }
 
 static bool
@@ -488,7 +491,7 @@ convert_to_pnts_file(const std::string& source_folder,
                      const SRSTransformHelper& transformation,
                      DeleteSource delete_source)
 {
-  const auto persistence = get_persistence_for_file(input_file, source_folder, attributes);
+  auto persistence = get_persistence_for_file(input_file, source_folder, attributes);
   if (!persistence) {
     util::write_log(concat("Could not read source file \"",
                            input_file.filename().string(),
@@ -533,7 +536,7 @@ convert_to_las_file(const std::string& source_folder,
                     Compressed compressed,
                     DeleteSource delete_source)
 {
-  const auto persistence = get_persistence_for_file(input_file, source_folder, attributes);
+  auto persistence = get_persistence_for_file(input_file, source_folder, attributes);
   if (!persistence) {
     util::write_log(concat("Could not read source file \"",
                            input_file.filename().string(),
@@ -552,11 +555,8 @@ convert_to_las_file(const std::string& source_folder,
       PointBuffer source_data;
       persistence->retrieve_points(node_name, source_data);
 
-      std::vector<PointBuffer::PointReference> point_references;
-      point_references.reserve(source_data.count());
-      std::copy(
-        std::begin(source_data), std::end(source_data), std::back_inserter(point_references));
-      las_persistence.persist_points(gsl::make_span(point_references), node_bounds, node_name);
+      las_persistence.persist_points(
+        std::begin(source_data), std::end(source_data), node_bounds, node_name);
 
       if (delete_source == DeleteSource::Yes) {
         std::error_code ec;

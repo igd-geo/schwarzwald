@@ -2,6 +2,9 @@
 
 #include "Algorithm.h"
 #include "TaskSystem.h"
+#include "stuff.h"
+
+#include <taskflow/taskflow.hpp>
 
 namespace parallel {
 
@@ -59,4 +62,51 @@ transform(InputIterator first,
 
   async::all(std::move(awaitables)).await();
 }
+
+template<typename InputIterator, typename RandomAccessIterator, typename Func, typename Taskflow>
+std::pair<tf::Task, tf::Task>
+transform(InputIterator first,
+          InputIterator last,
+          RandomAccessIterator result,
+          Func func,
+          Taskflow& taskflow,
+          size_t concurrency,
+          std::string name_prefix = "")
+{
+  const auto distance = static_cast<size_t>(std::abs(std::distance(first, last)));
+  if (distance <= concurrency) {
+    std::transform(first, last, result, func);
+    return {};
+  }
+
+  const auto input_chunks = split_range_into_chunks(concurrency, first, last);
+  const auto result_chunks = split_range_into_chunks(concurrency, result, result + distance);
+
+  const auto name_tasks = !name_prefix.empty();
+
+  auto begin_task = taskflow.placeholder();
+  auto end_task = taskflow.placeholder();
+
+  if (name_tasks) {
+    begin_task.name(concat(name_prefix, "_begin"));
+    end_task.name(concat(name_prefix, "_end"));
+  }
+
+  for (size_t idx = 0; idx < concurrency; ++idx) {
+    const auto [in_chunk_begin, in_chunk_end] = input_chunks[idx];
+    const auto result_chunk_begin = result_chunks[idx].first;
+
+    auto worker_task = taskflow.emplace(
+      [=]() { std::transform(in_chunk_begin, in_chunk_end, result_chunk_begin, func); });
+    begin_task.precede(worker_task);
+    worker_task.precede(end_task);
+
+    if (name_tasks) {
+      worker_task.name(concat(name_prefix, "_", idx));
+    }
+  }
+
+  return std::make_pair(begin_task, end_task);
 }
+
+} // namespace parallel
