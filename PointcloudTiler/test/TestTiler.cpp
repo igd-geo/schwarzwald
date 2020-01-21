@@ -86,7 +86,7 @@ TEST_CASE("Tiler works", "[Tiler]")
   AABB bounds{ { 0, 0, 0 }, { 1, 1, 1 } };
   auto spacing_at_root = 0.1f;
   const auto sampling_strategy = make_sampling_strategy<RandomSortedGridSampling>(MaxPointsPerNode);
-  MemoryPersistence persistence;
+  PointsPersistence persistence{ MemoryPersistence{} };
 
   TilerMetaParameters tiler_meta_parameters;
   tiler_meta_parameters.spacing_at_root = spacing_at_root;
@@ -95,7 +95,7 @@ TEST_CASE("Tiler works", "[Tiler]")
   tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
                                                        // out-of-core processing
 
-  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence, "." };
 
   writer.cache(dataset);
   writer.index();
@@ -120,7 +120,7 @@ TEST_CASE("Tiler works", "[Tiler]")
     expected_points.insert(pos);
   }
 
-  const auto processed_points = persistence.get_points();
+  const auto processed_points = persistence.get<MemoryPersistence>().get_points();
   for (auto& kv : processed_points) {
     const auto& node_name = kv.first;
     const auto& points = kv.second;
@@ -158,7 +158,7 @@ TEST_CASE("Tiler with deep tree works", "[Tiler]")
   AABB bounds{ { 0, 0, 0 }, { 1 << 20, 1 << 20, 1 << 20 } };
   auto spacing_at_root = (1 << 20) / 10.f;
   const auto sampling_strategy = make_sampling_strategy<RandomSortedGridSampling>(MaxPointsPerNode);
-  MemoryPersistence persistence;
+  PointsPersistence persistence{ MemoryPersistence{} };
 
   TilerMetaParameters tiler_meta_parameters;
   tiler_meta_parameters.spacing_at_root = spacing_at_root;
@@ -166,7 +166,7 @@ TEST_CASE("Tiler with deep tree works", "[Tiler]")
   tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
   tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
                                                        // out-of-core processing
-  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence, "." };
 
   writer.cache(dataset);
   writer.index();
@@ -191,7 +191,7 @@ TEST_CASE("Tiler with deep tree works", "[Tiler]")
     expected_points.insert(pos);
   }
 
-  const auto processed_points = persistence.get_points();
+  const auto processed_points = persistence.get<MemoryPersistence>().get_points();
   for (auto& kv : processed_points) {
     const auto& node_name = kv.first;
     const auto& points = kv.second;
@@ -225,7 +225,7 @@ TEST_CASE("Tiler with GridCenter sampling", "[Tiler]")
   AABB bounds{ { 0, 0, 0 }, { 1, 1, 1 } };
   auto spacing_at_root = 0.1f;
   const auto sampling_strategy = make_sampling_strategy<GridCenterSampling>(MaxPointsPerNode);
-  MemoryPersistence persistence;
+  PointsPersistence persistence{ MemoryPersistence{} };
 
   TilerMetaParameters tiler_meta_parameters;
   tiler_meta_parameters.spacing_at_root = spacing_at_root;
@@ -233,7 +233,7 @@ TEST_CASE("Tiler with GridCenter sampling", "[Tiler]")
   tiler_meta_parameters.max_points_per_node = MaxPointsPerNode;
   tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
                                                        // out-of-core processing
-  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence, "." };
 
   writer.cache(dataset);
   writer.index();
@@ -252,7 +252,7 @@ TEST_CASE("Tiler with GridCenter sampling", "[Tiler]")
     expected_points.insert(pos);
   }
 
-  const auto processed_points = persistence.get_points();
+  const auto processed_points = persistence.get<MemoryPersistence>().get_points();
   for (auto& kv : processed_points) {
     const auto& node_name = kv.first;
     const auto& points = kv.second;
@@ -286,7 +286,7 @@ TEST_CASE("Tiler with PossionDisk sampling", "[Tiler]")
   AABB bounds{ { 0, 0, 0 }, { 1, 1, 1 } };
   auto spacing_at_root = 0.05f;
   const auto sampling_strategy = make_sampling_strategy<PoissonDiskSampling>(MaxPointsPerNode);
-  MemoryPersistence persistence;
+  PointsPersistence persistence{ MemoryPersistence{} };
 
   TilerMetaParameters tiler_meta_parameters;
   tiler_meta_parameters.spacing_at_root = spacing_at_root;
@@ -295,7 +295,7 @@ TEST_CASE("Tiler with PossionDisk sampling", "[Tiler]")
   tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
                                                        // out-of-core processing
 
-  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence, "." };
 
   writer.cache(dataset);
   writer.index();
@@ -335,7 +335,7 @@ TEST_CASE("Tiler with PossionDisk sampling", "[Tiler]")
     return true;
   };
 
-  const auto processed_points = persistence.get_points();
+  const auto processed_points = persistence.get<MemoryPersistence>().get_points();
   for (auto& kv : processed_points) {
     const auto& node_name = kv.first;
     const auto& points = kv.second;
@@ -403,7 +403,7 @@ TEST_CASE("Tiler with BinaryPersistence writer", "[Tiler]")
   }
   BOOST_SCOPE_EXIT_END
 
-  BinaryPersistence persistence{ tmp_directory, attributes };
+  PointsPersistence persistence{ BinaryPersistence{ tmp_directory, attributes } };
 
   TilerMetaParameters tiler_meta_parameters;
   tiler_meta_parameters.spacing_at_root = spacing_at_root;
@@ -412,7 +412,7 @@ TEST_CASE("Tiler with BinaryPersistence writer", "[Tiler]")
   tiler_meta_parameters.internal_cache_size = 100'000; // Use small internal cache size to guarantee
                                                        // out-of-core processing
 
-  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence };
+  Tiler writer{ bounds, tiler_meta_parameters, sampling_strategy, nullptr, persistence, "." };
 
   writer.cache(dataset);
   writer.index();

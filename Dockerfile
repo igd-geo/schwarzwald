@@ -1,13 +1,8 @@
-FROM conanio/gcc7 AS build
+FROM gcc:7.5 AS build
 
-RUN whoami
+RUN apt-get update && apt-get -y install cmake
 
-RUN pip install conan --upgrade
-RUN conan remote add bincrafters https://api.bintray.com/conan/bincrafters/public-conan
-#RUN apt-get update && apt-get install -y git cmake libboost-all-dev
-
-RUN sudo mkdir /data
-RUN sudo chown -c conan /data 
+RUN mkdir /data
 WORKDIR /data
 
 RUN git clone https://github.com/m-schuetz/LAStools.git
@@ -17,26 +12,11 @@ RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
 RUN cd build && make
 
 WORKDIR /data
-
-# Check out and build terminalpp. Checking out a specific commit prior to the change to using fmt library because it does not link with fmt. Fixing this is a TODO
-RUN git clone https://github.com/KazDragon/terminalpp.git && cd ./terminalpp && git checkout 68b497734c57239061b36aee0abf947db0f51c9f
-
-#TODO Set C++ library version to libstdc++11
-#RUN sudo mkdir ~/.conan/profiles
-#RUN sudo sh -c 'echo "compiler.libcxx=libstdc++11" > ~/.conan/profiles/default'
-
-WORKDIR /data/terminalpp
-
-RUN conan install .
-RUN cmake -DCMAKE_BUILD_TYPE=Release .
-RUN make
-
-WORKDIR /data
 RUN mkdir PointcloudTiler
 WORKDIR /data/PointcloudTiler
 ADD . /data/PointcloudTiler
 RUN mkdir build
-RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so -DTERMINALPP_INCLUDE_DIRS=/data/terminalpp/include -DTERMINALPP_LIBRARY=/data/terminalpp/libterminalpp.a .. 
+RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so .. 
 RUN cd build && make
 
 # copy libproj.so dependency to a temporary directory
@@ -47,7 +27,7 @@ RUN ldd /data/PointcloudTiler/build/Release/PointcloudTiler | grep 'libproj.so' 
 FROM ubuntu:artful
 
 # copy dependencies
-COPY --from=build /home/conan/.hunter/_Base/0b8c31b/2af030b/adeda0f/Install/lib/ /home/conan/.hunter/_Base/0b8c31b/2af030b/adeda0f/Install/lib/
+COPY --from=build /root/.hunter/_Base/0b8c31b/8d6d629/adeda0f/Install/lib/ /root/.hunter/_Base/0b8c31b/8d6d629/adeda0f/Install/lib/
 COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /usr/lib/liblaszip.so
 COPY --from=build /tmp/libproj.so* /usr/lib/
 

@@ -6,6 +6,7 @@
 #include "PointAttributes.hpp"
 #include "PointBuffer.h"
 #include "Transformation.h"
+#include "io/PointsPersistence.h"
 #include "octree/Sampling.h"
 #include "util/Semaphore.h"
 #include "util/TaskSystem.h"
@@ -16,7 +17,6 @@
 #include <thread>
 
 struct ProgressReporter;
-struct IPointsPersistence;
 
 struct TilerMetaParameters
 {
@@ -33,7 +33,8 @@ struct Tiler : IWriter
         const TilerMetaParameters& meta_parameters,
         SamplingStrategy sampling_strategy,
         ProgressReporter* progress_reporter,
-        IPointsPersistence& persistence);
+        PointsPersistence& persistence,
+        fs::path output_directory);
 
   void index() override;
 
@@ -52,7 +53,8 @@ private:
   TilerMetaParameters _meta_parameters;
   SamplingStrategy _sampling_strategy;
   ProgressReporter* _progress_reporter;
-  IPointsPersistence& _persistence;
+  PointsPersistence& _persistence;
+  fs::path _output_directory;
 
   PointBuffer _store;
 

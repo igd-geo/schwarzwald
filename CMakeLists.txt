@@ -1,5 +1,6 @@
-cmake_minimum_required(VERSION 3.6)
+cmake_minimum_required(VERSION 3.11)
 
+include(FetchContent)
 include("cmake/HunterGate.cmake")
 
 HunterGate(

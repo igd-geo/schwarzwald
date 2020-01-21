@@ -13,7 +13,6 @@
 #include "Tiler.h"
 #include "Transformation.h"
 #include "io/BinaryPersistence.h"
-#include "io/CachedPersistence.h"
 #include "io/Cesium3DTilesPersistence.h"
 #include "io/LASFile.h"
 #include "io/LASPersistence.h"
@@ -264,16 +263,10 @@ TilerProcess::run()
   progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
   progress_reporter.register_progress_counter<size_t>(progress::INDEXING, total_points_count);
 
-  const auto persistence = [this]() -> std::unique_ptr<IPointsPersistence> {
-    auto binary_persistence =
-      std::make_unique<BinaryPersistence>(_args.output_directory,
-                                          _point_attributes,
-                                          _args.use_compression ? Compressed::Yes : Compressed::No);
-    if (!_args.cache_size) {
-      return binary_persistence;
-    }
-    return std::make_unique<CachedPersistence>(*_args.cache_size, std::move(binary_persistence));
-  }();
+  PointsPersistence persistence{ BinaryPersistence{ _args.output_directory,
+                                                    _point_attributes,
+                                                    _args.use_compression ? Compressed::Yes
+                                                                          : Compressed::No } };
 
   const auto max_depth =
     (_args.max_depth <= 0)
@@ -309,7 +302,8 @@ TilerProcess::run()
   tiler_meta_parameters.max_points_per_node = _args.max_points_per_node;
   tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
 
-  Tiler tiler{ aabb, tiler_meta_parameters, sampling_strategy, &progress_reporter, *persistence };
+  Tiler tiler{ aabb,        tiler_meta_parameters, sampling_strategy, &progress_reporter,
+               persistence, _args.output_directory };
 
   std::atomic_bool draw_ui = true;
   std::thread ui_thread{ [this, &draw_ui]() {
