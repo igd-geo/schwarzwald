@@ -24,7 +24,7 @@ RUN ldd /data/PointcloudTiler/build/Release/PointcloudTiler | grep 'libproj.so' 
 
 # after building, create smaller image that only contains the binary
 # and its dependencies
-FROM ubuntu:artful
+FROM debian:buster
 
 # copy dependencies
 COPY --from=build /root/.hunter/_Base/0b8c31b/8d6d629/adeda0f/Install/lib/ /root/.hunter/_Base/0b8c31b/8d6d629/adeda0f/Install/lib/
