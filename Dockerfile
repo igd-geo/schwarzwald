@@ -33,5 +33,6 @@ COPY --from=build /tmp/libproj.so* /usr/lib/
 
 # copy binary
 COPY --from=build /data/PointcloudTiler/build/Release/PointcloudTiler /pointcloud-tiler/PointcloudTiler/build/Release/PointcloudTiler
+COPY --from=build /data/PointcloudTiler/build/Release/LASBenchmark /pointcloud-tiler/PointcloudTiler/build/Release/LASBenchmark
 
 ENTRYPOINT ["/pointcloud-tiler/PointcloudTiler/build/Release/PointcloudTiler"]
