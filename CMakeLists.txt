@@ -27,8 +27,15 @@ if(UNIX)
     #SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS}" )
 endif()
 
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/Debug)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/build/RelWithDebInfo)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/Release)
 
-add_subdirectory(PointcloudTiler)
+add_subdirectory(pointcloud_tiler/util)
+add_subdirectory(pointcloud_tiler/core)
+add_subdirectory(pointcloud_tiler/executable)
+add_subdirectory(pointcloud_tiler/test)
+add_subdirectory(pointcloud_tiler/benchmark)
 
 if (MSVC_VERSION GREATER_EQUAL "1900") 
     include(CheckCXXCompilerFlag)
