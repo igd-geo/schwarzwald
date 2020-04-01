@@ -1,6 +1,7 @@
 #include "terminal/TerminalUI.h"
 
 #include "terminal/stdout_helper.h"
+#include "types/Units.h"
 
 #include <algorithm>
 #include <array>
@@ -8,6 +9,8 @@
 #include <iomanip>
 #include <iostream>
 #include <sstream>
+
+#include <boost/format.hpp>
 
 using namespace std::chrono;
 
@@ -79,6 +82,22 @@ static std::string format_progress_name(const std::string &name,
   return ss.str();
 }
 
+static std::string format_time_as_hh_mm_ss(std::chrono::seconds seconds) {
+  const auto hours = seconds.count() / 3600;
+  const auto remaining_minutes = (seconds.count() / 60) % 60;
+  const auto remaining_seconds = (seconds.count() % 60);
+
+  if (hours < 100) {
+    return (boost::format("%02i:%02i:%02i") % hours % remaining_minutes %
+            remaining_seconds)
+        .str();
+  }
+
+  return (boost::format("%i:%02i:%02i") % hours % remaining_minutes %
+          remaining_seconds)
+      .str();
+}
+
 ProgressReporter &UIState::get_progress_reporter() {
   return _progress_reporter;
 }
@@ -96,7 +115,10 @@ TerminalLabel::TerminalLabel() {
 TerminalLabel::~TerminalLabel() {}
 
 void TerminalLabel::render(std::ostream &stream) const {
-  stream << _color << _content;
+  if (util::terminal_is_tty()) {
+    stream << _color;
+  }
+  stream << _content;
 }
 
 const std::string &TerminalLabel::get_content() const { return _content; }
@@ -136,7 +158,10 @@ void TerminalMultilineLabel::render(std::ostream &stream) const {
   const auto lines = chunk_string(get_content(), _line_width);
 
   for (auto &line : lines) {
-    stream << get_color() << line << "\n";
+    if (util::terminal_is_tty()) {
+      stream << get_color();
+    }
+    stream << line << "\n";
   }
 }
 
@@ -176,17 +201,26 @@ void TerminalProgressBar::set_allowed_width(uint32_t allowed_width) {
   _allowed_width = allowed_width;
 }
 
-TerminalUI::TerminalUI(UIState *state) : _state(state) {}
+TerminalUI::TerminalUI(UIState *state) : _state(state) {
+  _redraw_interval =
+      (util::terminal_is_tty() ? TERMINAL_REDRAW_INTERVAL_WITH_TTY
+                               : TERMINAL_REDRAW_INTERVAL_WITHOUT_TTY);
+  _t_start = std::chrono::high_resolution_clock::now();
+}
 
 void TerminalUI::redraw() {
   const auto time_since_last_redraw = duration_cast<milliseconds>(
       high_resolution_clock::now() - _last_redraw_time);
-  if (time_since_last_redraw < TERMINAL_REDRAW_INTERVAL)
+  if (time_since_last_redraw < _redraw_interval)
     return;
   _last_redraw_time = high_resolution_clock::now();
 
   // TODO Don't rebuild the UI completely, instead just update what has changed
-  rebuild_progress_ui();
+  if (util::terminal_is_tty()) {
+    rebuild_progress_ui_with_tty();
+  } else {
+    rebuild_progress_ui_without_tty();
+  }
 
   if (_ui_elements.empty())
     return;
@@ -195,6 +229,16 @@ void TerminalUI::redraw() {
 
   util::print_lock().lock();
 
+  if (util::terminal_is_tty()) {
+    redraw_with_tty();
+  } else {
+    redraw_without_tty();
+  }
+
+  util::print_lock().unlock();
+}
+
+void TerminalUI::redraw_with_tty() const {
   for (auto &ui_line : _ui_elements) {
     std::cout << "\u001b[2K";
     for (auto &ui_element : ui_line) {
@@ -209,11 +253,18 @@ void TerminalUI::redraw() {
             << "\u001b[" << ui_height_lines << "A";
 
   std::cout.flush();
-
-  util::print_lock().unlock();
 }
 
-void TerminalUI::rebuild_progress_ui() {
+void TerminalUI::redraw_without_tty() const {
+  for (auto &ui_line : _ui_elements) {
+    for (auto &ui_element : ui_line) {
+      ui_element->render(std::cout);
+    }
+    std::cout << "\n";
+  }
+}
+
+void TerminalUI::rebuild_progress_ui_with_tty() {
   _ui_elements.clear();
 
   auto &progress_reporter = _state->get_progress_reporter();
@@ -264,4 +315,58 @@ void TerminalUI::rebuild_progress_ui() {
 
     _ui_elements.push_back(std::move(ui_for_progress_counter));
   }
+}
+
+void TerminalUI::rebuild_progress_ui_without_tty() {
+  _ui_elements.clear();
+
+  auto &progress_reporter = _state->get_progress_reporter();
+  const auto &progress_counters = progress_reporter.get_progress_counters();
+
+  if (progress_counters.empty())
+    return;
+
+  std::vector<std::unique_ptr<TerminalUIElement>> ui_elements;
+
+  const auto delta_time = std::chrono::high_resolution_clock::now() - _t_start;
+  const auto delta_time_seconds =
+      std::chrono::duration_cast<std::chrono::seconds>(delta_time);
+
+  auto time_label = std::make_unique<TerminalLabel>();
+  time_label->set_content(
+      (boost::format("[%1%] ") % format_time_as_hh_mm_ss(delta_time_seconds))
+          .str());
+  time_label->set_color(ForegroundColorWhite);
+  ui_elements.push_back(std::move(time_label));
+
+  for (auto &kv : progress_reporter.get_progress_counters()) {
+    const auto &progress_name = kv.first;
+    const auto &progress_counter = *kv.second;
+    const auto current_progress = std::visit(
+        [](const auto &counter) -> double {
+          return static_cast<double>(counter.get_current_progress());
+        },
+        progress_counter);
+    const auto max_progress = std::visit(
+        [](const auto &counter) -> double {
+          return static_cast<double>(counter.get_max_progress());
+        },
+        progress_counter);
+
+    // Format each progress indicator as: "NAME: PROGRESS / MAX_PROGRESS "
+
+    const auto progress_text =
+        (boost::format("%1%: %2% / %3% ") % progress_name %
+         unit::format_with_metric_prefix(current_progress) %
+         unit::format_with_metric_prefix(max_progress))
+            .str();
+
+    auto progress_label = std::make_unique<TerminalLabel>();
+    progress_label->set_content(progress_text);
+    progress_label->set_color(ForegroundColorWhite);
+
+    ui_elements.push_back(std::move(progress_label));
+  }
+
+  _ui_elements.push_back(std::move(ui_elements));
 }

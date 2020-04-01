@@ -5,6 +5,16 @@
 #include <numeric>
 #include <vector>
 
+#if _WIN32
+#include <io.h>
+#define ISATTY _isatty
+#define FILENO _fileno
+#else
+#include <unistd.h>
+#define ISATTY isatty
+#define FILENO fileno
+#endif
+
 constexpr static auto ANSI_ClearLine = "\u001b[2K";
 
 static bool is_newline(char c) { return c == '\n'; }
@@ -15,6 +25,11 @@ std::mutex &util::print_lock() {
 }
 
 void util::write_log(const std::string &log) {
+  if (!terminal_is_tty()) {
+    std::cout << log;
+    return;
+  }
+
   // Split by newlines and make sure that we clear each console line that we
   // print to. This ensures that we correctly overwrite the terminal UI
   // (progress bars etc.)
@@ -32,4 +47,9 @@ void util::write_log(const std::string &log) {
   }
 
   print_lock().unlock();
+}
+
+bool util::terminal_is_tty() {
+  static bool s_is_tty = ISATTY(FILENO(stdout)) != 0;
+  return s_is_tty;
 }

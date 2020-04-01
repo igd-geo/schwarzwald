@@ -371,4 +371,7 @@ void TilerProcess::run() {
 
   draw_ui = false;
   ui_thread.join();
+
+  util::write_log(concat("Tiler finished successfully after indexing ",
+                         total_points_count, " points\n"));
 }
