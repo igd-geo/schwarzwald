@@ -82,11 +82,20 @@ struct TerminalUI {
   void redraw();
 
 private:
-  constexpr static std::chrono::milliseconds TERMINAL_REDRAW_INTERVAL =
+  constexpr static std::chrono::milliseconds TERMINAL_REDRAW_INTERVAL_WITH_TTY =
       std::chrono::milliseconds{50};
+  constexpr static std::chrono::milliseconds
+      TERMINAL_REDRAW_INTERVAL_WITHOUT_TTY = std::chrono::seconds{5};
+
+  std::chrono::milliseconds _redraw_interval;
+  std::chrono::high_resolution_clock::time_point _t_start;
   std::chrono::high_resolution_clock::time_point _last_redraw_time;
 
-  void rebuild_progress_ui();
+  void redraw_with_tty() const;
+  void redraw_without_tty() const;
+
+  void rebuild_progress_ui_with_tty();
+  void rebuild_progress_ui_without_tty();
 
   UIState *_state;
 

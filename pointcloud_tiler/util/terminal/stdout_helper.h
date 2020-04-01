@@ -9,4 +9,9 @@ std::mutex &print_lock();
 
 void write_log(const std::string &log);
 
+/**
+ * Returns true if stdout is a TTY
+ */
+bool terminal_is_tty();
+
 } // namespace util
