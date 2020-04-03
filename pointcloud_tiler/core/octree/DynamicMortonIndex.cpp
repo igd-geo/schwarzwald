@@ -148,7 +148,7 @@ DynamicMortonIndex::end() const {
 DynamicMortonIndex
 DynamicMortonIndex::truncate_to_depth(size_t new_depth) const {
   if (new_depth > depth())
-    throw new std::invalid_argument{"new_depth must not exceed current depth!"};
+    throw std::invalid_argument{"new_depth must not exceed current depth!"};
 
   return DynamicMortonIndex{std::vector<Octant_t>{
       std::begin(_octants), std::begin(_octants) + new_depth}};

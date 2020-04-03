@@ -125,55 +125,104 @@ static void write_properties_json(const std::string &output_directory,
   document.Accept(writer);
 }
 
+/**
+ * Check if the given file exists. Depending on the IgnoreErrors flag, the file
+ * is either ignored and the user is notified, or an exception is raised
+ */
+static bool check_if_file_exists(const fs::path &file,
+                                 util::IgnoreErrors errors_to_ignore) {
+  if (fs::exists(file))
+    return true;
+
+  if (errors_to_ignore & util::IgnoreErrors::MissingFiles) {
+    std::cout << "Ignoring file " << file.string()
+              << " because it does not exist!\n";
+    // util::write_log(
+    //     (boost::format("Ignoring file %1% because it does not exist!") %
+    //      file.filename())
+    //         .str());
+    return false;
+  }
+
+  const auto reason =
+      (boost::format("Input file %1% does not exist!") % file.string()).str();
+  throw std::runtime_error{reason};
+}
+
+static bool
+check_if_file_format_is_supported(const fs::path &file,
+                                  util::IgnoreErrors errors_to_ignore) {
+  if (file_format_is_supported(file.extension()))
+    return true;
+
+  if (errors_to_ignore & util::IgnoreErrors::UnsupportedFileFormat) {
+    std::cout << "Ignoring file " << file.string()
+              << " because its file format (" << file.extension().string()
+              << ") is not supported!\n";
+    // util::write_log(
+    //     (boost::format(
+    //          "Ignoring file %1% because its file format is not supported!") %
+    //      file.filename())
+    //         .str());
+    return false;
+  }
+
+  const auto reason =
+      (boost::format("File format %1% of input file %2% is not supported!") %
+       file.extension().string() % file.string())
+          .str();
+  throw std::runtime_error{reason};
+}
+
 TilerProcess::TilerProcess(Arguments const &args)
     : _args(args), _ui(&_ui_state) {}
 
 void TilerProcess::prepare() {
-  prepare_output_directory(_args.output_directory);
-
   // if sources contains directories, use files inside the directory instead
-  std::vector<fs::path> filtered_source_files;
+  std::vector<fs::path> source_files;
   for (const auto &source : _args.sources) {
-    fs::path pSource(source);
-    if (fs::is_directory(pSource)) {
-      fs::recursive_directory_iterator it(pSource);
-      for (; it != fs::recursive_directory_iterator(); it++) {
-        fs::path pDirectoryEntry = it->path();
-        if (fs::is_regular_file(pDirectoryEntry)) {
-          std::string filepath = pDirectoryEntry.string();
-          if (iEndsWith(filepath, ".las") || iEndsWith(filepath, ".laz") ||
-              iEndsWith(filepath, ".xyz") || iEndsWith(filepath, ".pts") ||
-              iEndsWith(filepath, ".ptx") || iEndsWith(filepath, ".ply")) {
-            filtered_source_files.push_back(filepath);
-          }
-        }
+    if (!check_if_file_exists(source, _args.errors_to_ignore))
+      continue;
+
+    if (fs::is_directory(source)) {
+      fs::recursive_directory_iterator directory_iter{source};
+      for (; directory_iter != fs::recursive_directory_iterator{};
+           directory_iter++) {
+        const auto &dir_entry = directory_iter->path();
+        if (!fs::is_regular_file(dir_entry))
+          continue;
+
+        source_files.push_back(dir_entry);
       }
-    } else if (fs::is_regular_file(pSource)) {
-      filtered_source_files.push_back(source);
-    } else {
-      util::write_log(concat("Can't open input file \"", source, "\n"));
+    } else if (fs::is_regular_file(source)) {
+      source_files.push_back(source);
     }
   }
 
-  // Remove input files that don't exist and notify user
-  filtered_source_files.erase(
-      std::remove_if(filtered_source_files.begin(), filtered_source_files.end(),
-                     [](const auto &path) {
-                       if (fs::exists(path))
-                         return false;
-                       util::write_log(
-                           concat("Can't open input file \"", path, "\n"));
-                       return true;
-                     }),
-      filtered_source_files.end());
+  std::vector<fs::path> filtered_source_files;
+  std::copy_if(
+      std::begin(source_files), std::end(source_files),
+      std::back_inserter(filtered_source_files), [this](const fs::path &file) {
+        return check_if_file_exists(file, _args.errors_to_ignore) &&
+               check_if_file_format_is_supported(file, _args.errors_to_ignore);
+      });
+
+  if (filtered_source_files.empty()) {
+    throw std::runtime_error{"No files found for processing"};
+  }
 
   _args.sources = std::move(filtered_source_files);
 
-  _point_attributes = point_attributes_from_strings(_args.output_attributes);
+  // Position attribute is ALWAYS included
+  if (!has_attribute(_args.output_attributes, PointAttribute::Position)) {
+    _args.output_attributes.insert(PointAttribute::Position);
+  }
 
-  const auto attributesDescription = print_attributes(_point_attributes);
+  const auto attributesDescription = print_attributes(_args.output_attributes);
   util::write_log(concat(
       "Writing the following point attributes: ", attributesDescription, "\n"));
+
+  prepare_output_directory(_args.output_directory);
 }
 
 void TilerProcess::cleanUp() {
@@ -186,8 +235,8 @@ void TilerProcess::cleanUp() {
 AABB TilerProcess::calculateAABB(SRSTransformHelper const *srs_transform) {
   AABB aabb;
   for (const auto &source : _args.sources) {
-    open_point_file(source).map(
-        [&aabb, srs_transform](const PointFile &point_file) {
+    open_point_file(source)
+        .map([&aabb, srs_transform](const PointFile &point_file) {
           auto bounds = pc::get_bounds(point_file);
 
           if (srs_transform) {
@@ -197,6 +246,19 @@ AABB TilerProcess::calculateAABB(SRSTransformHelper const *srs_transform) {
 
           aabb.update(bounds.min);
           aabb.update(bounds.max);
+        })
+        .or_else([this, source](const auto &err) {
+          if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
+            util::write_log(
+                (boost::format("warning: Ignoring file %1% in bounding box "
+                               "calculation\ncaused by: %2%\n") %
+                 source.string() % err.what())
+                    .str());
+            return;
+          }
+
+          throw util::chain_error(
+              err, "Calculating the point cloud bounding box failed");
         });
   }
 
@@ -206,11 +268,75 @@ AABB TilerProcess::calculateAABB(SRSTransformHelper const *srs_transform) {
 size_t TilerProcess::get_total_points_count() const {
   size_t total_count = 0;
   for (auto &source : _args.sources) {
-    open_point_file(source).map([&total_count](const PointFile &point_file) {
-      total_count += pc::get_point_count(point_file);
-    });
+    open_point_file(source)
+        .map([&total_count](const PointFile &point_file) {
+          total_count += pc::get_point_count(point_file);
+        })
+        .or_else([this, source](const auto &err) {
+          if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
+            util::write_log(
+                (boost::format("warning: Ignoring file %1% while counting "
+                               "total number of points\n\tcaused by: %2%\n") %
+                 source.string() % err.what())
+                    .str());
+            return;
+          }
+
+          throw util::chain_error(
+              err, "Calculating the total number of points failed");
+        });
   }
   return total_count;
+}
+
+void TilerProcess::check_for_missing_point_attributes(
+    const PointAttributes &required_attributes) const {
+  for (auto &source : _args.sources) {
+    open_point_file(source)
+        .map([this, &source,
+              &required_attributes](const PointFile &point_file) {
+          PointAttributes missing_attributes;
+          if (pc::has_all_attributes(
+                  point_file, required_attributes,
+                  std::inserter(missing_attributes,
+                                std::end(missing_attributes)))) {
+            return;
+          }
+
+          const std::string attribute_label =
+              (missing_attributes.size() > 1) ? "attributes" : "attribute";
+
+          if (_args.errors_to_ignore &
+              util::IgnoreErrors::MissingPointAttributes) {
+            util::write_log(
+                (boost::format("warning: Missing %1% %2% in file %3%\n") %
+                 attribute_label % print_attributes(missing_attributes) %
+                 source.string())
+                    .str());
+            return;
+          }
+
+          throw std::runtime_error{
+              (boost::format("Missing %1% %2% in file %3%") % attribute_label %
+               print_attributes(missing_attributes) % source.string())
+                  .str()};
+        })
+        .or_else([this, source](const auto &err) {
+          if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
+            util::write_log(
+                (boost::format(
+                     "warning: Ignoring file %1% while checking for missing "
+                     "attributes in source files\n\tcaused by: %2%\n") %
+                 source.string() % err.what())
+                    .str());
+            return;
+          }
+
+          throw util::chain_error(
+              err,
+              "Checking for missing point attributes in source files failed");
+        });
+  }
 }
 
 void TilerProcess::run() {
@@ -218,7 +344,13 @@ void TilerProcess::run() {
 
   prepare();
 
+  check_for_missing_point_attributes(_args.output_attributes);
+
   const auto total_points_count = get_total_points_count();
+
+  if (!total_points_count) {
+    throw std::runtime_error{"Found no points to process"};
+  }
 
   util::write_log(concat("Total points: ", total_points_count, "\n"));
 
@@ -253,12 +385,12 @@ void TilerProcess::run() {
     switch (_args.output_format) {
     case OutputFormat::BIN:
       return PointsPersistence{BinaryPersistence{
-          _args.output_directory, _point_attributes,
+          _args.output_directory, _args.output_attributes,
           _args.use_compression ? Compressed::Yes : Compressed::No}};
     case OutputFormat::CZM_3DTILES:
-      return PointsPersistence{
-          Cesium3DTilesPersistence{_args.output_directory, _point_attributes,
-                                   _args.spacing, aabb.getCenter()}};
+      return PointsPersistence{Cesium3DTilesPersistence{
+          _args.output_directory, _args.output_attributes, _args.spacing,
+          aabb.getCenter()}};
     default:
       throw std::invalid_argument{"Unrecognized output format!"};
     }
@@ -308,13 +440,7 @@ void TilerProcess::run() {
               persistence,
               _args.output_directory};
 
-  std::atomic_bool draw_ui = true;
-  std::thread ui_thread{[this, &draw_ui]() {
-    while (draw_ui) {
-      _ui.redraw();
-      std::this_thread::sleep_for(std::chrono::milliseconds{50});
-    }
-  }};
+  TerminalUIAsyncRenderer ui_renderer{_ui};
 
   const auto prepare_end = std::chrono::high_resolution_clock::now();
   const auto prepare_duration =
@@ -323,7 +449,7 @@ void TilerProcess::run() {
 
   const auto indexing_start = std::chrono::high_resolution_clock::now();
 
-  PointSource point_source{_args.sources};
+  PointSource point_source{_args.sources, _args.errors_to_ignore};
   std::optional<PointBuffer> points;
 
   point_source.add_transformation(
@@ -347,7 +473,7 @@ void TilerProcess::run() {
       });
 
   while (points = point_source.read_next(_args.max_batch_read_size,
-                                         _point_attributes)) {
+                                         _args.output_attributes)) {
     tiler.cache(*points);
     if (tiler.needs_indexing()) {
       tiler.index();
@@ -368,9 +494,6 @@ void TilerProcess::run() {
   stats.points_processed = total_points_count;
 
   write_properties_json(_args.output_directory, aabb, _args.spacing, stats);
-
-  draw_ui = false;
-  ui_thread.join();
 
   util::write_log(concat("Tiler finished successfully after indexing ",
                          total_points_count, " points\n"));

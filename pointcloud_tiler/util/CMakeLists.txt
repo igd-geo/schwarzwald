@@ -17,6 +17,8 @@ endif()
 
 set(files 
 	algorithms/Algorithm.h
+	algorithms/Enums.h
+	algorithms/Pairs.h
 	algorithms/Strings.h
 
 	concepts/MemoryIntrospection.h

@@ -130,20 +130,20 @@ void PointBuffer::push_points(gsl::span<Vector3<double>> newPositions,
                               gsl::span<uint8_t> newClassifications) {
   const auto newPointsSize = newPositions.size();
   if (newRgbColors.size() > 0 && newRgbColors.size() != newPointsSize) {
-    throw new std::invalid_argument{
+    throw std::invalid_argument{
         "rgbColors.size() does not equal positions.size()!"};
   }
   if (newNormals.size() > 0 && newNormals.size() != newPointsSize) {
-    throw new std::invalid_argument{
+    throw std::invalid_argument{
         "normals.size() does not equal positions.size()!"};
   }
   if (newIntensities.size() > 0 && newIntensities.size() != newPointsSize) {
-    throw new std::invalid_argument{
+    throw std::invalid_argument{
         "intensities.size() does not equal positions.size()!"};
   }
   if (newClassifications.size() > 0 &&
       newClassifications.size() != newPointsSize) {
-    throw new std::invalid_argument{
+    throw std::invalid_argument{
         "classifications.size() does not equal positions.size()!"};
   }
 

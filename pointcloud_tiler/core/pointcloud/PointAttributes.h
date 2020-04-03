@@ -1,57 +1,82 @@
 #pragma once
 
+#include "algorithms/Enums.h"
+#include "algorithms/Pairs.h"
+
 #include <algorithm>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
-class PointAttribute
+#include <boost/format.hpp>
+#include <boost/program_options.hpp>
+#include <expected.hpp>
+
+enum class PointAttribute
 {
-public:
-  const int ordinal;
-  const char* name;
-  const int numElements;
-  const int byteSize;
-
-  constexpr PointAttribute(int ordinal, const char* name, int numElements, int byteSize)
-    : ordinal(ordinal)
-    , name(name)
-    , numElements(numElements)
-    , byteSize(byteSize)
-  {}
-
-  constexpr PointAttribute(const PointAttribute& other)
-    : ordinal(other.ordinal)
-    , name(other.name)
-    , numElements(other.numElements)
-    , byteSize(other.byteSize)
-  {}
-
-  static PointAttribute fromString(const std::string& name);
-  static PointAttribute fromStringLiteral(const char* name);
-
-  constexpr operator int() const { return ordinal; }
+  Position,
+  RGB, // TODO This should maybe be named COLOR, but this would be a breaking
+       // change for the command line arguments
+  RGBFromIntensity,
+  Intensity,
+  Classification,
+  Normal,
 };
 
+namespace util {
+namespace {
+static const std::unordered_set<std::pair<PointAttribute, std::string>, util::PairHash>
+  POINT_ATTRIBUTE_STRING_MAPPING = {
+    { PointAttribute::Position, "POSITION" },
+    { PointAttribute::RGB, "RGB" },
+    { PointAttribute::RGBFromIntensity, "RGB_FROM_INTENSITY" },
+    { PointAttribute::Intensity, "INTENSITY" },
+    { PointAttribute::Classification, "CLASSIFICATION" },
+    { PointAttribute::Normal, "NORMAL" },
+  };
+}
+
+template<>
+inline tl::expected<PointAttribute, std::string>
+try_parse(const std::string& token)
+{
+  const auto iter = std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 [&token](const auto& pair) { return pair.second == token; });
+  if (iter == std::end(POINT_ATTRIBUTE_STRING_MAPPING)) {
+    return tl::make_unexpected(
+      (boost::format("Could not parse token \"%1%\" as PointAttribute") % token).str());
+  }
+
+  return { iter->first };
+}
+
+template<>
+inline const std::string&
+to_string(PointAttribute attribute)
+{
+  const auto iter = std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 [attribute](const auto& pair) { return pair.first == attribute; });
+  if (iter == std::end(POINT_ATTRIBUTE_STRING_MAPPING)) {
+    throw std::invalid_argument{
+      (boost::format("Invalid PointAttribute %1%") % static_cast<int>(attribute)).str()
+    };
+  }
+
+  return iter->second;
+}
+} // namespace util
+
+using PointAttributes = std::unordered_set<PointAttribute>;
+
+void
+validate(boost::any& v, const std::vector<std::string>& values, PointAttributes*, int);
+
 bool
-operator==(const PointAttribute& lhs, const PointAttribute& rhs);
-
-namespace attributes {
-constexpr PointAttribute POSITION_CARTESIAN = { 0, "POSITION_CARTESIAN", 3, 12 };
-constexpr PointAttribute COLOR_PACKED = { 1, "COLOR_PACKED", 4, 4 };
-constexpr PointAttribute INTENSITY = { 2, "INTENSITY", 1, 2 };
-constexpr PointAttribute CLASSIFICATION = { 3, "CLASSIFICATION", 1, 1 };
-constexpr PointAttribute NORMAL_SPHEREMAPPED = { 4, "NORMAL_SPHEREMAPPED", 2, 2 };
-constexpr PointAttribute NORMAL_OCT16 = { 5, "NORMAL_OCT16", 2, 2 };
-constexpr PointAttribute NORMAL = { 6, "NORMAL", 3, 12 };
-constexpr PointAttribute COLOR_FROM_INTENSITY = { 7, "COLOR_FROM_INTENSITY", 3, 3 };
-} // namespace attributes
-
-using PointAttributes = std::vector<PointAttribute>;
-
-bool
-has_attribute(PointAttributes const& attributes, PointAttribute const& attribute_to_find);
+has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_find);
 std::string
 print_attributes(PointAttributes const& attributes);
 
-PointAttributes
+tl::expected<PointAttributes, std::string>
 point_attributes_from_strings(const std::vector<std::string>& attribute_names);

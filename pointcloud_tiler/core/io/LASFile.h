@@ -7,7 +7,7 @@
 #include <iterator>
 #include <laszip_api.h>
 
-class PointAttribute;
+enum class PointAttribute;
 
 struct LASFile;
 

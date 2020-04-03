@@ -29,6 +29,7 @@ struct Tiler {
   Tiler(const AABB &aabb, const TilerMetaParameters &meta_parameters,
         SamplingStrategy sampling_strategy, ProgressReporter *progress_reporter,
         PointsPersistence &persistence, fs::path output_directory);
+  ~Tiler();
 
   void index();
 
