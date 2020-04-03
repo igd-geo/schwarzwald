@@ -10,10 +10,12 @@
 #include <string>
 #include <vector>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include "debug/Journal.h"
 #include "expected.hpp"
 #include "io/TileSetWriter.h"
 #include "math/AABB.h"
@@ -21,7 +23,6 @@
 #include "pointcloud/Tileset.h"
 #include "process/ConverterProcess.h"
 #include "process/TilerProcess.h"
-#include <debug/Journal.h>
 
 namespace bpo = boost::program_options;
 
@@ -39,15 +40,15 @@ enum class Mode {
   Converter
 };
 
-static void
-verifyOutputAttributes(const std::vector<std::string> &outputAttributes) {
-  const auto hasAttribute = [](const auto &attributes, const char *attribute) {
+static void verify_output_attributes(const PointAttributes &outputAttributes) {
+  const auto hasAttribute = [](const auto &attributes,
+                               const PointAttribute &attribute) {
     return std::find(attributes.begin(), attributes.end(), attribute) !=
            attributes.end();
   };
 
-  if (hasAttribute(outputAttributes, "RGB") &&
-      hasAttribute(outputAttributes, "RGB_FROM_INTENSITY")) {
+  if (hasAttribute(outputAttributes, PointAttribute::RGB) &&
+      hasAttribute(outputAttributes, PointAttribute::RGBFromIntensity)) {
     throw std::runtime_error{
         "Can't define both RGB and RGB_FROM_INTENSITY attributes!"};
   }
@@ -102,13 +103,41 @@ parse_memory_size(std::string const &memory_size_string) {
   return {quantity * suffix_iter->second * boost::units::information::byte};
 }
 
+namespace util {
+
+void validate(boost::any &v, const std::vector<std::string> &all_tokens,
+              util::IgnoreErrors *target_type, int) {
+  bpo::validators::check_first_occurrence(v);
+  std::vector<std::string> tokens;
+  boost::algorithm::split(tokens,
+                          bpo::validators::get_single_string(all_tokens),
+                          boost::is_any_of(" "));
+
+  auto ignore_errors = util::IgnoreErrors::None;
+
+  for (auto &token : tokens) {
+    util::try_parse<util::IgnoreErrors>(token)
+        .map([&ignore_errors](util::IgnoreErrors val) {
+          ignore_errors = ignore_errors | val;
+        })
+        .or_else([](const std::string &reason_for_failure) {
+          throw bpo::validation_error{
+              bpo::validation_error::kind_t::invalid_option_value,
+              reason_for_failure};
+        });
+  }
+
+  v = boost::any(ignore_errors);
+}
+
+} // namespace util
+
 class SparseGrid;
 
 std::variant<TilerProcess::Arguments, ConverterArguments>
 parseArguments(int argc, char **argv) {
   TilerProcess::Arguments tiler_args;
   ConverterArguments converter_args;
-  std::vector<std::string> output_attributes;
   std::string output_folder;
   std::vector<std::string> source_files;
   std::string cache_size_string;
@@ -154,8 +183,7 @@ parseArguments(int argc, char **argv) {
           ->default_value(1'000'000),
       "Maximum number of points to read in a single batch from each file")(
       "output-attributes,a",
-      bpo::value<std::vector<std::string>>(&tiler_args.output_attributes)
-          ->required(),
+      bpo::value<PointAttributes>(&tiler_args.output_attributes)->required(),
       "Point attributes to store in the output pointcloud. Can be a "
       "combination of RGB, INTENSITY, "
       "RGB_FROM_INTENSITY, CLASSIFICATION, NORMAL. RGB_FROM_INTENSITY "
@@ -185,7 +213,23 @@ parseArguments(int argc, char **argv) {
       "the tiling process. "
       "This can be used to analyze performance")(
       "source-projection", bpo::value<std::string>(),
-      "Source spatial reference system that the points are in");
+      "Source spatial reference system that the points are in")(
+      "ignore",
+      bpo::value<util::IgnoreErrors>(&tiler_args.errors_to_ignore)
+          ->multitoken()
+          ->default_value(util::IgnoreErrors::None, "NONE"),
+      "If provided, all recoverable errors for the given categories are "
+      "ignored and processing proceeds normally instead of terminating the "
+      "program. Specify one or "
+      "more of the following possible values:\nMISSING_FILES (= ignore missing "
+      "files)\nINACCESSIBLE_FILES (= ignore inaccessible files)"
+      "\nUNSUPPORTED_FILE_FORMAT (= ignore files with unsupported file formats)"
+      "\nMISSING_POINT_ATTRIBUTES (= ignore files that don't have the point "
+      "attributes specified by the -a option. Default values will be used for "
+      "these attributes)"
+      "\nALL_FILE_ERRORS (= ignore all recoverable file-related errors)"
+      "\nALL_ERRORS (= ignore all recoverable errors)"
+      "\nNONE (= terminate program on every error)");
 
   bpo::options_description converter_options("Converter options");
   converter_options.add_options()(
@@ -199,7 +243,8 @@ parseArguments(int argc, char **argv) {
                "Output format for the conversion. Can be one of LAS, LAZ or "
                "3DTILES. Default is 3DTILES")(
       "output-attributes,a",
-      bpo::value<std::vector<std::string>>(&output_attributes)->required(),
+      bpo::value<PointAttributes>(&converter_args.output_attributes)
+          ->required(),
       "Point attributes to store in the output pointcloud. Can be a "
       "combination of RGB, INTENSITY, "
       "RGB_FROM_INTENSITY, CLASSIFICATION, NORMAL. RGB_FROM_INTENSITY "
@@ -266,7 +311,7 @@ parseArguments(int argc, char **argv) {
       std::exit(1);
     }
 
-    verifyOutputAttributes(tiler_args.output_attributes);
+    verify_output_attributes(tiler_args.output_attributes);
 
     tiler_args.sources.reserve(source_files.size());
     std::transform(std::begin(source_files), std::end(source_files),
@@ -359,9 +404,7 @@ parseArguments(int argc, char **argv) {
       return matching_output_format->second;
     }();
 
-    verifyOutputAttributes(output_attributes);
-    converter_args.output_attributes =
-        point_attributes_from_strings(output_attributes);
+    verify_output_attributes(converter_args.output_attributes);
 
     converter_args.source_projection =
         (converter_variables.count("source-projection"))
@@ -409,7 +452,7 @@ int main(int argc, char **argv) {
         args);
 
   } catch (const std::exception &e) {
-    std::cerr << e.what() << std::flush;
+    std::cerr << e.what() << std::endl;
     std::exit(EXIT_FAILURE);
   }
 

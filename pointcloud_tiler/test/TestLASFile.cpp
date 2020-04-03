@@ -189,7 +189,7 @@ SCENARIO("LASFile in read-mode")
   const auto bounds = AABB{ { 0, 0, 0 }, { 1, 1, 1 } };
   const auto expected_points = generate_random_points(count, bounds);
   PointAttributes attributes;
-  attributes.push_back(attributes::POSITION_CARTESIAN);
+  attributes.insert(PointAttribute::Position);
   fs::path file_path = "./tmp_testlasfile.las";
   write_tmp_file(file_path, bounds, expected_points);
 
@@ -234,7 +234,7 @@ SCENARIO("LASFile in write-mode")
   const auto bounds = AABB{ { 0, 0, 0 }, { 1, 1, 1 } };
   const auto expected_points = generate_random_points(count, bounds);
   PointAttributes attributes;
-  attributes.push_back(attributes::POSITION_CARTESIAN);
+  attributes.insert(PointAttribute::Position);
   fs::path file_path = "./tmp_testlasfile.las";
 
   GIVEN("A LASFile opened in write-mode")

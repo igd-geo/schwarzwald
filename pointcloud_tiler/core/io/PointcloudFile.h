@@ -3,13 +3,10 @@
 #include "datastructures/PointBuffer.h"
 #include "math/AABB.h"
 #include "pointcloud/PointAttributes.h"
+#include "types/type_util.h"
 
 #include <type_traits>
 #include <variant>
-
-namespace {
-template <typename T> struct AlwaysFalse : std::false_type {};
-} // namespace
 
 namespace pc {
 
@@ -27,22 +24,17 @@ template <typename File> size_t get_point_count(File const &f);
 template <typename File>
 bool has_attribute(File const &f, PointAttribute const &attribute);
 
-template <typename File>
+template <typename File, typename OutIter>
 bool has_all_attributes(File const &f, PointAttributes const &attributes,
-                        PointAttributes *missing_attributes = nullptr) {
-  if (!missing_attributes) {
-    return std::all_of(std::begin(attributes), std::end(attributes),
-                       [&f](PointAttribute const &attribute) {
-                         return has_attribute(f, attribute);
-                       });
+                        OutIter missing_attributes_begin) {
+  auto attribute_is_missing = false;
+  for (const auto &attribute : attributes) {
+    if (has_attribute(f, attribute))
+      continue;
+    attribute_is_missing = true;
+    *missing_attributes_begin++ = attribute;
   }
-
-  std::copy_if(std::begin(attributes), std::end(attributes),
-               std::back_inserter(*missing_attributes),
-               [&f](PointAttribute const &attribute) {
-                 return !has_attribute(f, attribute);
-               });
-  return !missing_attributes->empty();
+  return !attribute_is_missing;
 }
 
 template <typename Iter, typename Meta>
@@ -69,17 +61,22 @@ size_t get_point_count(std::variant<FileTypes...> const &f) {
 template <typename... FileTypes>
 bool has_attribute(std::variant<FileTypes...> const &f,
                    PointAttribute const &attribute) {
-  return std::visit([&attribute](auto &typed_file) {
-    return has_attribute(typed_file, attribute);
-  });
+  return std::visit(
+      [&attribute](auto &typed_file) {
+        return has_attribute(typed_file, attribute);
+      },
+      f);
 }
 
-template <typename... FileTypes>
+template <typename... FileTypes, typename OutIter>
 bool has_all_attributes(std::variant<FileTypes...> const &f,
                         PointAttributes const &attributes,
-                        PointAttributes *missing_attributes = nullptr) {
-  return std::visit([&attributes, missing_attributes](auto &typed_file) {
-    return has_all_attributes(typed_file, attributes, missing_attributes);
-  });
+                        OutIter missing_attributes_begin) {
+  return std::visit(
+      [&attributes, missing_attributes_begin](auto &typed_file) {
+        return has_all_attributes(typed_file, attributes,
+                                  missing_attributes_begin);
+      },
+      f);
 }
 } // namespace pc

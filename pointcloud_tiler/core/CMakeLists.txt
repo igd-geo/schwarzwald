@@ -65,6 +65,8 @@ set(SOURCE_FILES
     process/TilerProcess.h
 
     util/Definitions.h
+    util/Error.h
+    util/Error.cpp
     util/ExecutorObserver.h
     util/Stats.cpp
     util/Stats.h

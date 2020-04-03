@@ -255,7 +255,7 @@ LASFile::open(fs::path const& path, OpenMode file_open_mode)
   assert(_state == State::Closed);
 
   las::ctry(laszip_create(&_laszip_handle)).or_else([](auto ec) {
-    throw new std::runtime_error{
+    throw std::runtime_error{
       (boost::format("Could not create LASZip handle (error code %1%)") % ec).str()
     };
   });
@@ -267,11 +267,10 @@ LASFile::open(fs::path const& path, OpenMode file_open_mode)
         .or_else([this, &path](auto ec) {
           laszip_destroy(_laszip_handle);
 
-          throw new std::runtime_error{
-            (boost::format("Could not open LAS reader for file %1% (error code %2%)") %
-             path.string() % ec)
-              .str()
-          };
+          throw std::runtime_error{ (boost::format(
+                                       "Could not open LAS reader for file %1% (error code %2%)") %
+                                     path.string() % ec)
+                                      .str() };
         });
       _state = State::OpenRead;
     } break;
@@ -280,11 +279,10 @@ LASFile::open(fs::path const& path, OpenMode file_open_mode)
         .or_else([this, &path](auto ec) {
           laszip_destroy(_laszip_handle);
 
-          throw new std::runtime_error{
-            (boost::format("Could not open LAS writer for file %1% (error code %2%)") %
-             path.string() % ec)
-              .str()
-          };
+          throw std::runtime_error{ (boost::format(
+                                       "Could not open LAS writer for file %1% (error code %2%)") %
+                                     path.string() % ec)
+                                      .str() };
         });
       _state = State::OpenWrite;
     } break;
@@ -356,21 +354,19 @@ get_offset_from_las_header(laszip_header const& header)
 bool
 las_file_has_attribute(laszip_header const& header, PointAttribute const& attribute)
 {
-  switch (attribute.ordinal) {
-    case attributes::POSITION_CARTESIAN:
+  switch (attribute) {
+    case PointAttribute::Position:
       return true; // LAS always has positions
-    case attributes::COLOR_PACKED:
+    case PointAttribute::RGB:
       return header.point_data_format == 2 || header.point_data_format == 3;
-    case attributes::INTENSITY:
-    case attributes::COLOR_FROM_INTENSITY:
+    case PointAttribute::Intensity:
+    case PointAttribute::RGBFromIntensity:
       return true;
-    case attributes::NORMAL:
-    case attributes::NORMAL_OCT16:
-    case attributes::NORMAL_SPHEREMAPPED:
+    case PointAttribute::Normal:
       return false; // TODO We could look in the additional data fields, but only
                     // from the header we can't tell, so this requires an API
                     // change
-    case attributes::CLASSIFICATION:
+    case PointAttribute::Classification:
       return true; // LAS always has classifications
     default:
       throw std::runtime_error{ "Unrecognized attribute type!" };
@@ -392,14 +388,14 @@ las_read_points(LASInputIterator begin,
   std::vector<uint16_t> intensities;
   std::vector<uint8_t> classifications;
 
-  const auto has_color_from_intensity = has_attribute(attributes, attributes::COLOR_FROM_INTENSITY);
-  const auto has_colors = has_attribute(attributes, attributes::COLOR_PACKED);
+  const auto has_color_from_intensity = has_attribute(attributes, PointAttribute::RGBFromIntensity);
+  const auto has_colors = has_attribute(attributes, PointAttribute::RGB);
   // const auto has_normals = has_attribute(attributes, attributes::NORMAL) ||
   //                         has_attribute(attributes, attributes::NORMAL_OCT16)
   //                         || has_attribute(attributes,
   //                         attributes::NORMAL_SPHEREMAPPED);
-  const auto has_intensities = has_attribute(attributes, attributes::INTENSITY);
-  const auto has_classifications = has_attribute(attributes, attributes::CLASSIFICATION);
+  const auto has_intensities = has_attribute(attributes, PointAttribute::Intensity);
+  const auto has_classifications = has_attribute(attributes, PointAttribute::Classification);
 
   positions.reserve(to_read_count);
   if (has_colors || has_color_from_intensity) {

@@ -5,6 +5,7 @@
 #include <list>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "debug/ProgressReporter.h"
@@ -102,4 +103,20 @@ private:
   std::once_flag _init_draw_buffer_once;
 
   std::vector<std::vector<std::unique_ptr<TerminalUIElement>>> _ui_elements;
+};
+
+struct TerminalUIAsyncRenderer {
+  explicit TerminalUIAsyncRenderer(TerminalUI &ui);
+  ~TerminalUIAsyncRenderer();
+
+  TerminalUIAsyncRenderer(const TerminalUIAsyncRenderer &) = delete;
+  TerminalUIAsyncRenderer(TerminalUIAsyncRenderer &&) = delete;
+
+  TerminalUIAsyncRenderer &operator=(const TerminalUIAsyncRenderer &) = delete;
+  TerminalUIAsyncRenderer &operator=(TerminalUIAsyncRenderer &&) = delete;
+
+private:
+  TerminalUI &_ui;
+  std::thread _render_thread;
+  std::atomic_bool _do_render;
 };

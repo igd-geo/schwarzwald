@@ -4,6 +4,7 @@
 #include "math/AABB.h"
 #include "pointcloud/PointAttributes.h"
 #include "util/Definitions.h"
+#include "util/Error.h"
 #include <terminal/TerminalUI.h>
 
 #include <cstdint>
@@ -14,10 +15,8 @@
 
 struct SRSTransformHelper;
 
-struct TilerProcess
-{
-  struct Arguments
-  {
+struct TilerProcess {
+  struct Arguments {
     std::vector<fs::path> sources;
     fs::path output_directory;
     float spacing;
@@ -27,7 +26,7 @@ struct TilerProcess
     size_t max_points_per_node;
     size_t internal_cache_size;
     size_t max_batch_read_size;
-    std::vector<std::string> output_attributes;
+    PointAttributes output_attributes;
     OutputFormat output_format;
     std::string sampling_strategy;
     std::string executable_path;
@@ -35,22 +34,24 @@ struct TilerProcess
     std::optional<unit::byte> cache_size;
     bool use_compression;
     uint32_t max_memory_usage_MiB;
+    util::IgnoreErrors errors_to_ignore;
   };
 
-  explicit TilerProcess(Arguments const& args);
+  explicit TilerProcess(Arguments const &args);
 
   void run();
 
 private:
   Arguments _args;
   AABB _bounds;
-  PointAttributes _point_attributes;
 
   UIState _ui_state;
   TerminalUI _ui;
 
   void prepare();
   void cleanUp();
-  AABB calculateAABB(SRSTransformHelper const* transform);
+  AABB calculateAABB(SRSTransformHelper const *transform);
   size_t get_total_points_count() const;
+  void check_for_missing_point_attributes(
+      const PointAttributes &required_attributes) const;
 };

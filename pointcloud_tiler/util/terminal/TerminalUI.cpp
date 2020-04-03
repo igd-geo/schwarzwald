@@ -370,3 +370,18 @@ void TerminalUI::rebuild_progress_ui_without_tty() {
 
   _ui_elements.push_back(std::move(ui_elements));
 }
+
+TerminalUIAsyncRenderer::TerminalUIAsyncRenderer(TerminalUI &ui) : _ui(ui) {
+  _do_render = true;
+  _render_thread = std::thread([this]() {
+    while (_do_render) {
+      _ui.redraw();
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+  });
+}
+
+TerminalUIAsyncRenderer::~TerminalUIAsyncRenderer() {
+  _do_render = false;
+  _render_thread.join();
+}

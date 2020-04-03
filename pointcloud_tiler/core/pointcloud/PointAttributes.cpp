@@ -4,87 +4,60 @@
 #include <cstring>
 #include <sstream>
 
-PointAttribute PointAttribute::fromString(const std::string &name) {
-  if (name == "POSITION_CARTESIAN") {
-    return attributes::POSITION_CARTESIAN;
-  } else if (name == "COLOR_PACKED") {
-    return attributes::COLOR_PACKED;
-  } else if (name == "INTENSITY") {
-    return attributes::INTENSITY;
-  } else if (name == "CLASSIFICATION") {
-    return attributes::CLASSIFICATION;
-  } else if (name == "NORMAL_SPHEREMAPPED") {
-    return attributes::NORMAL_SPHEREMAPPED;
-  } else if (name == "NORMAL_OCT16") {
-    return attributes::NORMAL_OCT16;
-  } else if (name == "NORMAL") {
-    return attributes::NORMAL;
-  }
+#include <boost/algorithm/string.hpp>
+#include <boost/format.hpp>
 
-  throw std::runtime_error("Invalid PointAttribute name: '" + name + "'");
+namespace bpo = boost::program_options;
+
+bool
+has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_find)
+{
+  return attributes.find(attribute_to_find) != std::end(attributes);
 }
 
-PointAttribute PointAttribute::fromStringLiteral(const char *name) {
-  if (std::strcmp(name, "POSITION_CARTESIAN") == 0) {
-    return attributes::POSITION_CARTESIAN;
-  } else if (std::strcmp(name, "COLOR_PACKED") == 0) {
-    return attributes::COLOR_PACKED;
-  } else if (std::strcmp(name, "INTENSITY") == 0) {
-    return attributes::INTENSITY;
-  } else if (std::strcmp(name, "CLASSIFICATION") == 0) {
-    return attributes::CLASSIFICATION;
-  } else if (std::strcmp(name, "NORMAL_SPHEREMAPPED") == 0) {
-    return attributes::NORMAL_SPHEREMAPPED;
-  } else if (std::strcmp(name, "NORMAL_OCT16") == 0) {
-    return attributes::NORMAL_OCT16;
-  } else if (std::strcmp(name, "NORMAL") == 0) {
-    return attributes::NORMAL;
-  }
-
-  throw std::runtime_error{"Unrecognized PointAttribute name!"};
-}
-
-bool operator==(const PointAttribute &lhs, const PointAttribute &rhs) {
-  return lhs.ordinal == rhs.ordinal;
-}
-
-bool has_attribute(PointAttributes const &attributes,
-                   PointAttribute const &attribute_to_find) {
-  return std::find_if(std::begin(attributes), std::end(attributes),
-                      [&attribute_to_find](const auto &ref_attribute) {
-                        return attribute_to_find.ordinal ==
-                               ref_attribute.ordinal;
-                      }) != std::end(attributes);
-}
-
-std::string print_attributes(PointAttributes const &attributes) {
+std::string
+print_attributes(PointAttributes const& attributes)
+{
   std::stringstream ss;
-  ss << "[";
-  for (size_t idx = 0; idx < attributes.size(); ++idx) {
-    ss << attributes[idx].name;
-    if (idx < (attributes.size() - 1))
-      ss << ";";
+  ss << "[ ";
+  for (auto attribute : attributes) {
+    ss << util::to_string(attribute) << " ";
   }
   ss << "]";
   return ss.str();
 }
 
-PointAttributes
-point_attributes_from_strings(const std::vector<std::string> &attribute_names) {
+tl::expected<PointAttributes, std::string>
+point_attributes_from_strings(const std::vector<std::string>& attribute_names)
+{
   PointAttributes point_attributes;
-  point_attributes.push_back(attributes::POSITION_CARTESIAN);
-  for (const auto &attribute : attribute_names) {
-    if (attribute == "RGB") {
-      point_attributes.push_back(attributes::COLOR_PACKED);
-    } else if (attribute == "RGB_FROM_INTENSITY") {
-      point_attributes.push_back(attributes::COLOR_FROM_INTENSITY);
-    } else if (attribute == "INTENSITY") {
-      point_attributes.push_back(attributes::INTENSITY);
-    } else if (attribute == "CLASSIFICATION") {
-      point_attributes.push_back(attributes::CLASSIFICATION);
-    } else if (attribute == "NORMAL") {
-      point_attributes.push_back(attributes::NORMAL_OCT16);
+  for (const auto& attribute : attribute_names) {
+    const auto parse_result = util::try_parse<PointAttribute>(attribute).map(
+      [&point_attributes](PointAttribute attribute) { point_attributes.insert(attribute); });
+    if (!parse_result.has_value()) {
+      return tl::make_unexpected(parse_result.error());
     }
   }
-  return point_attributes;
+  return { point_attributes };
+}
+
+void
+validate(boost::any& v, const std::vector<std::string>& values, PointAttributes*, int)
+{
+  bpo::validators::check_first_occurrence(v);
+  std::vector<std::string> tokens;
+  boost::algorithm::split(
+    tokens, bpo::validators::get_single_string(values), boost::is_any_of(" "));
+
+  PointAttributes attributes;
+
+  for (const auto& token : tokens) {
+    util::try_parse<PointAttribute>(token)
+      .map([&attributes](const PointAttribute& attribute) { attributes.insert(attribute); })
+      .or_else([](const std::string& err) {
+        throw bpo::validation_error{ bpo::validation_error::kind_t::invalid_option_value };
+      });
+  }
+
+  v = boost::any(attributes);
 }
