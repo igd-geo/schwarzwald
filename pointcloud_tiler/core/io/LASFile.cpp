@@ -1,10 +1,13 @@
 #include "io/LASFile.h"
 #include "pointcloud/PointAttributes.h"
+#include "util/Error.h"
 #include "util/stuff.h"
 
 #include <boost/format.hpp>
 #include <expected.hpp>
 #include <limits>
+
+using namespace std::literals;
 
 #pragma region Helpers
 
@@ -13,6 +16,10 @@ constexpr static laszip_I32 LASZIP_NO_ERROR = 0;
 namespace las {
 struct TryHelper
 {
+  constexpr explicit TryHelper(laszip_I32 error_code)
+    : error_code(error_code)
+  {}
+
   template<typename Call>
   void or_else(Call call)
   {
@@ -21,13 +28,13 @@ struct TryHelper
     call(error_code);
   }
 
-  laszip_I32 error_code;
+  const laszip_I32 error_code;
 };
 
 TryHelper
 ctry(laszip_I32 las_error_code)
 {
-  return { las_error_code };
+  return TryHelper{ las_error_code };
 }
 
 static bool
@@ -35,6 +42,35 @@ is_compressed_las_file(fs::path const& path)
 {
   return path.extension() == ".laz";
 }
+
+decltype(auto)
+handle_las_failure(laszip_POINTER laszip, std::string_view fallback_message)
+{
+  return [laszip, fallback_message](laszip_I32 error_code) {
+    char* error_message;
+    if (laszip_get_error(laszip, &error_message)) {
+      throw util::chain_error(
+        util::chain_error((boost::format("Error code %1%") % error_code).str()),
+        std::string{ fallback_message });
+    }
+    throw util::chain_error({ error_message });
+  };
+}
+
+decltype(auto)
+handle_las_failure(laszip_POINTER laszip, std::string fallback_message)
+{
+  return [laszip, _fallback_message = std::move(fallback_message)](laszip_I32 error_code) {
+    char* error_message;
+    if (laszip_get_error(laszip, &error_message)) {
+      throw util::chain_error(
+        util::chain_error((boost::format("Error code %1%") % error_code).str()),
+        std::string{ _fallback_message });
+    }
+    throw util::chain_error({ error_message });
+  };
+}
+
 } // namespace las
 
 /**
@@ -67,8 +103,13 @@ LASInputIterator::LASInputIterator(LASFile const& las_file, size_t index)
 #ifdef DEBUG
   assert(index < las_file.size())
 #endif
-    laszip_seek_point(_las_reader, static_cast<laszip_I64>(index));
-  laszip_read_point(_las_reader);
+
+    las::ctry(laszip_seek_point(_las_reader, static_cast<laszip_I64>(index)))
+      .or_else(las::handle_las_failure(
+        _las_reader, (boost::format("Could not seek to point at index %1%") % index).str()));
+
+  las::ctry(laszip_read_point(_las_reader))
+    .or_else(las::handle_las_failure(_las_reader, "Could not read next point"sv));
 }
 
 bool
@@ -90,14 +131,16 @@ LASInputIterator::operator++()
     *this = {};
     return *this;
   }
-  laszip_read_point(_las_reader);
+  las::ctry(laszip_read_point(_las_reader))
+    .or_else(las::handle_las_failure(_las_reader, "Could not read next point"sv));
   return *this;
 }
 
 laszip_point const& LASInputIterator::operator*() const
 {
   laszip_point* point;
-  laszip_get_point_pointer(_las_reader, &point);
+  las::ctry(laszip_get_point_pointer(_las_reader, &point))
+    .or_else(las::handle_las_failure(_las_reader, "Could not get next point"sv));
   return *point;
 }
 
@@ -142,8 +185,10 @@ LASOutputIterator& LASOutputIterator::operator*()
 void
 LASOutputIterator::operator=(laszip_point const& point)
 {
-  laszip_set_point(_las_writer, &point);
-  laszip_write_point(_las_writer);
+  las::ctry(laszip_set_point(_las_writer, &point))
+    .or_else(las::handle_las_failure(_las_writer, "Could not set point data"sv));
+  las::ctry(laszip_write_point(_las_writer))
+    .or_else(las::handle_las_failure(_las_writer, "Could not write point"sv));
 }
 #pragma endregion
 
