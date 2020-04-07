@@ -79,6 +79,7 @@ private:
 
 struct TerminalUI {
   explicit TerminalUI(UIState *state);
+  ~TerminalUI();
 
   void redraw();
 
