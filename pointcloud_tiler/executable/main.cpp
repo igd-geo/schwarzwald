@@ -153,7 +153,8 @@ parseArguments(int argc, char **argv) {
 
   bpo::options_description tiler_options("Tiler options");
   tiler_options.add_options()(
-      "source,i", bpo::value<std::vector<std::string>>(&source_files),
+      "source,i",
+      bpo::value<std::vector<std::string>>(&source_files)->multitoken(),
       "List of one or more input files and/or folders. For each folder, all "
       "LAS/LAZ files in the "
       "folder and all its subfolders are processed.")(
@@ -224,6 +225,7 @@ parseArguments(int argc, char **argv) {
       "more of the following possible values:\nMISSING_FILES (= ignore missing "
       "files)\nINACCESSIBLE_FILES (= ignore inaccessible files)"
       "\nUNSUPPORTED_FILE_FORMAT (= ignore files with unsupported file formats)"
+      "\nCORRUPTED_FILES (= ignore corrupted/broken files)"
       "\nMISSING_POINT_ATTRIBUTES (= ignore files that don't have the point "
       "attributes specified by the -a option. Default values will be used for "
       "these attributes)"

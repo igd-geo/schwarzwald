@@ -495,6 +495,19 @@ void TilerProcess::run() {
 
   write_properties_json(_args.output_directory, aabb, _args.spacing, stats);
 
-  util::write_log(concat("Tiler finished successfully after indexing ",
-                         total_points_count, " points\n"));
+  const auto total_indexed_count =
+      progress_reporter.get_progress<size_t>(progress::INDEXING);
+  const auto dropped_points_count = total_points_count - total_indexed_count;
+
+  if (dropped_points_count) {
+    util::write_log(
+        (boost::format("Tiler finished with warnings - Indexed %1% out of %2% "
+                       "points (%3% points could not be indexed)") %
+         total_indexed_count % total_points_count % dropped_points_count)
+            .str());
+  } else {
+    util::write_log((boost::format("Tiler finished - Indexed %1% points") %
+                     total_indexed_count)
+                        .str());
+  }
 }
