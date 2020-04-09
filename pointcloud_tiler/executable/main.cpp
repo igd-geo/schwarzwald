@@ -107,24 +107,30 @@ namespace util {
 
 void validate(boost::any &v, const std::vector<std::string> &all_tokens,
               util::IgnoreErrors *target_type, int) {
-  bpo::validators::check_first_occurrence(v);
-  std::vector<std::string> tokens;
-  boost::algorithm::split(tokens,
-                          bpo::validators::get_single_string(all_tokens),
-                          boost::is_any_of(" "));
+
+  // To make both '--ignore A B C' and '--ignore "A B C" and also '--ignore "A
+  // B" C' valid, we take all_tokens and treat each entry as potentially
+  // multiple tokens that we split on whitespace. This way we get all the
+  // singular tokens
 
   auto ignore_errors = util::IgnoreErrors::None;
 
-  for (auto &token : tokens) {
-    util::try_parse<util::IgnoreErrors>(token)
-        .map([&ignore_errors](util::IgnoreErrors val) {
-          ignore_errors = ignore_errors | val;
-        })
-        .or_else([](const std::string &reason_for_failure) {
-          throw bpo::validation_error{
-              bpo::validation_error::kind_t::invalid_option_value,
-              reason_for_failure};
-        });
+  for (auto &one_or_more_tokens : all_tokens) {
+
+    std::vector<std::string> tokens;
+    boost::algorithm::split(tokens, one_or_more_tokens, boost::is_any_of(" "));
+
+    for (auto &just_one_token : tokens) {
+      util::try_parse<util::IgnoreErrors>(just_one_token)
+          .map([&ignore_errors](util::IgnoreErrors val) {
+            ignore_errors = ignore_errors | val;
+          })
+          .or_else([](const std::string &reason_for_failure) {
+            throw bpo::validation_error{
+                bpo::validation_error::kind_t::invalid_option_value,
+                reason_for_failure};
+          });
+    }
   }
 
   v = boost::any(ignore_errors);
@@ -218,6 +224,7 @@ parseArguments(int argc, char **argv) {
       "ignore",
       bpo::value<util::IgnoreErrors>(&tiler_args.errors_to_ignore)
           ->multitoken()
+          ->composing()
           ->default_value(util::IgnoreErrors::None, "NONE"),
       "If provided, all recoverable errors for the given categories are "
       "ignored and processing proceeds normally instead of terminating the "
