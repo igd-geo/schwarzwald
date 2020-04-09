@@ -44,7 +44,7 @@ enum class IgnoreErrors : uint32_t {
    * Ignore errors due to files that don't contain the necessary attributes as
    * specified by the '-a' option
    */
-  MissingPointAttributes = 1 << 3,
+  MissingPointAttributes = 1 << 4,
 
   // error combinations
   AllFileErrors =
