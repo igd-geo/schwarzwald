@@ -1,14 +1,14 @@
 #include "process/ConverterProcess.h"
 
+#include "datastructures/DynamicMortonIndex.h"
 #include "io/Cesium3DTilesPersistence.h"
 #include "io/LASPointReader.h"
 #include "io/PNTSWriter.h"
 #include "io/PointsPersistence.h"
 #include "io/TileSetWriter.h"
 #include "math/AABB.h"
-#include "octree/DynamicMortonIndex.h"
-#include "octree/OctreeAlgorithms.h"
 #include "pointcloud/Tileset.h"
+#include "tiling/OctreeAlgorithms.h"
 #include "util/Transformation.h"
 #include "util/stuff.h"
 #include <terminal/TerminalUI.h>

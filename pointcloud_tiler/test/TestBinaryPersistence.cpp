@@ -2,8 +2,8 @@
 
 #include "io/BinaryPersistence.h"
 #include "math/AABB.h"
-#include "octree/OctreeAlgorithms.h"
 #include "pointcloud/PointAttributes.h"
+#include "tiling/OctreeAlgorithms.h"
 
 #include <random>
 #include <string>

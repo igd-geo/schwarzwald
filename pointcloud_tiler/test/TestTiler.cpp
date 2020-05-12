@@ -3,8 +3,8 @@
 #include "datastructures/SparseGrid.h"
 #include "io/BinaryPersistence.h"
 #include "io/MemoryPersistence.h"
-#include "octree/OctreeAlgorithms.h"
 #include "process/Tiler.h"
+#include "tiling/OctreeAlgorithms.h"
 #include <debug/ProgressReporter.h>
 
 #include <boost/algorithm/string/predicate.hpp>

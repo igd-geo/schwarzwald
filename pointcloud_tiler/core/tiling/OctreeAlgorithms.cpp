@@ -1,4 +1,4 @@
-#include "octree/OctreeAlgorithms.h"
+#include "tiling/OctreeAlgorithms.h"
 
 AABB
 get_octant_bounds(uint8_t octant, const AABB& parent_bounds)

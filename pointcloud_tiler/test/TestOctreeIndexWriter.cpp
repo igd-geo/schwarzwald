@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "octree/OctreeIndexWriter.h"
+#include "tiling/OctreeIndexWriter.h"
 
 #include <experimental/filesystem>
 #include <random>

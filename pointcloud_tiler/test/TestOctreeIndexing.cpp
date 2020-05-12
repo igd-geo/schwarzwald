@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "octree/OctreeAlgorithms.h"
+#include "tiling/OctreeAlgorithms.h"
 
 #include <random>
 

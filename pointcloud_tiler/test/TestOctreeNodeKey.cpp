@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "octree/MortonIndex.h"
+#include "datastructures/MortonIndex.h"
 
 TEST_CASE("Default constructed key is zero", "[MortonIndex]")
 {

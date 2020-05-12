@@ -3,8 +3,8 @@
 #include "datastructures/PointBuffer.h"
 #include "io/PointsPersistence.h"
 #include "math/AABB.h"
-#include "octree/Sampling.h"
 #include "pointcloud/PointAttributes.h"
+#include "tiling/Sampling.h"
 #include "util/Definitions.h"
 #include "util/Transformation.h"
 #include <threading/Semaphore.h>
@@ -17,7 +17,8 @@
 
 struct ProgressReporter;
 
-struct TilerMetaParameters {
+struct TilerMetaParameters
+{
   float spacing_at_root;
   uint32_t max_depth;
   size_t max_points_per_node;
@@ -25,10 +26,14 @@ struct TilerMetaParameters {
   bool create_journal;
 };
 
-struct Tiler {
-  Tiler(const AABB &aabb, const TilerMetaParameters &meta_parameters,
-        SamplingStrategy sampling_strategy, ProgressReporter *progress_reporter,
-        PointsPersistence &persistence, fs::path output_directory);
+struct Tiler
+{
+  Tiler(const AABB& aabb,
+        const TilerMetaParameters& meta_parameters,
+        SamplingStrategy sampling_strategy,
+        ProgressReporter* progress_reporter,
+        PointsPersistence& persistence,
+        fs::path output_directory);
   ~Tiler();
 
   void index();
@@ -37,7 +42,7 @@ struct Tiler {
 
   bool needs_indexing() const;
 
-  void cache(const PointBuffer &points);
+  void cache(const PointBuffer& points);
 
   void close();
 
@@ -47,8 +52,8 @@ private:
   AABB _aabb;
   TilerMetaParameters _meta_parameters;
   SamplingStrategy _sampling_strategy;
-  ProgressReporter *_progress_reporter;
-  PointsPersistence &_persistence;
+  ProgressReporter* _progress_reporter;
+  PointsPersistence& _persistence;
   fs::path _output_directory;
 
   PointBuffer _store;

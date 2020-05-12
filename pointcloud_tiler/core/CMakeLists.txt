@@ -9,6 +9,9 @@ set(SOURCE_FILES
     datastructures/PointBuffer.cpp
     datastructures/SparseGrid.h
     datastructures/SparseGrid.cpp
+    datastructures/DynamicMortonIndex.cpp
+    datastructures/DynamicMortonIndex.h
+    datastructures/MortonIndex.h
 
     io/BinaryPersistence.cpp
     io/BinaryPersistence.h
@@ -37,16 +40,15 @@ set(SOURCE_FILES
     math/AABB.h
     math/Vector3.h
 
-    octree/DynamicMortonIndex.cpp
-    octree/DynamicMortonIndex.h
-    octree/MortonIndex.h
-    octree/Node.cpp
-    octree/Node.h
-    octree/OctreeAlgorithms.cpp
-    octree/OctreeAlgorithms.h
-    octree/OctreeIndexWriter.h
-    octree/Sampling.cpp
-    octree/Sampling.h
+    tiling/Node.cpp
+    tiling/Node.h
+    tiling/OctreeAlgorithms.cpp
+    tiling/OctreeAlgorithms.h
+    tiling/OctreeIndexWriter.h
+    tiling/Sampling.cpp
+    tiling/Sampling.h
+    tiling/TilingAlgorithms.h
+    tiling/TilingAlgorithms.cpp
 
     pointcloud/Point.h
     pointcloud/PointAttributes.cpp
