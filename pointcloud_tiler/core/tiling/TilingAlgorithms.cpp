@@ -17,22 +17,6 @@ constexpr static uint32_t MAX_OCTREE_LEVELS = 21;
  */
 constexpr static size_t MIN_POINTS_FOR_ASYNC_PROCESSING = 100'000;
 
-struct NodeTilingData
-{
-  NodeTilingData() {}
-  NodeTilingData(octree::NodeData points,
-                 octree::NodeStructure node,
-                 octree::NodeStructure root_node)
-    : points(std::move(points))
-    , node(node)
-    , root_node(root_node)
-  {}
-
-  octree::NodeData points;
-  octree::NodeStructure node;
-  octree::NodeStructure root_node;
-};
-
 #pragma region helper_functions
 /**
  * Reads the cached points for the given node from disk and returns them as IndexedPoints
@@ -111,263 +95,9 @@ split_range_into_child_nodes(std::vector<IndexedPoint64>::iterator points_begin,
   return child_tiling_data;
 }
 
-/**
- * Tile the given node as a terminal node, i.e. take up to 'max_points_per_node' points
- * and persist them without any sampling
- */
-static void
-tile_terminal_node(octree::NodeData const& all_points,
-                   octree::NodeStructure const& node,
-                   size_t max_points_per_node,
-                   size_t previously_taken_points_count,
-                   PointsPersistence& persistence,
-                   ProgressReporter* progress_reporter)
-{
-  const auto points_to_take = std::min(all_points.size(), max_points_per_node);
-  if (points_to_take < all_points.size()) {
-    const auto dropped_points_count = all_points.size() - points_to_take;
-    util::write_log(
-      (boost::format("Dropped %1% points at node %2%") % dropped_points_count % node.name).str());
-
-    if (progress_reporter)
-      progress_reporter->increment_progress(progress::INDEXING, dropped_points_count);
-  }
-
-  persistence.persist_points(
-    member_iterator(std::begin(all_points), &IndexedPoint64::point_reference),
-    member_iterator(std::begin(all_points) + points_to_take, &IndexedPoint64::point_reference),
-    node.bounds,
-    node.name);
-
-  if (progress_reporter)
-    progress_reporter->increment_progress(progress::INDEXING,
-                                          points_to_take - previously_taken_points_count);
-}
-
-/**
- * Tile the given node as an interior node, i.e. by using the given SamplingStrategy
- */
-static std::vector<NodeTilingData>
-tile_internal_node(octree::NodeData& all_points,
-                   octree::NodeStructure const& node,
-                   octree::NodeStructure const& root_node,
-                   size_t previously_taken_points_count,
-                   SamplingStrategy& sampling_strategy,
-                   PointsPersistence& persistence,
-                   ProgressReporter* progress_reporter)
-{
-  const auto partition_point = filter_points_for_octree_node(std::begin(all_points),
-                                                             std::end(all_points),
-                                                             node.morton_index,
-                                                             node.level,
-                                                             root_node.bounds,
-                                                             root_node.max_spacing,
-                                                             sampling_strategy);
-
-  const auto points_taken =
-    static_cast<size_t>(std::distance(std::begin(all_points), partition_point));
-
-  persistence.persist_points(
-    member_iterator(std::begin(all_points), &IndexedPoint64::point_reference),
-    member_iterator(partition_point, &IndexedPoint64::point_reference),
-    node.bounds,
-    node.name);
-
-  if (progress_reporter) {
-    // To correctly increment progress, we have to know how many points were cached when we last hit
-    // this node. In the 'worst' case, we take all the same points as last time, so that would mean
-    // we made no progress on this node. Hence this calculation here:
-    const auto newly_taken_points = points_taken - previously_taken_points_count;
-    progress_reporter->increment_progress(progress::INDEXING, newly_taken_points);
-  }
-
-  return split_range_into_child_nodes(partition_point, std::end(all_points), node, root_node);
-}
-
-static std::vector<NodeTilingData>
-tile_node(octree::NodeData&& node_data,
-          const octree::NodeStructure& node_structure,
-          const octree::NodeStructure& root_node_structure,
-          SamplingStrategy& sampling_strategy,
-          PointsPersistence& persistence,
-          PointsCache& points_cache,
-          size_t max_points_per_node,
-          ProgressReporter* progress_reporter,
-          tf::Subflow& subflow)
-{
-  const auto current_node_name = concat(
-    root_node_structure.name, to_string(node_structure.morton_index, node_structure.level + 1));
-
-  auto cached_points = read_pnts_from_disk(current_node_name,
-                                           root_node_structure.bounds,
-                                           node_structure.bounds,
-                                           points_cache,
-                                           persistence);
-
-  const auto cached_points_count = cached_points.size();
-
-  const auto node_level_to_sample_from =
-    octree::get_node_level_to_sample_from(node_structure.level, root_node_structure);
-
-  // Check whether this node is an interior node, terminal node, or a node that is so deep that it
-  // is a new root node
-  if (node_level_to_sample_from >= static_cast<int32_t>(node_structure.max_depth)) {
-    const auto all_points_for_this_node =
-      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
-    tile_terminal_node(all_points_for_this_node,
-                       node_structure,
-                       max_points_per_node,
-                       cached_points_count,
-                       persistence,
-                       progress_reporter);
-    return {};
-  }
-
-  if (node_level_to_sample_from >= static_cast<int32_t>(MAX_OCTREE_LEVELS - 1)) {
-    // If we are so deep that we exceed the capacity of the MortonIndex, we
-    // have to index our points again with the current node as new root node. We
-    // also have to carry the information that we have a new root over to the
-    // children so that the paths of the nodes are correct.
-
-    // Fun fact: We don't have to adjust the loaded indices because if we ever
-    // get to a node this deep again, the indices have been calculated with the
-    // new root the last time also, so everything is as it should be
-    auto all_points_for_this_node =
-      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
-
-    // Set this node as the new root node
-    auto new_root_node = node_structure;
-    new_root_node.max_depth = node_structure.max_depth - node_structure.level;
-
-    // Compute new indices based upon this node as root node
-    for (auto& indexed_point : all_points_for_this_node) {
-      indexed_point.morton_index = calculate_morton_index<MAX_OCTREE_LEVELS>(
-        indexed_point.point_reference.position(), new_root_node.bounds);
-    }
-
-    // Make sure everything is sorted again
-    std::sort(all_points_for_this_node.begin(), all_points_for_this_node.end());
-
-    return tile_internal_node(all_points_for_this_node,
-                              node_structure,
-                              new_root_node,
-                              cached_points_count,
-                              sampling_strategy,
-                              persistence,
-                              progress_reporter);
-  }
-
-  auto all_points_for_this_node =
-    octree::merge_node_data_sorted(std::move(node_data), std::move(cached_points));
-  return tile_internal_node(all_points_for_this_node,
-                            node_structure,
-                            root_node_structure,
-                            cached_points_count,
-                            sampling_strategy,
-                            persistence,
-                            progress_reporter);
-}
-
-/**
- * Perform tiling for the given node. This method does point selection for the node and
- * creates the execution graph for processing the child nodes of this node
- */
-static void
-do_tiling_for_node(octree::NodeData&& node_data,
-                   const octree::NodeStructure& node_structure,
-                   const octree::NodeStructure& root_node_structure,
-                   SamplingStrategy& sampling_strategy,
-                   PointsPersistence& persistence,
-                   PointsCache& points_cache,
-                   size_t max_points_per_node,
-                   ProgressReporter* progress_reporter,
-                   tf::Subflow& subflow)
-{
-  auto child_nodes = tile_node(std::move(node_data),
-                               node_structure,
-                               root_node_structure,
-                               sampling_strategy,
-                               persistence,
-                               points_cache,
-                               max_points_per_node,
-                               progress_reporter,
-                               subflow);
-
-  if (child_nodes.empty())
-    return;
-
-  // Create the execution graph for the child nodes. Only nodes with more than
-  // MIN_POINTS_FOR_ASYNC_PROCESSING points are processed as asynchronous tasks, the other nodes are
-  // processed synchronously right here. We sort the nodes descending by point count so that the
-  // async tasks are created first, which means that they can start processing while this method
-  // processes the synchronous nodes
-  std::sort(std::begin(child_nodes),
-            std::end(child_nodes),
-            [](const NodeTilingData& l, const NodeTilingData& r) {
-              return r.points.size() < l.points.size();
-            });
-
-  const auto iter_to_first_sync_node = std::partition_point(
-    std::begin(child_nodes), std::end(child_nodes), [](const NodeTilingData& node) {
-      return node.points.size() >= MIN_POINTS_FOR_ASYNC_PROCESSING;
-    });
-
-  // Create async tasks for tiling child nodes that have many points
-  std::for_each(std::begin(child_nodes),
-                iter_to_first_sync_node,
-                [&sampling_strategy,
-                 &persistence,
-                 &points_cache,
-                 max_points_per_node,
-                 progress_reporter,
-                 &subflow](NodeTilingData& child_node) {
-                  const auto child_node_name = child_node.node.name;
-                  const auto child_points_count = child_node.points.size();
-                  const auto child_task_name =
-                    (boost::format("%1% [%2%]") % child_node_name % child_points_count).str();
-                  subflow
-                    .emplace(
-                      [&sampling_strategy,
-                       &persistence,
-                       &points_cache,
-                       max_points_per_node,
-                       progress_reporter,
-                       _child_node = std::move(child_node)](tf::Subflow& sub_subflow) mutable {
-                        do_tiling_for_node(std::move(_child_node.points),
-                                           _child_node.node,
-                                           _child_node.root_node,
-                                           sampling_strategy,
-                                           persistence,
-                                           points_cache,
-                                           max_points_per_node,
-                                           progress_reporter,
-                                           sub_subflow);
-                      })
-                    .name(child_task_name);
-                });
-
-  // Do tiling for child nodes that have few points
-  std::for_each(iter_to_first_sync_node,
-                std::end(child_nodes),
-                [&sampling_strategy,
-                 &persistence,
-                 &points_cache,
-                 max_points_per_node,
-                 progress_reporter,
-                 &subflow](NodeTilingData& child_node) {
-                  do_tiling_for_node(std::move(child_node.points),
-                                     child_node.node,
-                                     child_node.root_node,
-                                     sampling_strategy,
-                                     persistence,
-                                     points_cache,
-                                     max_points_per_node,
-                                     progress_reporter,
-                                     subflow);
-                });
-}
-
 #pragma endregion
+
+#pragma region TilingAlgorithmV1
 
 TilingAlgorithmV1::TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
                                      ProgressReporter* progress_reporter,
@@ -411,23 +141,203 @@ TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds
   root_node.morton_index = {};
   root_node.name = "r";
 
-  auto process_task = tf.emplace([this, root_node](tf::Subflow& subflow) mutable {
-                          do_tiling_for_node(std::move(_root_node_points),
-                                             root_node,
-                                             root_node,
-                                             _sampling_strategy,
-                                             _persistence,
-                                             _points_cache,
-                                             _meta_parameters.max_points_per_node,
-                                             _progress_reporter,
-                                             subflow);
-                          _root_node_points = {};
-                        })
-                        .name(concat(root_node.name, " [", _root_node_points.size(), "]"));
+  auto process_task =
+    tf.emplace([this, root_node](tf::Subflow& subflow) mutable {
+        do_tiling_for_node(std::move(_root_node_points), root_node, root_node, subflow);
+        _root_node_points = {};
+      })
+      .name(concat(root_node.name, " [", _root_node_points.size(), "]"));
 
   indexing_tasks.second.precede(sort_task);
   sort_task.precede(process_task);
 }
+
+/**
+ * Tile the given node as a terminal node, i.e. take up to 'max_points_per_node' points
+ * and persist them without any sampling
+ */
+void
+TilingAlgorithmV1::tile_terminal_node(octree::NodeData const& all_points,
+                                      octree::NodeStructure const& node,
+                                      size_t previously_taken_points_count)
+{
+  const auto points_to_take = std::min(all_points.size(), _meta_parameters.max_points_per_node);
+  if (points_to_take < all_points.size()) {
+    const auto dropped_points_count = all_points.size() - points_to_take;
+    util::write_log(
+      (boost::format("Dropped %1% points at node %2%") % dropped_points_count % node.name).str());
+
+    if (_progress_reporter)
+      _progress_reporter->increment_progress(progress::INDEXING, dropped_points_count);
+  }
+
+  _persistence.persist_points(
+    member_iterator(std::begin(all_points), &IndexedPoint64::point_reference),
+    member_iterator(std::begin(all_points) + points_to_take, &IndexedPoint64::point_reference),
+    node.bounds,
+    node.name);
+
+  if (_progress_reporter)
+    _progress_reporter->increment_progress(progress::INDEXING,
+                                           points_to_take - previously_taken_points_count);
+}
+
+/**
+ * Tile the given node as an interior node, i.e. by using the given SamplingStrategy
+ */
+std::vector<NodeTilingData>
+TilingAlgorithmV1::tile_internal_node(octree::NodeData& all_points,
+                                      octree::NodeStructure const& node,
+                                      octree::NodeStructure const& root_node,
+                                      size_t previously_taken_points_count)
+{
+  const auto partition_point = filter_points_for_octree_node(std::begin(all_points),
+                                                             std::end(all_points),
+                                                             node.morton_index,
+                                                             node.level,
+                                                             root_node.bounds,
+                                                             root_node.max_spacing,
+                                                             _sampling_strategy);
+
+  const auto points_taken =
+    static_cast<size_t>(std::distance(std::begin(all_points), partition_point));
+
+  _persistence.persist_points(
+    member_iterator(std::begin(all_points), &IndexedPoint64::point_reference),
+    member_iterator(partition_point, &IndexedPoint64::point_reference),
+    node.bounds,
+    node.name);
+
+  if (_progress_reporter) {
+    // To correctly increment progress, we have to know how many points were cached when we last hit
+    // this node. In the 'worst' case, we take all the same points as last time, so that would mean
+    // we made no progress on this node. Hence this calculation here:
+    const auto newly_taken_points = points_taken - previously_taken_points_count;
+    _progress_reporter->increment_progress(progress::INDEXING, newly_taken_points);
+  }
+
+  return split_range_into_child_nodes(partition_point, std::end(all_points), node, root_node);
+}
+
+std::vector<NodeTilingData>
+TilingAlgorithmV1::tile_node(octree::NodeData&& node_data,
+                             const octree::NodeStructure& node_structure,
+                             const octree::NodeStructure& root_node_structure,
+                             tf::Subflow& subflow)
+{
+  const auto current_node_name = concat(
+    root_node_structure.name, to_string(node_structure.morton_index, node_structure.level + 1));
+
+  auto cached_points = read_pnts_from_disk(current_node_name,
+                                           root_node_structure.bounds,
+                                           node_structure.bounds,
+                                           _points_cache,
+                                           _persistence);
+
+  const auto cached_points_count = cached_points.size();
+
+  const auto node_level_to_sample_from =
+    octree::get_node_level_to_sample_from(node_structure.level, root_node_structure);
+
+  // Check whether this node is an interior node, terminal node, or a node that is so deep that it
+  // is a new root node
+  if (node_level_to_sample_from >= static_cast<int32_t>(node_structure.max_depth)) {
+    const auto all_points_for_this_node =
+      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
+    tile_terminal_node(all_points_for_this_node, node_structure, cached_points_count);
+    return {};
+  }
+
+  if (node_level_to_sample_from >= static_cast<int32_t>(MAX_OCTREE_LEVELS - 1)) {
+    // If we are so deep that we exceed the capacity of the MortonIndex, we
+    // have to index our points again with the current node as new root node. We
+    // also have to carry the information that we have a new root over to the
+    // children so that the paths of the nodes are correct.
+
+    // Fun fact: We don't have to adjust the loaded indices because if we ever
+    // get to a node this deep again, the indices have been calculated with the
+    // new root the last time also, so everything is as it should be
+    auto all_points_for_this_node =
+      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
+
+    // Set this node as the new root node
+    auto new_root_node = node_structure;
+    new_root_node.max_depth = node_structure.max_depth - node_structure.level;
+
+    // Compute new indices based upon this node as root node
+    for (auto& indexed_point : all_points_for_this_node) {
+      indexed_point.morton_index = calculate_morton_index<MAX_OCTREE_LEVELS>(
+        indexed_point.point_reference.position(), new_root_node.bounds);
+    }
+
+    // Make sure everything is sorted again
+    std::sort(all_points_for_this_node.begin(), all_points_for_this_node.end());
+
+    return tile_internal_node(
+      all_points_for_this_node, node_structure, new_root_node, cached_points_count);
+  }
+
+  auto all_points_for_this_node =
+    octree::merge_node_data_sorted(std::move(node_data), std::move(cached_points));
+  return tile_internal_node(
+    all_points_for_this_node, node_structure, root_node_structure, cached_points_count);
+}
+
+/**
+ * Perform tiling for the given node. This method does point selection for the node and
+ * creates the execution graph for processing the child nodes of this node
+ */
+void
+TilingAlgorithmV1::do_tiling_for_node(octree::NodeData&& node_data,
+                                      const octree::NodeStructure& node_structure,
+                                      const octree::NodeStructure& root_node_structure,
+                                      tf::Subflow& subflow)
+{
+  auto child_nodes = tile_node(std::move(node_data), node_structure, root_node_structure, subflow);
+
+  if (child_nodes.empty())
+    return;
+
+  // Create the execution graph for the child nodes. Only nodes with more than
+  // MIN_POINTS_FOR_ASYNC_PROCESSING points are processed as asynchronous tasks, the other nodes are
+  // processed synchronously right here. We sort the nodes descending by point count so that the
+  // async tasks are created first, which means that they can start processing while this method
+  // processes the synchronous nodes
+  std::sort(std::begin(child_nodes),
+            std::end(child_nodes),
+            [](const NodeTilingData& l, const NodeTilingData& r) {
+              return r.points.size() < l.points.size();
+            });
+
+  const auto iter_to_first_sync_node = std::partition_point(
+    std::begin(child_nodes), std::end(child_nodes), [](const NodeTilingData& node) {
+      return node.points.size() >= MIN_POINTS_FOR_ASYNC_PROCESSING;
+    });
+
+  // Create async tasks for tiling child nodes that have many points
+  std::for_each(
+    std::begin(child_nodes), iter_to_first_sync_node, [this, &subflow](NodeTilingData& child_node) {
+      const auto child_node_name = child_node.node.name;
+      const auto child_points_count = child_node.points.size();
+      const auto child_task_name =
+        (boost::format("%1% [%2%]") % child_node_name % child_points_count).str();
+      subflow
+        .emplace([this, _child_node = std::move(child_node)](tf::Subflow& sub_subflow) mutable {
+          do_tiling_for_node(
+            std::move(_child_node.points), _child_node.node, _child_node.root_node, sub_subflow);
+        })
+        .name(child_task_name);
+    });
+
+  // Do tiling for child nodes that have few points
+  std::for_each(
+    iter_to_first_sync_node, std::end(child_nodes), [this, &subflow](NodeTilingData& child_node) {
+      do_tiling_for_node(
+        std::move(child_node.points), child_node.node, child_node.root_node, subflow);
+    });
+}
+
+#pragma endregion
 
 TilingAlgorithmV2::TilingAlgorithmV2(SamplingStrategy& sampling_strategy,
                                      ProgressReporter* progress_reporter,

@@ -43,6 +43,25 @@ private:
 };
 
 /**
+ * Helper structure that encapsulates data for tiling a single node
+ */
+struct NodeTilingData
+{
+  NodeTilingData() {}
+  NodeTilingData(octree::NodeData points,
+                 octree::NodeStructure node,
+                 octree::NodeStructure root_node)
+    : points(std::move(points))
+    , node(node)
+    , root_node(root_node)
+  {}
+
+  octree::NodeData points;
+  octree::NodeStructure node;
+  octree::NodeStructure root_node;
+};
+
+/**
  * Base class for different tiling algorithms
  */
 struct TilingAlgorithmBase
@@ -71,6 +90,22 @@ struct TilingAlgorithmV1 : TilingAlgorithmBase
   void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
 
 private:
+  std::vector<NodeTilingData> tile_node(octree::NodeData&& node_data,
+                                        const octree::NodeStructure& node_structure,
+                                        const octree::NodeStructure& root_node_structure,
+                                        tf::Subflow& subflow);
+  void tile_terminal_node(octree::NodeData const& all_points,
+                          octree::NodeStructure const& node,
+                          size_t previously_taken_points);
+  std::vector<NodeTilingData> tile_internal_node(octree::NodeData& all_points,
+                                                 octree::NodeStructure const& node,
+                                                 octree::NodeStructure const& root_node,
+                                                 size_t previously_taken_points);
+  void do_tiling_for_node(octree::NodeData&& node_data,
+                          const octree::NodeStructure& node_structure,
+                          const octree::NodeStructure& root_node_structure,
+                          tf::Subflow& subflow);
+
   SamplingStrategy& _sampling_strategy;
   ProgressReporter* _progress_reporter;
   PointsPersistence& _persistence;
