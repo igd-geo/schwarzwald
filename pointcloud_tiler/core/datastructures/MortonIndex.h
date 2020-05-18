@@ -131,8 +131,8 @@ private:
   {
     Store_t key{ 0 };
     for (uint32_t level = 0; level < MaxLevels; ++level) {
-      const auto shift = (MaxLevels - level - 1) * 3;
-      key |= ((levels.at(level) & 0b111) << shift);
+      const auto shift = static_cast<Store_t>((MaxLevels - level - 1) * 3);
+      key |= (static_cast<Store_t>(levels.at(level) & 0b111) << shift);
     }
     return key;
   }

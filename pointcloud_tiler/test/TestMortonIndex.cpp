@@ -51,6 +51,18 @@ TEST_CASE("Level constructor works correctly", "[MortonIndex]")
   }
 }
 
+TEST_CASE("Level constructor with full number of levels works", "[MortonIndex]")
+{
+  constexpr uint32_t Levels = 21;
+  using Key = MortonIndex<Levels>;
+  std::array<uint8_t, Levels> expected_octants{ 5, 3, 7, 4, 0, 1, 6, 4, 3, 5, 3,
+                                                6, 7, 3, 2, 1, 4, 0, 2, 5, 6 };
+  Key k{ expected_octants };
+  for (uint32_t level = 0; level < Levels; ++level) {
+    REQUIRE(k.get_octant_at_level(level) == expected_octants[level]);
+  }
+}
+
 TEST_CASE("truncate_to_level works correctly", "[MortonIndex]")
 {
   constexpr uint32_t Levels = 4;

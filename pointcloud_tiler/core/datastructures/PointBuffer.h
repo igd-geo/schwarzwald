@@ -15,54 +15,57 @@
 /// multiple points at once in a structure-of-array fashion. Compared to storing
 /// all points as Point structures, this has better performance for data access
 /// </summary>
-struct PointBuffer {
+struct PointBuffer
+{
   struct PointConstReference;
 
   /// <summary>
   /// Mutable indirect reference to a single point inside the PointBuffer
   /// </summary>
-  struct PointReference {
+  struct PointReference
+  {
     friend struct PointBuffer;
     friend struct PointConstReference;
 
     PointReference();
-    PointReference(const PointReference &) = default;
-    PointReference &operator=(const PointReference &) = default;
+    PointReference(const PointReference&) = default;
+    PointReference& operator=(const PointReference&) = default;
 
-    Vector3<double> &position() const;
-    Vector3<uint8_t> *rgbColor() const;
-    Vector3<float> *normal() const;
-    uint16_t *intensity() const;
-    uint8_t *classification() const;
+    Vector3<double>& position() const;
+    Vector3<uint8_t>* rgbColor() const;
+    Vector3<float>* normal() const;
+    uint16_t* intensity() const;
+    uint8_t* classification() const;
 
   private:
-    PointReference(PointBuffer *pointBuffer, size_t index);
+    PointReference(PointBuffer* pointBuffer, size_t index);
 
-    PointBuffer *_pointBuffer;
+    PointBuffer* _pointBuffer;
     size_t _index;
   };
 
   /// <summary>
   /// Constant indirect reference to a single point inside the PointBuffer
   /// </summary>
-  struct PointConstReference {
+  struct PointConstReference
+  {
     friend struct PointBuffer;
 
     PointConstReference();
-    PointConstReference(const PointReference &point_reference);
-    PointConstReference(const PointConstReference &) = default;
-    PointConstReference &operator=(const PointConstReference &) = default;
+    PointConstReference(const PointReference& point_reference);
+    PointConstReference(const PointConstReference&) = default;
+    PointConstReference& operator=(const PointConstReference&) = default;
 
-    const Vector3<double> &position() const;
-    const Vector3<uint8_t> *rgbColor() const;
-    const Vector3<float> *normal() const;
-    const uint16_t *intensity() const;
-    const uint8_t *classification() const;
+    const Vector3<double>& position() const;
+    const Vector3<uint8_t>* rgbColor() const;
+    const Vector3<float>* normal() const;
+    const uint16_t* intensity() const;
+    const uint8_t* classification() const;
 
   private:
-    PointConstReference(PointBuffer const *pointBuffer, size_t index);
+    PointConstReference(PointBuffer const* pointBuffer, size_t index);
 
-    PointBuffer const *_pointBuffer;
+    PointBuffer const* _pointBuffer;
     size_t _index;
   };
 
@@ -85,17 +88,18 @@ struct PointBuffer {
   /// vectors, their count has to be equal to the specified count, otherwise a
   /// invalid_argument error is thrown
   /// </summary>
-  PointBuffer(size_t count, std::vector<Vector3<double>> positions,
+  PointBuffer(size_t count,
+              std::vector<Vector3<double>> positions,
               std::vector<Vector3<uint8_t>> rgbColors = {},
               std::vector<Vector3<float>> normals = {},
               std::vector<uint16_t> intensities = {},
               std::vector<uint8_t> classifications = {});
 
-  PointBuffer(const PointBuffer &) = default;
-  PointBuffer(PointBuffer &&) = default;
+  PointBuffer(const PointBuffer&) = default;
+  PointBuffer(PointBuffer&&) = default;
 
-  PointBuffer &operator=(const PointBuffer &) = default;
-  PointBuffer &operator=(PointBuffer &&) = default;
+  PointBuffer& operator=(const PointBuffer&) = default;
+  PointBuffer& operator=(PointBuffer&&) = default;
 
   /// <summary>
   /// Push a single point into this PointBuffer. If the point has attributes
@@ -132,25 +136,23 @@ struct PointBuffer {
   /// buffer. Attributes that exist in this buffer but not in the other buffer
   /// are filled with default values
   /// </summary>
-  void append_buffer(const PointBuffer &other);
+  void append_buffer(const PointBuffer& other);
 
   size_t count() const { return _count; }
   bool empty() const { return _count == 0; }
   void clear();
 
-  std::vector<Vector3<double>> &positions() { return _positions; }
-  std::vector<Vector3<uint8_t>> &rgbColors() { return _rgbColors; }
-  std::vector<Vector3<float>> &normals() { return _normals; }
-  std::vector<uint16_t> &intensities() { return _intensities; }
-  std::vector<uint8_t> &classifications() { return _classifications; }
+  std::vector<Vector3<double>>& positions() { return _positions; }
+  std::vector<Vector3<uint8_t>>& rgbColors() { return _rgbColors; }
+  std::vector<Vector3<float>>& normals() { return _normals; }
+  std::vector<uint16_t>& intensities() { return _intensities; }
+  std::vector<uint8_t>& classifications() { return _classifications; }
 
-  const std::vector<Vector3<double>> &positions() const { return _positions; }
-  const std::vector<Vector3<uint8_t>> &rgbColors() const { return _rgbColors; }
-  const std::vector<Vector3<float>> &normals() const { return _normals; }
-  const std::vector<uint16_t> &intensities() const { return _intensities; }
-  const std::vector<uint8_t> &classifications() const {
-    return _classifications;
-  }
+  const std::vector<Vector3<double>>& positions() const { return _positions; }
+  const std::vector<Vector3<uint8_t>>& rgbColors() const { return _rgbColors; }
+  const std::vector<Vector3<float>>& normals() const { return _normals; }
+  const std::vector<uint16_t>& intensities() const { return _intensities; }
+  const std::vector<uint8_t>& classifications() const { return _classifications; }
 
   bool hasColors() const;
   bool hasNormals() const;
@@ -167,63 +169,59 @@ struct PointBuffer {
   /// </summary>
   size_t content_byte_size() const;
 
-  struct PointIterator {
-    PointIterator(PointBuffer &pointBuffer, size_t idx);
+  struct PointIterator
+  {
+    PointIterator(PointBuffer& pointBuffer, size_t idx);
 
     PointReference operator*() const;
-    PointIterator &operator++();
+    PointIterator& operator++();
     PointIterator operator++(int);
-    PointIterator &operator--();
+    PointIterator& operator--();
     PointIterator operator--(int);
     PointIterator operator+(std::ptrdiff_t count) const;
     PointIterator operator-(std::ptrdiff_t count) const;
-    PointIterator &operator+=(std::ptrdiff_t count);
-    PointIterator &operator-=(std::ptrdiff_t count);
-    friend std::ptrdiff_t operator-(const PointIterator &l,
-                                    const PointIterator &r);
+    PointIterator& operator+=(std::ptrdiff_t count);
+    PointIterator& operator-=(std::ptrdiff_t count);
+    friend std::ptrdiff_t operator-(const PointIterator& l, const PointIterator& r);
     PointReference operator[](std::ptrdiff_t idx) const;
 
-    bool operator==(const PointIterator &other) const;
-    bool operator!=(const PointIterator &other) const;
-    friend bool operator<(const PointIterator &l, const PointIterator &r);
-    friend bool operator<=(const PointIterator &l, const PointIterator &r);
-    friend bool operator>(const PointIterator &l, const PointIterator &r);
-    friend bool operator>=(const PointIterator &l, const PointIterator &r);
+    bool operator==(const PointIterator& other) const;
+    bool operator!=(const PointIterator& other) const;
+    friend bool operator<(const PointIterator& l, const PointIterator& r);
+    friend bool operator<=(const PointIterator& l, const PointIterator& r);
+    friend bool operator>(const PointIterator& l, const PointIterator& r);
+    friend bool operator>=(const PointIterator& l, const PointIterator& r);
 
   private:
-    PointBuffer *_pointBuffer;
+    PointBuffer* _pointBuffer;
     size_t _index;
   };
 
-  struct PointConstIterator {
-    PointConstIterator(PointBuffer const &pointBuffer, size_t idx);
+  struct PointConstIterator
+  {
+    PointConstIterator(PointBuffer const& pointBuffer, size_t idx);
 
     PointConstReference operator*() const;
-    PointConstIterator &operator++();
+    PointConstIterator& operator++();
     PointConstIterator operator++(int);
-    PointConstIterator &operator--();
+    PointConstIterator& operator--();
     PointConstIterator operator--(int);
     PointConstIterator operator+(std::ptrdiff_t count) const;
     PointConstIterator operator-(std::ptrdiff_t count) const;
-    PointConstIterator &operator+=(std::ptrdiff_t count);
-    PointConstIterator &operator-=(std::ptrdiff_t count);
-    friend std::ptrdiff_t operator-(const PointConstIterator &l,
-                                    const PointConstIterator &r);
+    PointConstIterator& operator+=(std::ptrdiff_t count);
+    PointConstIterator& operator-=(std::ptrdiff_t count);
+    friend std::ptrdiff_t operator-(const PointConstIterator& l, const PointConstIterator& r);
     PointConstReference operator[](std::ptrdiff_t idx) const;
 
-    bool operator==(const PointConstIterator &other) const;
-    bool operator!=(const PointConstIterator &other) const;
-    friend bool operator<(const PointConstIterator &l,
-                          const PointConstIterator &r);
-    friend bool operator<=(const PointConstIterator &l,
-                           const PointConstIterator &r);
-    friend bool operator>(const PointConstIterator &l,
-                          const PointConstIterator &r);
-    friend bool operator>=(const PointConstIterator &l,
-                           const PointConstIterator &r);
+    bool operator==(const PointConstIterator& other) const;
+    bool operator!=(const PointConstIterator& other) const;
+    friend bool operator<(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator<=(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator>(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator>=(const PointConstIterator& l, const PointConstIterator& r);
 
   private:
-    PointBuffer const *_pointBuffer;
+    PointBuffer const* _pointBuffer;
     size_t _index;
   };
 
@@ -243,31 +241,37 @@ private:
 };
 
 namespace std {
-template <> struct iterator_traits<::PointBuffer::PointIterator> {
+template<>
+struct iterator_traits<::PointBuffer::PointIterator>
+{
   using difference_type = std::ptrdiff_t;
   using value_type = ::PointBuffer::PointReference;
-  using iterator_category = std::forward_iterator_tag;
+  using iterator_category = std::random_access_iterator_tag;
 };
 
-template <> struct iterator_traits<::PointBuffer::PointConstIterator> {
+template<>
+struct iterator_traits<::PointBuffer::PointConstIterator>
+{
   using difference_type = std::ptrdiff_t;
   using value_type = ::PointBuffer::PointConstReference;
-  using iterator_category = std::forward_iterator_tag;
+  using iterator_category = std::random_access_iterator_tag;
 };
 } // namespace std
 
 namespace concepts {
 
 namespace detail {
-template <> constexpr bool has_constant_size_impl<::PointBuffer> = false;
+template<>
+constexpr bool has_constant_size_impl<::PointBuffer> = false;
 }
 
-template <> inline unit::byte size_in_memory(PointBuffer const &point_buffer) {
+template<>
+inline unit::byte
+size_in_memory(PointBuffer const& point_buffer)
+{
   return (sizeof(size_t) * boost::units::information::byte) +
-         size_in_memory(point_buffer.positions()) +
-         size_in_memory(point_buffer.rgbColors()) +
-         size_in_memory(point_buffer.normals()) +
-         size_in_memory(point_buffer.intensities()) +
+         size_in_memory(point_buffer.positions()) + size_in_memory(point_buffer.rgbColors()) +
+         size_in_memory(point_buffer.normals()) + size_in_memory(point_buffer.intensities()) +
          size_in_memory(point_buffer.classifications());
 }
 } // namespace concepts

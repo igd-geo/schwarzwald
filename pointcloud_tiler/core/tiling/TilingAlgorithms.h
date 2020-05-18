@@ -6,6 +6,8 @@
 #include "tiling/Node.h"
 #include "tiling/Sampling.h"
 
+#include <containers/Range.h>
+
 #include <memory>
 #include <taskflow/taskflow.hpp>
 #include <vector>
@@ -66,30 +68,17 @@ struct NodeTilingData
  */
 struct TilingAlgorithmBase
 {
+  TilingAlgorithmBase(SamplingStrategy& sampling_strategy,
+                      ProgressReporter* progress_reporter,
+                      PointsPersistence& persistence,
+                      TilerMetaParameters meta_parameters,
+                      size_t concurrency);
   /**
    * Build an execution graph for tiling the given PointBuffer
    */
   virtual void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) = 0;
-};
 
-/**
- * Version 1 of the tiling algorithm, as presented in the first version of my paper. It uses:
- *
- * -  Parallel indexing
- * -  Sequential sorting
- * -  Processing from the root node
- */
-struct TilingAlgorithmV1 : TilingAlgorithmBase
-{
-  TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
-                    ProgressReporter* progress_reporter,
-                    PointsPersistence& persistence,
-                    TilerMetaParameters meta_parameters,
-                    size_t concurrency);
-
-  void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
-
-private:
+protected:
   std::vector<NodeTilingData> tile_node(octree::NodeData&& node_data,
                                         const octree::NodeStructure& node_structure,
                                         const octree::NodeStructure& root_node_structure,
@@ -117,6 +106,24 @@ private:
 };
 
 /**
+ * Version 1 of the tiling algorithm, as presented in the first version of my paper. It uses:
+ *
+ * -  Parallel indexing
+ * -  Sequential sorting
+ * -  Processing from the root node
+ */
+struct TilingAlgorithmV1 : TilingAlgorithmBase
+{
+  TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
+                    ProgressReporter* progress_reporter,
+                    PointsPersistence& persistence,
+                    TilerMetaParameters meta_parameters,
+                    size_t concurrency);
+
+  void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
+};
+
+/**
  * Optimized version of the tiling algorithm. It uses:
  *
  * -  Parallel indexing
@@ -136,12 +143,95 @@ struct TilingAlgorithmV2 : TilingAlgorithmBase
   void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
 
 private:
-  SamplingStrategy& _sampling_strategy;
-  ProgressReporter* _progress_reporter;
-  PointsPersistence& _persistence;
-  TilerMetaParameters _meta_parameters;
-  size_t _concurrency;
+  using IndexedPoints = std::vector<IndexedPoint64>;
+  using IndexedPointsIter = typename IndexedPoints::iterator;
+  using PointsIter = typename PointBuffer::PointIterator;
 
-  octree::NodeData _root_node_points;
-  PointsCache _points_cache;
+  /**
+   * A range of indexed points for a specific octree node
+   */
+  struct IndexedPointsRangeForNode
+  {
+    util::Range<IndexedPointsIter> range;
+    DynamicMortonIndex node_index;
+  };
+
+  /**
+   * All the ranges of indexed points that belong to the given octree node. The ranges
+   * are sorted but possibly disjoint, i.e. two ranges are not guaranteed to be adjacent
+   * to each other in memory
+   */
+  struct FindStartNodesResult
+  {
+    DynamicMortonIndex node_index;
+    std::vector<util::Range<IndexedPointsIter>> indexed_points_ranges;
+  };
+
+  /**
+   * Takes a range of points from a PointBuffer, calculates the Morton indices for the points
+   * and sorts them based on the Morton indices
+   */
+  void index_and_sort_points(util::Range<PointsIter> points,
+                             util::Range<IndexedPointsIter> indexed_points,
+                             const AABB& bounds) const;
+
+  std::vector<IndexedPointsRangeForNode> split_indexed_points_into_subranges(
+    util::Range<IndexedPointsIter> indexed_points,
+    size_t min_number_of_ranges) const;
+
+  /**
+   * Takes the results of N invocations of 'split_indexed_points_into_subranges', where each
+   * invocation resulted in approximately M subranges, where M is the number of nodes that the
+   * TilingAlgorithmV2 starts the processing with. Each subrange spans points that belong to a
+   * specific octree node. This method then takes all these subranges and transposes them into a
+   * range of ranges where the inner ranges contain all subranges that belong to a single node.
+   *
+   * This is hard to read and easy to visualize, so here is a diagram:
+   * Input:
+   *  [
+   *   [RangeForNodeA, RangeForNodeB, RangeForNodeD, RangeForNodeE],
+   *   [RangeForNodeB, RangeForNodeC, RangeForNodeE, RangeForNodeF],
+   *   [RangeForNodeA, RangeForNodeD, RangeForNodeE, RangeForNodeF],
+   *   ...
+   *  ]
+   *
+   * Output:
+   *  [
+   *   [Range1ForNodeA, Range2ForNodeA],
+   *   [Range1ForNodeB, Range2ForNodeB],
+   *   [Range1ForNodeC],
+   *   [Range1ForNodeD, Range2ForNodeD],
+   *   [Range1ForNodeE, Range2ForNodeE, Range3ForNodeE],
+   *   [Range1ForNodeF, Range2ForNodeF]
+   *  ]
+   *
+   */
+  std::vector<FindStartNodesResult> transpose_ranges(
+    std::vector<std::vector<IndexedPointsRangeForNode>>&& ranges) const;
+
+  /**
+   * The result of 'split_indexed_points_into_subranges' can be different for each invocation (as it
+   * is called with a different set of points). Through this, the situation can arise that in one
+   * invocation, a node 'A' is selected, but in another invocation, all the children of 'A' are
+   * selected instead. When we then call 'transpose_ranges' to merge all these ranges, we will end
+   * up with multiple root nodes where one node might be a child of the other node. This must not
+   * happen (parent-child relationship prevents parallel processing), so we have to ensure that we
+   * only take either 'A' or the children of 'A' as root nodes, never both.
+   *
+   * This is somewhat nasty, as of course the parent-child relationship can be indirect. Ultimately,
+   * 'ranges' represents a k-way tree (with k <= 8) and we have to eliminate all the 'inner' nodes
+   * of this tree. The tree representation might not be complete ('ranges' contains just a bunch of
+   * nodes, no relationships, nodes may be missing because they were never selected).
+   */
+  std::vector<FindStartNodesResult> consolidate_ranges(
+    std::vector<FindStartNodesResult>&& ranges, size_t min_number_of_ranges) const;
+
+  /**
+   * Takes a range of sorted IndexedPoint ranges for a single node, merges the ranges into a single
+   * sorted range and returns the necessary data for tiling this node
+   */
+  NodeTilingData prepare_range_for_tiling(const FindStartNodesResult& start_node_data,
+                                          const AABB& bounds);
+
+  std::vector<std::vector<IndexedPointsRangeForNode>> _indexed_points_ranges;
 };

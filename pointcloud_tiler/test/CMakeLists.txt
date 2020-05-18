@@ -12,9 +12,10 @@ set(SOURCE_FILES
     TestLRUCache.cpp
     TestMain.cpp
     TestMemoryIntrospection.cpp
+    TestMortonIndex.cpp
     TestOctreeIndexing.cpp
     TestOctreeIndexWriter.cpp
-    TestOctreeNodeKey.cpp
+    TestOctreeNodeIndex.cpp
     TestTiler.cpp
     TestUnits.cpp
     TestUtilities.cpp

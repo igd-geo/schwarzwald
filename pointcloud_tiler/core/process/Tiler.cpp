@@ -422,7 +422,7 @@ Tiler::run_worker()
     executor_observer = executor.make_observer<ExecutorObserver>();
   }
 
-  auto tiling_algorithm = TilingAlgorithmV1{
+  auto tiling_algorithm = TilingAlgorithmV2{
     _sampling_strategy, _progress_reporter, _persistence, _meta_parameters, concurrency
   };
 

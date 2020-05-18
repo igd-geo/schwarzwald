@@ -53,9 +53,6 @@ read_pnts_from_disk(const std::string& node_name,
 
   return indexed_points;
 }
-#pragma endregion
-
-#pragma region processing_functions
 
 /**
  * Takes a sorted range of IndexedPoints and splits it up into up to eight ranges, one for each
@@ -97,13 +94,13 @@ split_range_into_child_nodes(std::vector<IndexedPoint64>::iterator points_begin,
 
 #pragma endregion
 
-#pragma region TilingAlgorithmV1
+#pragma region TilingAlgorithmBase
 
-TilingAlgorithmV1::TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
-                                     ProgressReporter* progress_reporter,
-                                     PointsPersistence& persistence,
-                                     TilerMetaParameters meta_parameters,
-                                     size_t concurrency)
+TilingAlgorithmBase::TilingAlgorithmBase(SamplingStrategy& sampling_strategy,
+                                         ProgressReporter* progress_reporter,
+                                         PointsPersistence& persistence,
+                                         TilerMetaParameters meta_parameters,
+                                         size_t concurrency)
   : _sampling_strategy(sampling_strategy)
   , _progress_reporter(progress_reporter)
   , _persistence(persistence)
@@ -111,55 +108,14 @@ TilingAlgorithmV1::TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
   , _concurrency(concurrency)
 {}
 
-void
-TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf)
-{
-  _root_node_points.clear();
-  _root_node_points.resize(points.count());
-  _points_cache.clear();
-
-  auto indexing_tasks = parallel::transform(
-    std::begin(points),
-    std::end(points),
-    std::begin(_root_node_points),
-    [this, &bounds](PointBuffer::PointReference point) {
-      return index_point<MAX_OCTREE_LEVELS>(point, bounds, OutlierPointsBehaviour::ClampToBounds);
-    },
-    tf,
-    _concurrency,
-    "calc_morton_indices");
-
-  auto sort_task =
-    tf.emplace([this]() { std::sort(_root_node_points.begin(), _root_node_points.end()); })
-      .name("sort");
-
-  octree::NodeStructure root_node;
-  root_node.bounds = bounds;
-  root_node.level = -1;
-  root_node.max_depth = _meta_parameters.max_depth;
-  root_node.max_spacing = _meta_parameters.spacing_at_root;
-  root_node.morton_index = {};
-  root_node.name = "r";
-
-  auto process_task =
-    tf.emplace([this, root_node](tf::Subflow& subflow) mutable {
-        do_tiling_for_node(std::move(_root_node_points), root_node, root_node, subflow);
-        _root_node_points = {};
-      })
-      .name(concat(root_node.name, " [", _root_node_points.size(), "]"));
-
-  indexing_tasks.second.precede(sort_task);
-  sort_task.precede(process_task);
-}
-
 /**
  * Tile the given node as a terminal node, i.e. take up to 'max_points_per_node' points
  * and persist them without any sampling
  */
 void
-TilingAlgorithmV1::tile_terminal_node(octree::NodeData const& all_points,
-                                      octree::NodeStructure const& node,
-                                      size_t previously_taken_points_count)
+TilingAlgorithmBase::tile_terminal_node(octree::NodeData const& all_points,
+                                        octree::NodeStructure const& node,
+                                        size_t previously_taken_points_count)
 {
   const auto points_to_take = std::min(all_points.size(), _meta_parameters.max_points_per_node);
   if (points_to_take < all_points.size()) {
@@ -186,10 +142,10 @@ TilingAlgorithmV1::tile_terminal_node(octree::NodeData const& all_points,
  * Tile the given node as an interior node, i.e. by using the given SamplingStrategy
  */
 std::vector<NodeTilingData>
-TilingAlgorithmV1::tile_internal_node(octree::NodeData& all_points,
-                                      octree::NodeStructure const& node,
-                                      octree::NodeStructure const& root_node,
-                                      size_t previously_taken_points_count)
+TilingAlgorithmBase::tile_internal_node(octree::NodeData& all_points,
+                                        octree::NodeStructure const& node,
+                                        octree::NodeStructure const& root_node,
+                                        size_t previously_taken_points_count)
 {
   const auto partition_point = filter_points_for_octree_node(std::begin(all_points),
                                                              std::end(all_points),
@@ -220,10 +176,10 @@ TilingAlgorithmV1::tile_internal_node(octree::NodeData& all_points,
 }
 
 std::vector<NodeTilingData>
-TilingAlgorithmV1::tile_node(octree::NodeData&& node_data,
-                             const octree::NodeStructure& node_structure,
-                             const octree::NodeStructure& root_node_structure,
-                             tf::Subflow& subflow)
+TilingAlgorithmBase::tile_node(octree::NodeData&& node_data,
+                               const octree::NodeStructure& node_structure,
+                               const octree::NodeStructure& root_node_structure,
+                               tf::Subflow& subflow)
 {
   const auto current_node_name = concat(
     root_node_structure.name, to_string(node_structure.morton_index, node_structure.level + 1));
@@ -288,10 +244,10 @@ TilingAlgorithmV1::tile_node(octree::NodeData&& node_data,
  * creates the execution graph for processing the child nodes of this node
  */
 void
-TilingAlgorithmV1::do_tiling_for_node(octree::NodeData&& node_data,
-                                      const octree::NodeStructure& node_structure,
-                                      const octree::NodeStructure& root_node_structure,
-                                      tf::Subflow& subflow)
+TilingAlgorithmBase::do_tiling_for_node(octree::NodeData&& node_data,
+                                        const octree::NodeStructure& node_structure,
+                                        const octree::NodeStructure& root_node_structure,
+                                        tf::Subflow& subflow)
 {
   auto child_nodes = tile_node(std::move(node_data), node_structure, root_node_structure, subflow);
 
@@ -339,18 +295,349 @@ TilingAlgorithmV1::do_tiling_for_node(octree::NodeData&& node_data,
 
 #pragma endregion
 
+#pragma region TilingAlgorithmV1
+
+TilingAlgorithmV1::TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
+                                     ProgressReporter* progress_reporter,
+                                     PointsPersistence& persistence,
+                                     TilerMetaParameters meta_parameters,
+                                     size_t concurrency)
+  : TilingAlgorithmBase(sampling_strategy,
+                        progress_reporter,
+                        persistence,
+                        meta_parameters,
+                        concurrency)
+{}
+
+void
+TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf)
+{
+  _root_node_points.clear();
+  _root_node_points.resize(points.count());
+  _points_cache.clear();
+
+  auto indexing_tasks = parallel::transform(
+    std::begin(points),
+    std::end(points),
+    std::begin(_root_node_points),
+    [this, &bounds](PointBuffer::PointReference point) {
+      return index_point<MAX_OCTREE_LEVELS>(point, bounds, OutlierPointsBehaviour::ClampToBounds);
+    },
+    tf,
+    _concurrency,
+    "calc_morton_indices");
+
+  auto sort_task =
+    tf.emplace([this]() { std::sort(_root_node_points.begin(), _root_node_points.end()); })
+      .name("sort");
+
+  octree::NodeStructure root_node;
+  root_node.bounds = bounds;
+  root_node.level = -1;
+  root_node.max_depth = _meta_parameters.max_depth;
+  root_node.max_spacing = _meta_parameters.spacing_at_root;
+  root_node.morton_index = {};
+  root_node.name = "r";
+
+  auto process_task =
+    tf.emplace([this, root_node](tf::Subflow& subflow) mutable {
+        do_tiling_for_node(std::move(_root_node_points), root_node, root_node, subflow);
+        _root_node_points = {};
+      })
+      .name(concat(root_node.name, " [", _root_node_points.size(), "]"));
+
+  indexing_tasks.second.precede(sort_task);
+  sort_task.precede(process_task);
+}
+
+#pragma endregion
+
+#pragma region TilingAlgorithmV2
+
 TilingAlgorithmV2::TilingAlgorithmV2(SamplingStrategy& sampling_strategy,
                                      ProgressReporter* progress_reporter,
                                      PointsPersistence& persistence,
                                      TilerMetaParameters meta_parameters,
                                      size_t concurrency)
-  : _sampling_strategy(sampling_strategy)
-  , _progress_reporter(progress_reporter)
-  , _persistence(persistence)
-  , _meta_parameters(meta_parameters)
-  , _concurrency(concurrency)
+  : TilingAlgorithmBase(sampling_strategy,
+                        progress_reporter,
+                        persistence,
+                        meta_parameters,
+                        concurrency)
 {}
 
 void
 TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf)
-{}
+{
+  /**
+   * #### Revised algorithm for better concurrency ####
+   *
+   * Instead of starting from the root node (which has to be processed by a single thread), select
+   * a number of deeper nodes that can all be processed in parallel. This will skip some nodes,
+   * their content has to be reconstructed from the deeper nodes at the end, either by subsampling
+   * or averaging
+   */
+
+  _root_node_points.clear();
+  _root_node_points.resize(points.count());
+  _points_cache.clear();
+  _indexed_points_ranges.clear();
+  _indexed_points_ranges.resize(_concurrency);
+
+  const auto chunk_size = _root_node_points.size() / _concurrency;
+
+  auto scatter_task = parallel::scatter(
+    std::begin(points),
+    std::end(points),
+    [this, chunk_size, bounds](PointsIter points_begin, PointsIter points_end, size_t task_index) {
+      // A bit of logic to access the slots of pre-allocated memory for this task
+      const auto point_data_offset = (task_index * chunk_size);
+      const auto indexed_points_begin = std::begin(_root_node_points) + point_data_offset;
+      const auto indexed_points_end =
+        indexed_points_begin + std::distance(points_begin, points_end);
+      auto& task_output = _indexed_points_ranges[task_index];
+
+      index_and_sort_points(
+        { points_begin, points_end }, { indexed_points_begin, indexed_points_end }, bounds);
+      task_output = split_indexed_points_into_subranges(
+        { indexed_points_begin, indexed_points_end }, _concurrency);
+    },
+    tf,
+    _concurrency);
+
+  auto transpose_task = tf.emplace([this, bounds](tf::Subflow& subflow) {
+    auto ranges_per_node = transpose_ranges(std::move(_indexed_points_ranges));
+
+    for (size_t idx = 0; idx < _indexed_points_ranges.size(); ++idx) {
+      subflow.emplace(
+        [this, bounds, _data = std::move(ranges_per_node[idx])](tf::Subflow& subsubflow) {
+          auto process_data = prepare_range_for_tiling(_data, bounds);
+
+          do_tiling_for_node(
+            std::move(process_data.points), process_data.root_node, process_data.node, subsubflow);
+        });
+    }
+  });
+
+  for (auto& scatter_subtask : scatter_task.scattered_tasks) {
+    scatter_subtask.precede(transpose_task);
+  }
+}
+
+void
+TilingAlgorithmV2::index_and_sort_points(util::Range<PointsIter> points,
+                                         util::Range<IndexedPointsIter> indexed_points,
+                                         const AABB& bounds) const
+{
+  assert(points.size() == indexed_points.size());
+
+  points.transform(std::begin(indexed_points),
+                   [&bounds](PointBuffer::PointReference point_ref) -> IndexedPoint64 {
+                     return index_point<MAX_OCTREE_LEVELS>(
+                       point_ref, bounds, OutlierPointsBehaviour::ClampToBounds);
+                   });
+
+  indexed_points.sort();
+}
+
+/**
+ * This method takes a range of IndexedPoints that span the root node of the dataset and
+ * break it up into approximately* 'min_number_of_ranges' connected ranges, where each of
+ * the new ranges spans exactly one node in the octree. Ranges are split by size, with the
+ * largest range being split first. When split, the range is replaced by ALL ranges for its
+ * immediate child nodes (up to 8 ranges).
+ *
+ * To understand this, here is a simplified case in 2D, with node indices written as 'ABC'
+ * where A is the nodes index at level 0, B at level 1 etc.
+ *
+ * Input range: [000, 002, 003, 011, 013, 030, 102, 103, 120, 300, 310, 313]
+ * Desired ranges: 4
+ *
+ * Output: [[000, 002, 003], [011, 013], [030], [102, 103, 120], [300, 310, 313]]
+ *
+ * This result is achieved in two steps:
+ *
+ * 1) Split up the root range. Yields:
+ * [[000, 002, 003, 011, 013, 030], [102, 103, 120], [300, 310, 313]]
+ *  |----------------------------|  |-------------|  |-------------|
+ *      all points for node 0          ...node 1        ...node 3
+ *
+ * 2) Current range count is 3, which is less than desired ranges. Split up the largest range,
+ *    which is the range for node 0 (contains 6 points). This yields the final result:
+ * [[000, 002, 003], [011, 013], [030], [102, 103, 120], [300, 310, 313]]
+ *  |-------------|  |--------|  |---|  |-------------|  |-------------|
+ *      node 00        node 01  node 03     node 1            node 3
+ */
+std::vector<TilingAlgorithmV2::IndexedPointsRangeForNode>
+TilingAlgorithmV2::split_indexed_points_into_subranges(
+  util::Range<IndexedPointsIter> indexed_points,
+  size_t min_number_of_ranges) const
+{
+  std::vector<IndexedPointsRangeForNode> ranges_by_node = { { indexed_points,
+                                                              DynamicMortonIndex{} } };
+
+  if (indexed_points.size() <= min_number_of_ranges) {
+    return ranges_by_node;
+  }
+
+  auto get_largest_range = [](std::vector<IndexedPointsRangeForNode>& ranges)
+    -> std::vector<IndexedPointsRangeForNode>::iterator {
+    const auto iter_to_max_range =
+      std::max_element(std::begin(ranges),
+                       std::end(ranges),
+                       [](const IndexedPointsRangeForNode& l, const IndexedPointsRangeForNode& r) {
+                         return l.range.size() < r.range.size();
+                       });
+    if (iter_to_max_range == std::end(ranges))
+      return iter_to_max_range;
+
+    // To ensure that this whole method always terminates, we have to make SURE that we only return
+    // a range from 'get_largest_range' if this range can be split up into its child nodes. This can
+    // be done with a simple check for the Morton index difference between the first and last points
+    // in the range
+    const auto& first_point = iter_to_max_range->range.first();
+    const auto& last_point = iter_to_max_range->range.last();
+    if (first_point.morton_index == last_point.morton_index)
+      return std::end(ranges);
+
+    return iter_to_max_range;
+  };
+
+  // As long as we have less than 'min_number_of_ranges', keep splitting up the largest range
+  while (ranges_by_node.size() < min_number_of_ranges) {
+    auto iter_to_max_range = get_largest_range(ranges_by_node);
+    if (iter_to_max_range == std::end(ranges_by_node))
+      break;
+
+    auto max_range = *iter_to_max_range;
+    const auto child_level = max_range.node_index.depth();
+    const auto child_ranges = partition_points_into_child_octants(
+      max_range.range.begin(), max_range.range.end(), static_cast<uint32_t>(child_level));
+
+    std::vector<IndexedPointsRangeForNode> child_ranges_with_levels;
+    for (uint8_t octant = 0; octant < 8; ++octant) {
+      const auto& child_range = child_ranges[octant];
+      if (child_range.first == child_range.second)
+        continue;
+
+      child_ranges_with_levels.push_back(
+        { util::Range<IndexedPointsIter>{ child_range.first, child_range.second },
+          max_range.node_index.child(octant) });
+    }
+
+    // Replace this range with the child ranges
+    auto insert_iter = ranges_by_node.erase(iter_to_max_range);
+    ranges_by_node.insert(
+      insert_iter, std::begin(child_ranges_with_levels), std::end(child_ranges_with_levels));
+  }
+
+  return ranges_by_node;
+}
+
+std::vector<TilingAlgorithmV2::FindStartNodesResult>
+TilingAlgorithmV2::transpose_ranges(
+  std::vector<std::vector<IndexedPointsRangeForNode>>&& ranges) const
+{
+  // 'ranges' will contain a fairly small number of ranges and unique nodes (~10ish), so
+  // this is implemented using linear search
+  std::vector<FindStartNodesResult> transposed_ranges;
+
+  auto get_or_create_start_nodes_result =
+    [](const DynamicMortonIndex& morton_index,
+       std::vector<FindStartNodesResult>& transposed_ranges) -> FindStartNodesResult& {
+    auto iter = std::find_if(
+      std::begin(transposed_ranges),
+      std::end(transposed_ranges),
+      [&morton_index](const FindStartNodesResult& res) { return res.node_index == morton_index; });
+    if (iter != std::end(transposed_ranges)) {
+      return *iter;
+    }
+
+    transposed_ranges.push_back({ morton_index, {} });
+    return transposed_ranges.back();
+  };
+
+  for (auto& range : ranges) {
+    for (auto& subrange : range) {
+      auto& transposed_range =
+        get_or_create_start_nodes_result(subrange.node_index, transposed_ranges);
+      transposed_range.indexed_points_ranges.push_back(subrange.range);
+    }
+  }
+
+  return transposed_ranges;
+}
+
+template<typename V>
+static void
+add_node_to_tree(const DynamicMortonIndex& node_index,
+                 V* node_data,
+                 std::unordered_map<DynamicMortonIndex, V*>& tree)
+{
+  auto iter = tree.find(node_index);
+  if (iter != std::end(tree))
+    return;
+
+  tree[node_index] = node_data;
+
+  if (node_index.depth() == 0)
+    return;
+
+  add_node_to_tree<V>(node_index.parent(), nullptr, tree);
+}
+
+std::vector<TilingAlgorithmV2::FindStartNodesResult>
+TilingAlgorithmV2::consolidate_ranges(std::vector<FindStartNodesResult>&& ranges,
+                                      size_t min_number_of_ranges) const
+{
+  // Build an tree index from the ranges so that the computation is easier
+  std::unordered_map<DynamicMortonIndex, FindStartNodesResult*> tree;
+
+  for (auto& result : ranges) {
+    add_node_to_tree(result.node_index, &result, tree);
+  }
+
+  // Now find all interior nodes in the tree, ideally starting with the deepest interior nodes. We
+  // can then recursively collapse / expand these nodes until we have no interior nodes anymore and
+  // an acceptable number of ranges
+  throw std::runtime_error{ "not implemented" };
+}
+
+NodeTilingData
+TilingAlgorithmV2::prepare_range_for_tiling(const FindStartNodesResult& start_node_data,
+                                            const AABB& bounds)
+{
+  const auto start_node_point_count =
+    std::accumulate(std::begin(start_node_data.indexed_points_ranges),
+                    std::end(start_node_data.indexed_points_ranges),
+                    size_t{ 0 },
+                    [](size_t accum, const auto& range) { return accum + range.size(); });
+
+  octree::NodeData merged_data{ start_node_point_count };
+
+  merge_ranges(util::range(start_node_data.indexed_points_ranges),
+               util::range(merged_data),
+               [](const IndexedPoint64& l, const IndexedPoint64& r) {
+                 return l.morton_index.get() < r.morton_index.get();
+               });
+
+  octree::NodeStructure root_node;
+  root_node.bounds = bounds;
+  root_node.level = -1;
+  root_node.max_depth = _meta_parameters.max_depth;
+  root_node.max_spacing = _meta_parameters.spacing_at_root;
+  root_node.morton_index = {};
+  root_node.name = "r";
+
+  octree::NodeStructure this_node;
+  this_node.bounds = get_bounds_from_morton_index(start_node_data.node_index, bounds);
+  this_node.level = static_cast<int32_t>(start_node_data.node_index.depth()) - 1;
+  this_node.max_depth = root_node.max_depth;
+  this_node.max_spacing = root_node.max_spacing / std::pow(2, start_node_data.node_index.depth());
+  this_node.morton_index = start_node_data.node_index.to_static_morton_index<MAX_OCTREE_LEVELS>();
+  this_node.name = to_string(start_node_data.node_index, MortonIndexNamingConvention::Potree);
+
+  return { std::move(merged_data), root_node, this_node };
+}
+
+#pragma endregion

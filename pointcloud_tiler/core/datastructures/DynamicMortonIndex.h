@@ -69,6 +69,7 @@ struct DynamicMortonIndex
   DynamicMortonIndex truncate_to_depth(size_t new_depth) const;
 
   DynamicMortonIndex child(Octant_t octant) const;
+  DynamicMortonIndex parent() const;
 
   template<unsigned int MaxLevels>
   MortonIndex<MaxLevels> to_static_morton_index() const;

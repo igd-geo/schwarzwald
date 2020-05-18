@@ -4,6 +4,8 @@
 #include <iterator>
 #include <vector>
 
+#include "containers/Range.h"
+
 /*
  * Like std::stable_partition, but the predicate can operate on a whole
  * subrange instead of a single entry at a time. This enables partitioning
@@ -86,3 +88,49 @@ split_range_into_chunks(size_t num_chunks, Iter begin, Iter end)
   chunks.push_back(std::make_pair(begin + (num_chunks - 1) * chunk_size, end));
   return chunks;
 }
+
+#pragma region range_algorithms
+
+/**
+ * Merge the given range of ranges into a single range. This is the N-ary equivalent
+ * to std::merge. It requires that the input ranges are at least forward iterators.
+ *
+ * ForwardIter should be dereferencable to util::Range<T> for some T
+ */
+template<typename ForwardIter, typename OutputIter, typename Comp>
+void
+merge_ranges(util::Range<ForwardIter> in_ranges, util::Range<OutputIter> out_range, Comp comparator)
+{
+  using InputRangeType = std::decay_t<decltype(*std::declval<ForwardIter>())>;
+  std::vector<InputRangeType> remaining_ranges = { std::begin(in_ranges), std::end(in_ranges) };
+
+  /**
+   * Looks for the range with the lowest next element in 'remaining_ranges'. If such a range
+   * exists, its front element is stored in 'element' and the range is moved to the next element
+   */
+  const auto get_and_increment_lowest_head = [&comparator](std::vector<InputRangeType>& heads,
+                                                           auto& element) {
+    auto iter_to_lowest_head = std::begin(heads);
+    for (auto iter = std::begin(heads) + 1; iter != std::end(heads); ++iter) {
+      if (!iter->size())
+        continue;
+
+      if (comparator(*std::begin(*iter), *std::begin(*iter_to_lowest_head))) {
+        iter_to_lowest_head = iter;
+      }
+    }
+
+    if (iter_to_lowest_head == std::end(heads))
+      return;
+
+    auto& lowest_range = *iter_to_lowest_head;
+    element = *std::begin(lowest_range);
+    lowest_range = lowest_range.skip(1);
+  };
+
+  for (auto& out : out_range) {
+    get_and_increment_lowest_head(remaining_ranges, out);
+  }
+}
+
+#pragma endregion

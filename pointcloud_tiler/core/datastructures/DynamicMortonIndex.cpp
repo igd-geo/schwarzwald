@@ -173,6 +173,15 @@ DynamicMortonIndex::child(Octant_t octant) const
   return DynamicMortonIndex{ std::move(octants) };
 }
 
+DynamicMortonIndex
+DynamicMortonIndex::parent() const
+{
+  assert(depth() > 0);
+  auto parent_octants = _octants;
+  parent_octants.pop_back();
+  return DynamicMortonIndex{ std::move(parent_octants) };
+}
+
 tl::expected<DynamicMortonIndex, std::string>
 DynamicMortonIndex::parse_string(const std::string& str,
                                  MortonIndexNamingConvention naming_convention)
