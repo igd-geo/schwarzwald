@@ -108,6 +108,11 @@ template<
 struct OctreeNodeIndex
 {
   /**
+   * Maximum number of levels that this OctreeNodeIndex can store
+   */
+  constexpr static unsigned MAX_LEVELS = MaxLevels;
+
+  /**
    * Creates a default OctreeNodeIndex that represents a root node (level 0)
    */
   constexpr OctreeNodeIndex()
@@ -119,7 +124,7 @@ struct OctreeNodeIndex
    * Creates an OctreeNodeIndex from the given range of octants, starting from the root node (i.e.
    * the first entry in 'octants' is the child octant of the root node)
    */
-  constexpr explicit OctreeNodeIndex(std::initializer_list<uint8_t> octants)
+  constexpr OctreeNodeIndex(std::initializer_list<uint8_t> octants)
     : OctreeNodeIndex(std::begin(octants), std::end(octants))
   {}
 
@@ -272,6 +277,39 @@ struct OctreeNodeIndex
   }
 
   /**
+   * Returns the index of the sibling node at the given octant. Siblings are all nodes that have the
+   * same parent node.
+   */
+  constexpr OctreeNodeIndex sibling(const uint8_t octant) const
+  {
+    assert(octant < 8);
+    if (_levels == 0) {
+      throw std::runtime_error{ "Can't call sibling() for root node!" };
+    }
+
+    const auto new_index =
+      (_index ^ (_index & static_cast<StorageType>(0b111))) | static_cast<StorageType>(octant);
+    return OctreeNodeIndex(new_index, _levels);
+  }
+
+  /**
+   * Returns an OctreeNodeIndex for the child node at the given octant
+   */
+  constexpr OctreeNodeIndex child(const uint8_t octant) const
+  {
+    assert(octant < 8);
+    if (_levels == MaxLevels) {
+      throw std::runtime_error{
+        "Can't call child() on an OctreeNodeIndex that already stores MaxLevels levels"
+      };
+    }
+
+    const auto new_index =
+      (_index << static_cast<StorageType>(3)) | static_cast<StorageType>(octant);
+    return OctreeNodeIndex(new_index, _levels + 1);
+  }
+
+  /**
    * Tries to parse the given string into an OctreeNodeIndex. Returns the parsed index on success
    * and the reason for failure otherwise.
    */
@@ -323,7 +361,9 @@ private:
     assert(levels <= MaxLevels);
   }
 
-  UnsignedBits<MaxLevels * 3> _index;
+  using StorageType = UnsignedBits<MaxLevels * 3>;
+
+  StorageType _index;
   uint32_t _levels;
 };
 

@@ -406,17 +406,21 @@ TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds
     _concurrency);
 
   auto transpose_task = tf.emplace([this, bounds](tf::Subflow& subflow) {
-    auto ranges_per_node = transpose_ranges(std::move(_indexed_points_ranges));
+    auto ranges_per_node = merge_selected_start_nodes(_indexed_points_ranges, _concurrency);
 
-    for (size_t idx = 0; idx < _indexed_points_ranges.size(); ++idx) {
-      subflow.emplace(
-        [this, bounds, _data = std::move(ranges_per_node[idx])](tf::Subflow& subsubflow) {
-          auto process_data = prepare_range_for_tiling(_data, bounds);
+    // TODO get_start_nodes_from(ranges_per_node) and then iterate over this
+    // --> this is some traversal of the tree, together with a filter operation
 
-          do_tiling_for_node(
-            std::move(process_data.points), process_data.root_node, process_data.node, subsubflow);
-        });
-    }
+    // for (size_t idx = 0; idx < _indexed_points_ranges.size(); ++idx) {
+    //   subflow.emplace(
+    //     [this, bounds, _data = std::move(ranges_per_node[idx])](tf::Subflow& subsubflow) {
+    //       auto process_data = prepare_range_for_tiling(_data, bounds);
+
+    //       do_tiling_for_node(
+    //         std::move(process_data.points), process_data.root_node, process_data.node,
+    //         subsubflow);
+    //     });
+    // }
   });
 
   for (auto& scatter_subtask : scatter_task.scattered_tasks) {
@@ -468,176 +472,198 @@ TilingAlgorithmV2::index_and_sort_points(util::Range<PointsIter> points,
  *  |-------------|  |--------|  |---|  |-------------|  |-------------|
  *      node 00        node 01  node 03     node 1            node 3
  */
-std::vector<TilingAlgorithmV2::IndexedPointsRangeForNode>
+Octree<TilingAlgorithmV2::IndexedPointsForNode>
 TilingAlgorithmV2::split_indexed_points_into_subranges(
   util::Range<IndexedPointsIter> indexed_points,
   size_t min_number_of_ranges) const
 {
-  std::vector<IndexedPointsRangeForNode> ranges_by_node = { { indexed_points,
-                                                              DynamicMortonIndex{} } };
+  Octree<IndexedPointsForNode> point_ranges{ { {},
+                                               IndexedPointsForNode(true, { indexed_points }) } };
 
   if (indexed_points.size() <= min_number_of_ranges) {
-    return ranges_by_node;
+    return point_ranges;
   }
 
-  auto get_largest_range = [](std::vector<IndexedPointsRangeForNode>& ranges)
-    -> std::vector<IndexedPointsRangeForNode>::iterator {
-    const auto iter_to_max_range =
-      std::max_element(std::begin(ranges),
-                       std::end(ranges),
-                       [](const IndexedPointsRangeForNode& l, const IndexedPointsRangeForNode& r) {
-                         return l.range.size() < r.range.size();
-                       });
-    if (iter_to_max_range == std::end(ranges))
-      return iter_to_max_range;
+  throw std::runtime_error{ "not implemented" };
 
-    // To ensure that this whole method always terminates, we have to make SURE that we only return
-    // a range from 'get_largest_range' if this range can be split up into its child nodes. This can
-    // be done with a simple check for the Morton index difference between the first and last points
-    // in the range
-    const auto& first_point = iter_to_max_range->range.first();
-    const auto& last_point = iter_to_max_range->range.last();
-    if (first_point.morton_index == last_point.morton_index)
-      return std::end(ranges);
+  // Recursively split the node with the largest range into up to 8 child nodes
 
-    return iter_to_max_range;
-  };
+  // auto get_largest_range =
+  //   [](Octree<IndexedPointsForNode>& ranges) -> std::vector<IndexedPointsRangeForNode>::iterator
+  //   { const auto iter_to_max_range =
+  //     std::max_element(std::begin(ranges),
+  //                      std::end(ranges),
+  //                      [](const IndexedPointsRangeForNode& l, const IndexedPointsRangeForNode& r)
+  //                      {
+  //                        return l.range.size() < r.range.size();
+  //                      });
+  //   if (iter_to_max_range == std::end(ranges))
+  //     return iter_to_max_range;
 
-  // As long as we have less than 'min_number_of_ranges', keep splitting up the largest range
-  while (ranges_by_node.size() < min_number_of_ranges) {
-    auto iter_to_max_range = get_largest_range(ranges_by_node);
-    if (iter_to_max_range == std::end(ranges_by_node))
-      break;
+  //   // To ensure that this whole method always terminates, we have to make SURE that we only
+  //   return
+  //   // a range from 'get_largest_range' if this range can be split up into its child nodes. This
+  //   can
+  //   // be done with a simple check for the Morton index difference between the first and last
+  //   points
+  //   // in the range
+  //   const auto& first_point = iter_to_max_range->range.first();
+  //   const auto& last_point = iter_to_max_range->range.last();
+  //   if (first_point.morton_index == last_point.morton_index)
+  //     return std::end(ranges);
 
-    auto max_range = *iter_to_max_range;
-    const auto child_level = max_range.node_index.depth();
-    const auto child_ranges = partition_points_into_child_octants(
-      max_range.range.begin(), max_range.range.end(), static_cast<uint32_t>(child_level));
+  //   return iter_to_max_range;
+  // };
 
-    std::vector<IndexedPointsRangeForNode> child_ranges_with_levels;
-    for (uint8_t octant = 0; octant < 8; ++octant) {
-      const auto& child_range = child_ranges[octant];
-      if (child_range.first == child_range.second)
-        continue;
+  // // As long as we have less than 'min_number_of_ranges', keep splitting up the largest range
+  // while (ranges_by_node.size() < min_number_of_ranges) {
+  //   auto iter_to_max_range = get_largest_range(ranges_by_node);
+  //   if (iter_to_max_range == std::end(ranges_by_node))
+  //     break;
 
-      child_ranges_with_levels.push_back(
-        { util::Range<IndexedPointsIter>{ child_range.first, child_range.second },
-          max_range.node_index.child(octant) });
-    }
+  //   auto max_range = *iter_to_max_range;
+  //   const auto child_level = max_range.node_index.depth();
+  //   const auto child_ranges = partition_points_into_child_octants(
+  //     max_range.range.begin(), max_range.range.end(), static_cast<uint32_t>(child_level));
 
-    // Replace this range with the child ranges
-    auto insert_iter = ranges_by_node.erase(iter_to_max_range);
-    ranges_by_node.insert(
-      insert_iter, std::begin(child_ranges_with_levels), std::end(child_ranges_with_levels));
-  }
+  //   std::vector<IndexedPointsRangeForNode> child_ranges_with_levels;
+  //   for (uint8_t octant = 0; octant < 8; ++octant) {
+  //     const auto& child_range = child_ranges[octant];
+  //     if (child_range.first == child_range.second)
+  //       continue;
 
-  return ranges_by_node;
+  //     child_ranges_with_levels.push_back(
+  //       { util::Range<IndexedPointsIter>{ child_range.first, child_range.second },
+  //         max_range.node_index.child(octant) });
+  //   }
+
+  //   // Replace this range with the child ranges
+  //   auto insert_iter = ranges_by_node.erase(iter_to_max_range);
+  //   ranges_by_node.insert(
+  //     insert_iter, std::begin(child_ranges_with_levels), std::end(child_ranges_with_levels));
+  // }
+
+  // return ranges_by_node;
 }
 
-std::vector<TilingAlgorithmV2::FindStartNodesResult>
-TilingAlgorithmV2::transpose_ranges(
-  std::vector<std::vector<IndexedPointsRangeForNode>>&& ranges) const
+// std::vector<TilingAlgorithmV2::FindStartNodesResult>
+// TilingAlgorithmV2::transpose_ranges(
+//   std::vector<std::vector<IndexedPointsRangeForNode>>&& ranges) const
+// {
+//   // 'ranges' will contain a fairly small number of ranges and unique nodes (~10ish), so
+//   // this is implemented using linear search
+//   std::vector<FindStartNodesResult> transposed_ranges;
+
+//   auto get_or_create_start_nodes_result =
+//     [](const DynamicMortonIndex& morton_index,
+//        std::vector<FindStartNodesResult>& transposed_ranges) -> FindStartNodesResult& {
+//     auto iter = std::find_if(
+//       std::begin(transposed_ranges),
+//       std::end(transposed_ranges),
+//       [&morton_index](const FindStartNodesResult& res) { return res.node_index == morton_index;
+//       });
+//     if (iter != std::end(transposed_ranges)) {
+//       return *iter;
+//     }
+
+//     transposed_ranges.push_back({ morton_index, {} });
+//     return transposed_ranges.back();
+//   };
+
+//   for (auto& range : ranges) {
+//     for (auto& subrange : range) {
+//       auto& transposed_range =
+//         get_or_create_start_nodes_result(subrange.node_index, transposed_ranges);
+//       transposed_range.indexed_points_ranges.push_back(subrange.range);
+//     }
+//   }
+
+//   return transposed_ranges;
+// }
+
+// template<typename V>
+// static void
+// add_node_to_tree(const DynamicMortonIndex& node_index,
+//                  V* node_data,
+//                  std::unordered_map<DynamicMortonIndex, V*>& tree)
+// {
+//   auto iter = tree.find(node_index);
+//   if (iter != std::end(tree))
+//     return;
+
+//   tree[node_index] = node_data;
+
+//   if (node_index.depth() == 0)
+//     return;
+
+//   add_node_to_tree<V>(node_index.parent(), nullptr, tree);
+// }
+
+// std::vector<TilingAlgorithmV2::FindStartNodesResult>
+// TilingAlgorithmV2::consolidate_ranges(std::vector<FindStartNodesResult>&& ranges,
+//                                       size_t min_number_of_ranges) const
+// {
+//   // Build an tree index from the ranges so that the computation is easier
+//   std::unordered_map<DynamicMortonIndex, FindStartNodesResult*> tree;
+
+//   for (auto& result : ranges) {
+//     add_node_to_tree(result.node_index, &result, tree);
+//   }
+
+//   // Now find all interior nodes in the tree, ideally starting with the deepest interior nodes.
+//   We
+//   // can then recursively collapse / expand these nodes until we have no interior nodes anymore
+//   and
+//   // an acceptable number of ranges
+//   throw std::runtime_error{ "not implemented" };
+// }
+
+Octree<TilingAlgorithmV2::IndexedPointsForNode>
+TilingAlgorithmV2::merge_selected_start_nodes(
+  const std::vector<Octree<IndexedPointsForNode>>& selected_nodes,
+  size_t min_number_of_ranges)
 {
-  // 'ranges' will contain a fairly small number of ranges and unique nodes (~10ish), so
-  // this is implemented using linear search
-  std::vector<FindStartNodesResult> transposed_ranges;
-
-  auto get_or_create_start_nodes_result =
-    [](const DynamicMortonIndex& morton_index,
-       std::vector<FindStartNodesResult>& transposed_ranges) -> FindStartNodesResult& {
-    auto iter = std::find_if(
-      std::begin(transposed_ranges),
-      std::end(transposed_ranges),
-      [&morton_index](const FindStartNodesResult& res) { return res.node_index == morton_index; });
-    if (iter != std::end(transposed_ranges)) {
-      return *iter;
-    }
-
-    transposed_ranges.push_back({ morton_index, {} });
-    return transposed_ranges.back();
-  };
-
-  for (auto& range : ranges) {
-    for (auto& subrange : range) {
-      auto& transposed_range =
-        get_or_create_start_nodes_result(subrange.node_index, transposed_ranges);
-      transposed_range.indexed_points_ranges.push_back(subrange.range);
-    }
-  }
-
-  return transposed_ranges;
-}
-
-template<typename V>
-static void
-add_node_to_tree(const DynamicMortonIndex& node_index,
-                 V* node_data,
-                 std::unordered_map<DynamicMortonIndex, V*>& tree)
-{
-  auto iter = tree.find(node_index);
-  if (iter != std::end(tree))
-    return;
-
-  tree[node_index] = node_data;
-
-  if (node_index.depth() == 0)
-    return;
-
-  add_node_to_tree<V>(node_index.parent(), nullptr, tree);
-}
-
-std::vector<TilingAlgorithmV2::FindStartNodesResult>
-TilingAlgorithmV2::consolidate_ranges(std::vector<FindStartNodesResult>&& ranges,
-                                      size_t min_number_of_ranges) const
-{
-  // Build an tree index from the ranges so that the computation is easier
-  std::unordered_map<DynamicMortonIndex, FindStartNodesResult*> tree;
-
-  for (auto& result : ranges) {
-    add_node_to_tree(result.node_index, &result, tree);
-  }
-
-  // Now find all interior nodes in the tree, ideally starting with the deepest interior nodes. We
-  // can then recursively collapse / expand these nodes until we have no interior nodes anymore and
-  // an acceptable number of ranges
   throw std::runtime_error{ "not implemented" };
 }
 
 NodeTilingData
-TilingAlgorithmV2::prepare_range_for_tiling(const FindStartNodesResult& start_node_data,
+TilingAlgorithmV2::prepare_range_for_tiling(const IndexedPointsForNode& start_node_data,
+                                            OctreeNodeIndex64 node_index,
                                             const AABB& bounds)
 {
-  const auto start_node_point_count =
-    std::accumulate(std::begin(start_node_data.indexed_points_ranges),
-                    std::end(start_node_data.indexed_points_ranges),
-                    size_t{ 0 },
-                    [](size_t accum, const auto& range) { return accum + range.size(); });
+  throw std::runtime_error{ "not implemented" };
+  // const auto start_node_point_count =
+  //   std::accumulate(std::begin(start_node_data.indexed_points_ranges),
+  //                   std::end(start_node_data.indexed_points_ranges),
+  //                   size_t{ 0 },
+  //                   [](size_t accum, const auto& range) { return accum + range.size(); });
 
-  octree::NodeData merged_data{ start_node_point_count };
+  // octree::NodeData merged_data{ start_node_point_count };
 
-  merge_ranges(util::range(start_node_data.indexed_points_ranges),
-               util::range(merged_data),
-               [](const IndexedPoint64& l, const IndexedPoint64& r) {
-                 return l.morton_index.get() < r.morton_index.get();
-               });
+  // merge_ranges(util::range(start_node_data.indexed_points_ranges),
+  //              util::range(merged_data),
+  //              [](const IndexedPoint64& l, const IndexedPoint64& r) {
+  //                return l.morton_index.get() < r.morton_index.get();
+  //              });
 
-  octree::NodeStructure root_node;
-  root_node.bounds = bounds;
-  root_node.level = -1;
-  root_node.max_depth = _meta_parameters.max_depth;
-  root_node.max_spacing = _meta_parameters.spacing_at_root;
-  root_node.morton_index = {};
-  root_node.name = "r";
+  // octree::NodeStructure root_node;
+  // root_node.bounds = bounds;
+  // root_node.level = -1;
+  // root_node.max_depth = _meta_parameters.max_depth;
+  // root_node.max_spacing = _meta_parameters.spacing_at_root;
+  // root_node.morton_index = {};
+  // root_node.name = "r";
 
-  octree::NodeStructure this_node;
-  this_node.bounds = get_bounds_from_morton_index(start_node_data.node_index, bounds);
-  this_node.level = static_cast<int32_t>(start_node_data.node_index.depth()) - 1;
-  this_node.max_depth = root_node.max_depth;
-  this_node.max_spacing = root_node.max_spacing / std::pow(2, start_node_data.node_index.depth());
-  this_node.morton_index = start_node_data.node_index.to_static_morton_index<MAX_OCTREE_LEVELS>();
-  this_node.name = to_string(start_node_data.node_index, MortonIndexNamingConvention::Potree);
+  // octree::NodeStructure this_node;
+  // this_node.bounds = get_bounds_from_morton_index(start_node_data.node_index, bounds);
+  // this_node.level = static_cast<int32_t>(start_node_data.node_index.depth()) - 1;
+  // this_node.max_depth = root_node.max_depth;
+  // this_node.max_spacing = root_node.max_spacing / std::pow(2,
+  // start_node_data.node_index.depth()); this_node.morton_index =
+  // start_node_data.node_index.to_static_morton_index<MAX_OCTREE_LEVELS>(); this_node.name =
+  // to_string(start_node_data.node_index, MortonIndexNamingConvention::Potree);
 
-  return { std::move(merged_data), root_node, this_node };
+  // return { std::move(merged_data), root_node, this_node };
 }
 
 #pragma endregion

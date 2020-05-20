@@ -13,6 +13,7 @@ set(SOURCE_FILES
     TestMain.cpp
     TestMemoryIntrospection.cpp
     TestMortonIndex.cpp
+    TestOctree.cpp
     TestOctreeIndexing.cpp
     TestOctreeIndexWriter.cpp
     TestOctreeNodeIndex.cpp

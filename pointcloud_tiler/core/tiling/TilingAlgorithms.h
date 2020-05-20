@@ -1,5 +1,6 @@
 #pragma once
 
+#include "datastructures/Octree.h"
 #include "datastructures/PointBuffer.h"
 #include "io/PointsPersistence.h"
 #include "process/Tiler.h"
@@ -150,21 +151,18 @@ private:
   /**
    * A range of indexed points for a specific octree node
    */
-  struct IndexedPointsRangeForNode
+  struct IndexedPointsForNode
   {
-    util::Range<IndexedPointsIter> range;
-    DynamicMortonIndex node_index;
-  };
+    IndexedPointsForNode()
+      : is_start_node(false)
+    {}
+    IndexedPointsForNode(bool is_start_node, std::vector<util::Range<IndexedPointsIter>> ranges)
+      : is_start_node(is_start_node)
+      , ranges(std::move(ranges))
+    {}
 
-  /**
-   * All the ranges of indexed points that belong to the given octree node. The ranges
-   * are sorted but possibly disjoint, i.e. two ranges are not guaranteed to be adjacent
-   * to each other in memory
-   */
-  struct FindStartNodesResult
-  {
-    DynamicMortonIndex node_index;
-    std::vector<util::Range<IndexedPointsIter>> indexed_points_ranges;
+    bool is_start_node;
+    std::vector<util::Range<IndexedPointsIter>> ranges;
   };
 
   /**
@@ -175,63 +173,24 @@ private:
                              util::Range<IndexedPointsIter> indexed_points,
                              const AABB& bounds) const;
 
-  std::vector<IndexedPointsRangeForNode> split_indexed_points_into_subranges(
+  Octree<IndexedPointsForNode> split_indexed_points_into_subranges(
     util::Range<IndexedPointsIter> indexed_points,
     size_t min_number_of_ranges) const;
 
   /**
-   * Takes the results of N invocations of 'split_indexed_points_into_subranges', where each
-   * invocation resulted in approximately M subranges, where M is the number of nodes that the
-   * TilingAlgorithmV2 starts the processing with. Each subrange spans points that belong to a
-   * specific octree node. This method then takes all these subranges and transposes them into a
-   * range of ranges where the inner ranges contain all subranges that belong to a single node.
-   *
-   * This is hard to read and easy to visualize, so here is a diagram:
-   * Input:
-   *  [
-   *   [RangeForNodeA, RangeForNodeB, RangeForNodeD, RangeForNodeE],
-   *   [RangeForNodeB, RangeForNodeC, RangeForNodeE, RangeForNodeF],
-   *   [RangeForNodeA, RangeForNodeD, RangeForNodeE, RangeForNodeF],
-   *   ...
-   *  ]
-   *
-   * Output:
-   *  [
-   *   [Range1ForNodeA, Range2ForNodeA],
-   *   [Range1ForNodeB, Range2ForNodeB],
-   *   [Range1ForNodeC],
-   *   [Range1ForNodeD, Range2ForNodeD],
-   *   [Range1ForNodeE, Range2ForNodeE, Range3ForNodeE],
-   *   [Range1ForNodeF, Range2ForNodeF]
-   *  ]
-   *
+   * Merge the results of multiple 'split_indexed_points_into_subranges' invocations
    */
-  std::vector<FindStartNodesResult> transpose_ranges(
-    std::vector<std::vector<IndexedPointsRangeForNode>>&& ranges) const;
-
-  /**
-   * The result of 'split_indexed_points_into_subranges' can be different for each invocation (as it
-   * is called with a different set of points). Through this, the situation can arise that in one
-   * invocation, a node 'A' is selected, but in another invocation, all the children of 'A' are
-   * selected instead. When we then call 'transpose_ranges' to merge all these ranges, we will end
-   * up with multiple root nodes where one node might be a child of the other node. This must not
-   * happen (parent-child relationship prevents parallel processing), so we have to ensure that we
-   * only take either 'A' or the children of 'A' as root nodes, never both.
-   *
-   * This is somewhat nasty, as of course the parent-child relationship can be indirect. Ultimately,
-   * 'ranges' represents a k-way tree (with k <= 8) and we have to eliminate all the 'inner' nodes
-   * of this tree. The tree representation might not be complete ('ranges' contains just a bunch of
-   * nodes, no relationships, nodes may be missing because they were never selected).
-   */
-  std::vector<FindStartNodesResult> consolidate_ranges(
-    std::vector<FindStartNodesResult>&& ranges, size_t min_number_of_ranges) const;
+  Octree<IndexedPointsForNode> merge_selected_start_nodes(
+    const std::vector<Octree<IndexedPointsForNode>>& selected_nodes,
+    size_t min_number_of_ranges);
 
   /**
    * Takes a range of sorted IndexedPoint ranges for a single node, merges the ranges into a single
    * sorted range and returns the necessary data for tiling this node
    */
-  NodeTilingData prepare_range_for_tiling(const FindStartNodesResult& start_node_data,
+  NodeTilingData prepare_range_for_tiling(const IndexedPointsForNode& start_node_data,
+                                          OctreeNodeIndex64 node_index,
                                           const AABB& bounds);
 
-  std::vector<std::vector<IndexedPointsRangeForNode>> _indexed_points_ranges;
+  std::vector<Octree<IndexedPointsForNode>> _indexed_points_ranges;
 };

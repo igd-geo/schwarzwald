@@ -5,7 +5,7 @@
 #include <string>
 #include <unordered_map>
 
-SCENARIO("Constructors", "[OctreeNodeIndex]")
+SCENARIO("OctreeNodeIndex - Constructors", "[OctreeNodeIndex]")
 {
   WHEN("An OctreeNodeIndex is default constructed")
   {
@@ -113,7 +113,7 @@ SCENARIO("Constructors", "[OctreeNodeIndex]")
   }
 }
 
-SCENARIO("Comparisons", "[OctreeNodeIndex]")
+SCENARIO("OctreeNodeIndex - Comparisons", "[OctreeNodeIndex]")
 {
   WHEN("Two OctreeNodeIndices have the same depth")
   {
@@ -232,34 +232,105 @@ SCENARIO("Comparisons", "[OctreeNodeIndex]")
   }
 }
 
-SCENARIO("Parent index", "[OctreeNodeIndex]")
+SCENARIO("OctreeNodeIndex - Parent index", "[OctreeNodeIndex]")
 {
-  WHEN("An OctreeNodeIndex has many levels")
+  GIVEN("An OctreeNodeIndex with many levels")
   {
     OctreeNodeIndex64 index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
 
-    THEN("Calling parent() yields a parent index")
+    WHEN("parent() is called")
     {
-      OctreeNodeIndex64 expected_parent_index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5,
-                                               1, 2, 3, 4, 5, 1, 2, 3, 4, 5 };
-      REQUIRE(index.parent() == expected_parent_index);
+      const auto parent = index.parent();
+      THEN("The index of the parent node is obtained")
+      {
+        OctreeNodeIndex64 expected_parent_index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5,
+                                                 1, 2, 3, 4, 5, 1, 2, 3, 4, 5 };
+        REQUIRE(parent == expected_parent_index);
+      }
     }
 
-    THEN("Calling parent_at_level() yields a parent index")
+    WHEN("parent_at_level() is called")
     {
-      OctreeNodeIndex64 expected_parent_index{ 1, 2, 3 };
-      REQUIRE(index.parent_at_level(3) == expected_parent_index);
+      const auto parent = index.parent_at_level(3);
+      THEN("The index of the parent node at the specific level is obtained")
+      {
+        OctreeNodeIndex64 expected_parent_index{ 1, 2, 3 };
+        REQUIRE(parent == expected_parent_index);
+      }
     }
 
-    THEN("Calling parent_at_level(0) yields the root index")
+    WHEN("parent_at_level(0) is called")
     {
-      OctreeNodeIndex64 root_index;
-      REQUIRE(index.parent_at_level(0) == root_index);
+      const auto should_be_root = index.parent_at_level(0);
+      THEN("The root node index is returned")
+      {
+        OctreeNodeIndex64 root_index;
+        REQUIRE(should_be_root == root_index);
+      }
     }
   }
 }
 
-SCENARIO("Hashing", "[OctreeNodeIndex]")
+SCENARIO("OctreeNodeIndex - Siblings", "[OctreeNodeIndex")
+{
+  GIVEN("An OctreeNodeIndex somewhere in the tree")
+  {
+    OctreeNodeIndex64 index{ 1, 2, 3 };
+
+    WHEN("sibling(0) is called")
+    {
+      const auto sibling = index.sibling(0);
+      THEN("The sibling at octant 0 is returned")
+      {
+        OctreeNodeIndex64 expected_sibling{ 1, 2, 0 };
+        REQUIRE(sibling == expected_sibling);
+      }
+    }
+  }
+
+  GIVEN("The root node index")
+  {
+    OctreeNodeIndex64 root;
+
+    WHEN("sibling() is called")
+    {
+      THEN("An error is thrown") { REQUIRE_THROWS_AS(root.sibling(0), std::exception); }
+    }
+  }
+}
+
+SCENARIO("OctreeNodeIndex - Children", "[OctreeNodeIndex]")
+{
+  GIVEN("An OctreeNodeIndex somewhere in the tree")
+  {
+    OctreeNodeIndex64 index{ 1, 2, 3 };
+
+    WHEN("child(4) is called")
+    {
+      const auto child = index.child(4);
+
+      THEN("The child index is correct")
+      {
+        OctreeNodeIndex64 expected_index{ 1, 2, 3, 4 };
+        REQUIRE(child == expected_index);
+      }
+    }
+  }
+
+  GIVEN("An OctreeNodeIndex that has MAX_LEVELS")
+  {
+    OctreeNodeIndex64 index{
+      1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1
+    }; // 21 levels == MAX_LEVELS
+
+    WHEN("child() is called for any child octant")
+    {
+      THEN("An exception is thrown") { REQUIRE_THROWS_AS(index.child(0), std::exception); }
+    }
+  }
+}
+
+SCENARIO("OctreeNodeIndex - Hashing", "[OctreeNodeIndex]")
 {
   WHEN("An OctreeNodeIndex is stored inside an unordered_map")
   {
@@ -268,7 +339,7 @@ SCENARIO("Hashing", "[OctreeNodeIndex]")
   }
 }
 
-SCENARIO("String conversions", "[OctreeNodeIndex]")
+SCENARIO("OctreeNodeIndex - String conversions", "[OctreeNodeIndex]")
 {
   WHEN("An OctreeNodeIndex with zero levels is converted to a string")
   {
