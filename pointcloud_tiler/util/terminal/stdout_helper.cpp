@@ -17,14 +17,22 @@
 
 constexpr static auto ANSI_ClearLine = "\u001b[2K";
 
-static bool is_newline(char c) { return c == '\n'; }
+static bool
+is_newline(char c)
+{
+  return c == '\n';
+}
 
-std::mutex &util::print_lock() {
+std::mutex&
+util::print_lock()
+{
   static std::mutex s_lock;
   return s_lock;
 }
 
-void util::write_log(const std::string &log) {
+void
+util::write_log(const std::string& log)
+{
   if (!terminal_is_tty()) {
     std::cout << log;
     return;
@@ -49,7 +57,10 @@ void util::write_log(const std::string &log) {
   print_lock().unlock();
 }
 
-bool util::terminal_is_tty() {
-  static bool s_is_tty = ISATTY(FILENO(stdout)) != 0;
-  return s_is_tty;
+bool
+util::terminal_is_tty()
+{
+  return false;
+  // static bool s_is_tty = ISATTY(FILENO(stdout)) != 0;
+  // return s_is_tty;
 }

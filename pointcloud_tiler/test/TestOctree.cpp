@@ -380,28 +380,84 @@ SCENARIO("Octree - Accessing nodes", "[Octree]")
   }
 }
 
-// SCENARIO("Traversal", "[Octree]")
-// {
-//   WHEN("An octree is traversed using range-based for")
-//   {
-//     Octree<std::string> octree{ { {} "root" }, { { 1 }, "node1" }, { { 2 }, "node2" } };
+SCENARIO("Traversal", "[Octree]")
+{
+  GIVEN("An octree with some nodes")
+  {
+    Octree<std::string> octree{
+      { {}, "root" }, { { 1 }, "node1" }, { { 2 }, "node2" }, { { 1, 6 }, "node16" }
+    };
 
-//     std::vector<std::pair<OctreeNodeIndex64, std::string>> visited_nodes;
-//     for (auto& kv : octree) {
-//       visited_nodes.push_back(kv);
-//     }
+    WHEN("The octree is traversed using range-based for with level order")
+    {
 
-//     THEN("All nodes are visited in level-order")
-//     {
-//       std::vector<std::pair<OctreeNodeIndex64, std::string>> expected_nodes{
-//         { {}, "root" }, { { 0 }, "" }, { { 1 }, "node1" }, { { 2 }, "node2" }, { { 3 }, "" },
-//         { { 4 }, "" },  { { 5 }, "" }, { { 6 }, "" },      { { 7 }, "" },
-//       };
+      std::vector<OctreeNodeIndex64> visited_nodes;
+      for (auto node : octree.traverse_level_order()) {
+        visited_nodes.push_back(node.index());
+      }
 
-//       REQUIRE(visited_nodes == expected_nodes);
-//     }
-//   }
-// }
+      THEN("All nodes are visited in level-order")
+      {
+        std::vector<OctreeNodeIndex64> expected_nodes{
+          {},       { 0 },    { 1 },    { 2 },    { 3 },    { 4 },    { 5 },    { 6 },   { 7 },
+          { 1, 0 }, { 1, 1 }, { 1, 2 }, { 1, 3 }, { 1, 4 }, { 1, 5 }, { 1, 6 }, { 1, 7 }
+        };
+
+        REQUIRE(visited_nodes == expected_nodes);
+      }
+    }
+
+    WHEN("std::find_if is used to locate a node in the iterator")
+    {
+      const auto iter =
+        std::find_if(std::begin(octree.traverse_level_order()),
+                     std::end(octree.traverse_level_order()),
+                     [](const auto& node) { return node.index() == OctreeNodeIndex64{ 2 }; });
+
+      THEN("The correct node is found")
+      {
+        REQUIRE(iter != std::end(octree.traverse_level_order()));
+        REQUIRE(**iter == "node2");
+      }
+    }
+
+    // WHEN("The octree is traversed using range-based for with Traversal::PreOrder")
+    // {
+    //   std::vector<OctreeNodeIndex64> visited_nodes;
+    //   for (auto node : octree.traverse(Traversal::PreOrder)) {
+    //     visited_nodes.push_back(node.index());
+    //   }
+
+    //   THEN("All nodes are visited in preorder")
+    //   {
+    //     std::vector<OctreeNodeIndex64> expected_nodes{
+    //       {},       { 0 },    { 1 }, { 1, 0 }, { 1, 1 }, { 1, 2 }, { 1, 3 }, { 1, 4 }, { 1, 5 },
+    //       { 1, 6 }, { 1, 7 }, { 2 }, { 3 },    { 4 },    { 5 },    { 6 },    { 7 },
+    //     };
+
+    //     REQUIRE(visited_nodes == expected_nodes);
+    //   }
+    // }
+
+    // WHEN("The octree is traversed using range-based for with Traversal::PostOrder")
+    // {
+    //   std::vector<OctreeNodeIndex64> visited_nodes;
+    //   for (auto node : octree.traverse(Traversal::PostOrder)) {
+    //     visited_nodes.push_back(node.index());
+    //   }
+
+    //   THEN("All nodes are visited in postorder")
+    //   {
+    //     std::vector<OctreeNodeIndex64> expected_nodes{
+    //       { 0 }, { 1, 0 }, { 1, 1 }, { 1, 2 }, { 1, 3 }, { 1, 4 }, { 1, 5 }, { 1, 6 }, { 1, 7 },
+    //       { 1 }, { 2 },    { 3 },    { 4 },    { 5 },    { 6 },    { 7 },    {}
+    //     };
+
+    //     REQUIRE(visited_nodes == expected_nodes);
+    //   }
+    // }
+  }
+}
 
 SCENARIO("Octree - Merge trees", "[Octree]")
 {

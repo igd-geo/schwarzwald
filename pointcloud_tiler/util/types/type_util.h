@@ -17,3 +17,15 @@ struct AlwaysFalse : std::bool_constant<false>
 template<unsigned T>
 struct AlwaysFalseForIntegralTypes : std::bool_constant<false>
 {};
+
+/**
+ * Predicate that always returns true
+ */
+struct AlwaysTruePredicate
+{
+  template<typename T>
+  bool operator()(T&& arg) const
+  {
+    return true;
+  }
+};

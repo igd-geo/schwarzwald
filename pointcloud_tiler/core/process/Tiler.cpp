@@ -415,6 +415,7 @@ Tiler::run_worker()
 {
   // Use max_threads - 1 because one thread is reserved for reading points
   const auto concurrency = std::max(1u, std::thread::hardware_concurrency() - 1);
+  // const auto concurrency = 1u;
 
   tf::Executor executor{ concurrency };
   ExecutorObserver* executor_observer = nullptr;

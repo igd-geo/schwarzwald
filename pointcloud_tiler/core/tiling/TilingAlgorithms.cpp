@@ -401,6 +401,18 @@ TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds
         { points_begin, points_end }, { indexed_points_begin, indexed_points_end }, bounds);
       task_output = split_indexed_points_into_subranges(
         { indexed_points_begin, indexed_points_end }, _concurrency);
+
+      const auto subranges_graphviz = task_output.to_graphviz([](const auto& node) {
+        std::stringstream ss;
+        ss << OctreeNodeIndex64::to_string(node.index()) << " - " << node->size();
+        return ss.str();
+      });
+
+      const auto file_name =
+        (boost::format("./split_indexed_points_into_subranges_%1%.gv") % task_index).str();
+      std::ofstream fs{ file_name };
+      fs << subranges_graphviz;
+      fs.close();
     },
     tf,
     _concurrency);
@@ -408,19 +420,56 @@ TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds
   auto transpose_task = tf.emplace([this, bounds](tf::Subflow& subflow) {
     auto ranges_per_node = merge_selected_start_nodes(_indexed_points_ranges, _concurrency);
 
-    // TODO get_start_nodes_from(ranges_per_node) and then iterate over this
-    // --> this is some traversal of the tree, together with a filter operation
+    const auto ranges_graphviz = ranges_per_node.to_graphviz([](const auto& node) {
+      const auto total_points = std::accumulate(
+        std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+          return accum + range.size();
+        });
 
-    // for (size_t idx = 0; idx < _indexed_points_ranges.size(); ++idx) {
-    //   subflow.emplace(
-    //     [this, bounds, _data = std::move(ranges_per_node[idx])](tf::Subflow& subsubflow) {
-    //       auto process_data = prepare_range_for_tiling(_data, bounds);
+      std::stringstream ss;
+      ss << OctreeNodeIndex64::to_string(node.index()) << " - " << total_points;
+      return ss.str();
+    });
 
-    //       do_tiling_for_node(
-    //         std::move(process_data.points), process_data.root_node, process_data.node,
-    //         subsubflow);
-    //     });
-    // }
+    std::ofstream fs{ "./merge_selected_start_nodes.gv" };
+    fs << ranges_graphviz;
+    fs.close();
+
+    // ranges_per_node is an Octree where some of the nodes contain the starting data for tiling
+
+    std::unordered_set<OctreeNodeIndex64> left_out_nodes;
+    std::vector<tf::Task> new_tiling_tasks;
+
+    for (auto node : ranges_per_node.traverse_level_order()) {
+      if (node->empty())
+        continue;
+
+      auto parent = node.index().parent();
+      while (true) {
+        // Insert parent node and its parents etc. to left_out_nodes
+        left_out_nodes.insert(parent);
+        if (parent.levels() == 0)
+          break;
+        parent = parent.parent();
+      }
+
+      new_tiling_tasks.push_back(subflow.emplace(
+        [this, bounds, index = node.index(), _data = std::move(*node)](tf::Subflow& subsubflow) {
+          auto process_data = prepare_range_for_tiling(_data, index, bounds);
+
+          do_tiling_for_node(
+            std::move(process_data.points), process_data.root_node, process_data.node, subsubflow);
+        }));
+    }
+
+    const auto reconstruct_task =
+      subflow.emplace([this, _left_out_nodes = std::move(left_out_nodes)]() {
+        reconstruct_left_out_nodes(_left_out_nodes);
+      });
+
+    for (auto tiling_task : new_tiling_tasks) {
+      tiling_task.precede(reconstruct_task);
+    }
   });
 
   for (auto& scatter_subtask : scatter_task.scattered_tasks) {
@@ -472,198 +521,402 @@ TilingAlgorithmV2::index_and_sort_points(util::Range<PointsIter> points,
  *  |-------------|  |--------|  |---|  |-------------|  |-------------|
  *      node 00        node 01  node 03     node 1            node 3
  */
-Octree<TilingAlgorithmV2::IndexedPointsForNode>
+Octree<util::Range<TilingAlgorithmV2::IndexedPointsIter>>
 TilingAlgorithmV2::split_indexed_points_into_subranges(
   util::Range<IndexedPointsIter> indexed_points,
   size_t min_number_of_ranges) const
 {
-  Octree<IndexedPointsForNode> point_ranges{ { {},
-                                               IndexedPointsForNode(true, { indexed_points }) } };
+  Octree<util::Range<IndexedPointsIter>> point_ranges{ { {}, indexed_points } };
 
   if (indexed_points.size() <= min_number_of_ranges) {
     return point_ranges;
   }
 
-  throw std::runtime_error{ "not implemented" };
-
   // Recursively split the node with the largest range into up to 8 child nodes
 
-  // auto get_largest_range =
-  //   [](Octree<IndexedPointsForNode>& ranges) -> std::vector<IndexedPointsRangeForNode>::iterator
-  //   { const auto iter_to_max_range =
-  //     std::max_element(std::begin(ranges),
-  //                      std::end(ranges),
-  //                      [](const IndexedPointsRangeForNode& l, const IndexedPointsRangeForNode& r)
-  //                      {
-  //                        return l.range.size() < r.range.size();
-  //                      });
-  //   if (iter_to_max_range == std::end(ranges))
-  //     return iter_to_max_range;
+  auto get_node_with_most_points = [](Octree<util::Range<IndexedPointsIter>>& octree) {
+    const auto iter_to_max_range =
+      std::max_element(std::begin(octree.traverse_level_order()),
+                       std::end(octree.traverse_level_order()),
+                       [](const auto& left_node, const auto& right_node) {
+                         return left_node->size() < right_node->size();
+                       });
+    if (iter_to_max_range == std::end(octree.traverse_level_order()))
+      return iter_to_max_range;
 
-  //   // To ensure that this whole method always terminates, we have to make SURE that we only
-  //   return
-  //   // a range from 'get_largest_range' if this range can be split up into its child nodes. This
-  //   can
-  //   // be done with a simple check for the Morton index difference between the first and last
-  //   points
-  //   // in the range
-  //   const auto& first_point = iter_to_max_range->range.first();
-  //   const auto& last_point = iter_to_max_range->range.last();
-  //   if (first_point.morton_index == last_point.morton_index)
-  //     return std::end(ranges);
+    // To ensure that this whole method always terminates, we have to make SURE that we only
+    // return
+    // a range from 'get_largest_range' if this range can be split up into its child nodes. This
+    // can
+    // be done with a simple check for the Morton index difference between the first and last
+    // points
+    // in the range
+    const auto& first_point = iter_to_max_range->first();
+    const auto& last_point = iter_to_max_range->last();
+    if (first_point.morton_index == last_point.morton_index)
+      return std::end(octree.traverse_level_order());
 
-  //   return iter_to_max_range;
-  // };
+    return iter_to_max_range;
+  };
+
+  size_t num_non_empty_nodes = 1;
 
   // // As long as we have less than 'min_number_of_ranges', keep splitting up the largest range
-  // while (ranges_by_node.size() < min_number_of_ranges) {
-  //   auto iter_to_max_range = get_largest_range(ranges_by_node);
-  //   if (iter_to_max_range == std::end(ranges_by_node))
-  //     break;
+  while (num_non_empty_nodes < min_number_of_ranges) {
+    auto iter_to_max_range = get_node_with_most_points(point_ranges);
+    if (iter_to_max_range == std::end(point_ranges.traverse_level_order()))
+      break;
 
-  //   auto max_range = *iter_to_max_range;
-  //   const auto child_level = max_range.node_index.depth();
-  //   const auto child_ranges = partition_points_into_child_octants(
-  //     max_range.range.begin(), max_range.range.end(), static_cast<uint32_t>(child_level));
+    // Split node up into child ranges
+    auto node_with_max_range = *iter_to_max_range;
+    const auto child_level = node_with_max_range.index().levels();
+    const auto child_ranges = partition_points_into_child_octants(
+      node_with_max_range->begin(), node_with_max_range->end(), child_level);
 
-  //   std::vector<IndexedPointsRangeForNode> child_ranges_with_levels;
-  //   for (uint8_t octant = 0; octant < 8; ++octant) {
-  //     const auto& child_range = child_ranges[octant];
-  //     if (child_range.first == child_range.second)
-  //       continue;
+    // Insert each child range into the octree
+    for (uint8_t octant = 0; octant < 8; ++octant) {
+      const auto& child_range = child_ranges[octant];
+      if (child_range.first == child_range.second)
+        continue;
 
-  //     child_ranges_with_levels.push_back(
-  //       { util::Range<IndexedPointsIter>{ child_range.first, child_range.second },
-  //         max_range.node_index.child(octant) });
-  //   }
+      point_ranges.insert(node_with_max_range.index().child(octant),
+                          { child_range.first, child_range.second });
 
-  //   // Replace this range with the child ranges
-  //   auto insert_iter = ranges_by_node.erase(iter_to_max_range);
-  //   ranges_by_node.insert(
-  //     insert_iter, std::begin(child_ranges_with_levels), std::end(child_ranges_with_levels));
-  // }
+      ++num_non_empty_nodes;
+    }
 
-  // return ranges_by_node;
+    // Clear the range of this node
+    point_ranges.insert(node_with_max_range.index(), {});
+    --num_non_empty_nodes;
+  }
+
+  return point_ranges;
 }
 
-// std::vector<TilingAlgorithmV2::FindStartNodesResult>
-// TilingAlgorithmV2::transpose_ranges(
-//   std::vector<std::vector<IndexedPointsRangeForNode>>&& ranges) const
-// {
-//   // 'ranges' will contain a fairly small number of ranges and unique nodes (~10ish), so
-//   // this is implemented using linear search
-//   std::vector<FindStartNodesResult> transposed_ranges;
-
-//   auto get_or_create_start_nodes_result =
-//     [](const DynamicMortonIndex& morton_index,
-//        std::vector<FindStartNodesResult>& transposed_ranges) -> FindStartNodesResult& {
-//     auto iter = std::find_if(
-//       std::begin(transposed_ranges),
-//       std::end(transposed_ranges),
-//       [&morton_index](const FindStartNodesResult& res) { return res.node_index == morton_index;
-//       });
-//     if (iter != std::end(transposed_ranges)) {
-//       return *iter;
-//     }
-
-//     transposed_ranges.push_back({ morton_index, {} });
-//     return transposed_ranges.back();
-//   };
-
-//   for (auto& range : ranges) {
-//     for (auto& subrange : range) {
-//       auto& transposed_range =
-//         get_or_create_start_nodes_result(subrange.node_index, transposed_ranges);
-//       transposed_range.indexed_points_ranges.push_back(subrange.range);
-//     }
-//   }
-
-//   return transposed_ranges;
-// }
-
-// template<typename V>
-// static void
-// add_node_to_tree(const DynamicMortonIndex& node_index,
-//                  V* node_data,
-//                  std::unordered_map<DynamicMortonIndex, V*>& tree)
-// {
-//   auto iter = tree.find(node_index);
-//   if (iter != std::end(tree))
-//     return;
-
-//   tree[node_index] = node_data;
-
-//   if (node_index.depth() == 0)
-//     return;
-
-//   add_node_to_tree<V>(node_index.parent(), nullptr, tree);
-// }
-
-// std::vector<TilingAlgorithmV2::FindStartNodesResult>
-// TilingAlgorithmV2::consolidate_ranges(std::vector<FindStartNodesResult>&& ranges,
-//                                       size_t min_number_of_ranges) const
-// {
-//   // Build an tree index from the ranges so that the computation is easier
-//   std::unordered_map<DynamicMortonIndex, FindStartNodesResult*> tree;
-
-//   for (auto& result : ranges) {
-//     add_node_to_tree(result.node_index, &result, tree);
-//   }
-
-//   // Now find all interior nodes in the tree, ideally starting with the deepest interior nodes.
-//   We
-//   // can then recursively collapse / expand these nodes until we have no interior nodes anymore
-//   and
-//   // an acceptable number of ranges
-//   throw std::runtime_error{ "not implemented" };
-// }
-
-Octree<TilingAlgorithmV2::IndexedPointsForNode>
+Octree<std::vector<util::Range<TilingAlgorithmV2::IndexedPointsIter>>>
 TilingAlgorithmV2::merge_selected_start_nodes(
-  const std::vector<Octree<IndexedPointsForNode>>& selected_nodes,
+  const std::vector<Octree<util::Range<IndexedPointsIter>>>& selected_nodes,
   size_t min_number_of_ranges)
 {
-  throw std::runtime_error{ "not implemented" };
+  using Octree_t = Octree<std::vector<util::Range<TilingAlgorithmV2::IndexedPointsIter>>>;
+  // Merge all trees into one tree
+  auto merged_tree = std::accumulate(
+    std::begin(selected_nodes),
+    std::end(selected_nodes),
+    Octree_t{},
+    [](const auto& accum, const auto& val) {
+      return Octree_t::transform_merge<util::Range<IndexedPointsIter>>(
+        accum,
+        val,
+        [](util::Range<IndexedPointsIter> range) -> std::vector<util::Range<IndexedPointsIter>> {
+          return { range };
+        },
+        [](const std::vector<util::Range<IndexedPointsIter>>& l,
+           const std::vector<util::Range<IndexedPointsIter>>& r) {
+          std::vector<util::Range<IndexedPointsIter>> merged_ranges;
+          for (auto& range : l) {
+            if (range.size() == 0)
+              continue;
+            merged_ranges.push_back(range);
+          }
+          for (auto& range : r) {
+            if (range.size() == 0)
+              continue;
+            merged_ranges.push_back(range);
+          }
+          return merged_ranges;
+        });
+    });
+
+  const auto merged_graphviz = merged_tree.to_graphviz([](const auto& node) {
+    const auto total_points = std::accumulate(
+      std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+        return accum + range.size();
+      });
+
+    std::stringstream ss;
+    ss << OctreeNodeIndex64::to_string(node.index()) << " - " << total_points;
+    return ss.str();
+  });
+
+  {
+    std::ofstream fs{ "./merge_intermediate.gv" };
+    fs << merged_graphviz;
+    fs.close();
+  }
+
+  // This tree can now have nodes that are in a parent/child relationship that both have a non-empty
+  // range assigned to them. To break this pattern, we first split the ranges in the parent nodes
+  // and push them to the child nodes. Then, we keep merging child nodes until we have an acceptable
+  // number of nodes
+
+  std::vector<Octree_t::MutableNode> interior_nodes;
+  for (auto node : merged_tree.traverse_level_order()) {
+    // Look for nodes that have at least one non-empty range
+    if (node->empty())
+      continue;
+    if (std::all_of(std::begin(*node), std::end(*node), [](const auto& range) {
+          return range.size() == 0;
+        })) {
+      continue;
+    }
+
+    // If the node is a leaf node, we skip it
+    const auto children = node.children();
+    if (children.empty())
+      continue;
+
+    // For each range, split the range and distribute all splitted ranges to the appropriate child
+    // nodes
+    for (auto& range : *node) {
+      const auto split_ranges = partition_points_into_child_octants(
+        std::begin(range), std::end(range), node.index().levels());
+      for (uint8_t octant = 0; octant < 8; ++octant) {
+        const auto& subrange = split_ranges[octant];
+        if (subrange.first == subrange.second) {
+          continue;
+        }
+
+        const auto child_node_index = node.index().child(octant);
+        merged_tree.at(child_node_index)->push_back({ subrange.first, subrange.second });
+      }
+    }
+
+    // Clear this node (but keep it in the tree)
+    merged_tree.at(node.index())->clear();
+  }
+
+  const auto merged_after_interior_push_graphviz = merged_tree.to_graphviz(
+    [](const auto& node) {
+      const auto total_points = std::accumulate(
+        std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+          return accum + range.size();
+        });
+
+      std::stringstream ss;
+      ss << OctreeNodeIndex64::to_string(node.index()) << " - " << total_points;
+      return ss.str();
+    },
+    [](const auto& node) {
+      const auto total_points = std::accumulate(
+        std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+          return accum + range.size();
+        });
+
+      return !(node.is_leaf() && total_points == 0);
+    });
+
+  {
+    std::ofstream fs{ "./merge_intermediate_after_interior_push.gv" };
+    fs << merged_after_interior_push_graphviz;
+    fs.close();
+  }
+
+  // Keep merging leaf-nodes until we have ~min_number_of_ranges leaf nodes
+  std::unordered_map<OctreeNodeIndex64, Octree_t::MutableNode> penultimate_nodes;
+  const auto is_penultimate_node = [](const auto& node) {
+    const auto children = node.children();
+    return !node.is_leaf() && std::all_of(std::begin(children),
+                                          std::end(children),
+                                          [](const auto& node) { return node.is_leaf(); });
+  };
+
+  // Look for all nodes that have only leaf nodes as children
+  for (auto node : merged_tree.traverse_level_order()) {
+    if (!is_penultimate_node(node))
+      continue;
+    penultimate_nodes[node.index()] = node;
+  }
+
+  auto num_start_nodes = static_cast<size_t>(
+    std::count_if(std::begin(merged_tree.traverse_level_order()),
+                  std::end(merged_tree.traverse_level_order()),
+                  [](const auto& node) { return node.is_leaf() && (!node->empty()); }));
+
+  // Counts the total number of points in all direct child nodes of 'node'
+  const auto num_points_in_children = [](const Octree_t::MutableNode& node) {
+    const auto children = node.children();
+    return std::accumulate(
+      std::begin(children), std::end(children), size_t{ 0 }, [](size_t accum, const auto& node) {
+        return accum + std::accumulate(
+                         std::begin(*node),
+                         std::end(*node),
+                         size_t{ 0 },
+                         [](size_t accum, const auto& range) { return accum + range.size(); });
+      });
+  };
+
+  const auto merge_leaves =
+    [is_penultimate_node](
+      const Octree_t::MutableNode& leaf_parent,
+      std::unordered_map<OctreeNodeIndex64, Octree_t::MutableNode>& penultimate_nodes) -> size_t {
+    size_t merged_nodes = 0;
+    std::vector<util::Range<TilingAlgorithmV2::IndexedPointsIter>> merged_ranges;
+    for (auto leaf : leaf_parent.children()) {
+      if (leaf->empty())
+        continue;
+
+      merged_ranges.insert(std::end(merged_ranges), std::begin(*leaf), std::end(*leaf));
+      ++merged_nodes;
+    }
+
+    leaf_parent.erase();                     // Clears all child nodes that we just merged
+    *leaf_parent = std::move(merged_ranges); // Puts all the merged ranges into this node
+
+    // 'leaf_parent' is no longer a penultimate node, but its parent might be now!
+    penultimate_nodes.erase(leaf_parent.index());
+
+    if (leaf_parent.index() == OctreeNodeIndex64{})
+      return merged_nodes;
+    const auto parent = leaf_parent.parent();
+    if (!is_penultimate_node(parent))
+      return merged_nodes;
+
+    penultimate_nodes[parent.index()] = parent;
+    --merged_nodes;
+    return merged_nodes;
+  };
+
+  // Finds the best node to merge, which is the node with the least number of points in its direct
+  // children
+  const auto find_best_node_to_merge = [num_points_in_children](const auto& penultimate_nodes) {
+    return std::min_element(std::begin(penultimate_nodes),
+                            std::end(penultimate_nodes),
+                            [num_points_in_children](const auto& l, const auto& r) {
+                              return num_points_in_children(l.second) <
+                                     num_points_in_children(r.second);
+                            });
+  };
+
+  uint32_t steps = 0;
+
+  while (num_start_nodes > min_number_of_ranges) {
+    const auto node_to_merge_iter = find_best_node_to_merge(penultimate_nodes);
+    if (node_to_merge_iter == std::end(penultimate_nodes))
+      break;
+
+    const auto children_of_node_to_merge = node_to_merge_iter->second.children();
+    auto num_nodes_to_merge = std::count_if(std::begin(children_of_node_to_merge),
+                                            std::end(children_of_node_to_merge),
+                                            [](const auto& node) { return !node->empty(); });
+
+    // Don't merge anymore if we drop below the minimum number of ranges
+    if ((num_start_nodes - num_nodes_to_merge) < min_number_of_ranges) {
+      break;
+    }
+
+    util::write_log("Merging leaf nodes:\n");
+    for (auto node : node_to_merge_iter->second.children()) {
+      util::write_log(
+        (boost::format("\t%1%\n") % OctreeNodeIndex64::to_string(node.index())).str());
+    }
+
+    // Merge the leaves
+    num_start_nodes -= merge_leaves(node_to_merge_iter->second, penultimate_nodes);
+
+    {
+      const auto intermediate_tree_graphviz = merged_tree.to_graphviz(
+        [](const auto& node) {
+          const auto total_points = std::accumulate(
+            std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+              return accum + range.size();
+            });
+
+          std::stringstream ss;
+          ss << OctreeNodeIndex64::to_string(node.index()) << " - " << total_points;
+          return ss.str();
+        },
+        [](const auto& node) {
+          const auto total_points = std::accumulate(
+            std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+              return accum + range.size();
+            });
+
+          return !(node.is_leaf() && total_points == 0);
+        });
+
+      {
+        std::ofstream fs{ (boost::format("./merge_leaves_%1%.gv") % steps++).str() };
+        fs << intermediate_tree_graphviz;
+        fs.close();
+      }
+    }
+  }
+
+  const auto final_tree_graphviz = merged_tree.to_graphviz(
+    [](const auto& node) {
+      const auto total_points = std::accumulate(
+        std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+          return accum + range.size();
+        });
+
+      std::stringstream ss;
+      ss << OctreeNodeIndex64::to_string(node.index()) << " - " << total_points;
+      return ss.str();
+    },
+    [](const auto& node) {
+      const auto total_points = std::accumulate(
+        std::begin(*node), std::end(*node), size_t{ 0 }, [](auto accum, const auto& range) {
+          return accum + range.size();
+        });
+
+      return !(node.is_leaf() && total_points == 0);
+    });
+
+  {
+    std::ofstream fs{ "./merge_final.gv" };
+    fs << final_tree_graphviz;
+    fs.close();
+  }
+
+  return merged_tree;
 }
 
 NodeTilingData
-TilingAlgorithmV2::prepare_range_for_tiling(const IndexedPointsForNode& start_node_data,
-                                            OctreeNodeIndex64 node_index,
-                                            const AABB& bounds)
+TilingAlgorithmV2::prepare_range_for_tiling(
+  const std::vector<util::Range<IndexedPointsIter>>& start_node_data,
+  OctreeNodeIndex64 node_index,
+  const AABB& bounds)
 {
-  throw std::runtime_error{ "not implemented" };
-  // const auto start_node_point_count =
-  //   std::accumulate(std::begin(start_node_data.indexed_points_ranges),
-  //                   std::end(start_node_data.indexed_points_ranges),
-  //                   size_t{ 0 },
-  //                   [](size_t accum, const auto& range) { return accum + range.size(); });
+  const auto start_node_point_count =
+    std::accumulate(std::begin(start_node_data),
+                    std::end(start_node_data),
+                    size_t{ 0 },
+                    [](size_t accum, const auto& range) { return accum + range.size(); });
 
-  // octree::NodeData merged_data{ start_node_point_count };
+  octree::NodeData merged_data{ start_node_point_count };
 
-  // merge_ranges(util::range(start_node_data.indexed_points_ranges),
-  //              util::range(merged_data),
-  //              [](const IndexedPoint64& l, const IndexedPoint64& r) {
-  //                return l.morton_index.get() < r.morton_index.get();
-  //              });
+  merge_ranges(util::range(start_node_data),
+               util::range(merged_data),
+               [](const IndexedPoint64& l, const IndexedPoint64& r) {
+                 return l.morton_index.get() < r.morton_index.get();
+               });
 
-  // octree::NodeStructure root_node;
-  // root_node.bounds = bounds;
-  // root_node.level = -1;
-  // root_node.max_depth = _meta_parameters.max_depth;
-  // root_node.max_spacing = _meta_parameters.spacing_at_root;
-  // root_node.morton_index = {};
-  // root_node.name = "r";
+  octree::NodeStructure root_node;
+  root_node.bounds = bounds;
+  root_node.level = -1;
+  root_node.max_depth = _meta_parameters.max_depth;
+  root_node.max_spacing = _meta_parameters.spacing_at_root;
+  root_node.morton_index = {};
+  root_node.name = "r";
 
-  // octree::NodeStructure this_node;
-  // this_node.bounds = get_bounds_from_morton_index(start_node_data.node_index, bounds);
-  // this_node.level = static_cast<int32_t>(start_node_data.node_index.depth()) - 1;
-  // this_node.max_depth = root_node.max_depth;
-  // this_node.max_spacing = root_node.max_spacing / std::pow(2,
-  // start_node_data.node_index.depth()); this_node.morton_index =
-  // start_node_data.node_index.to_static_morton_index<MAX_OCTREE_LEVELS>(); this_node.name =
-  // to_string(start_node_data.node_index, MortonIndexNamingConvention::Potree);
+  octree::NodeStructure this_node;
+  this_node.bounds = get_bounds_from_morton_index(node_index.to_static_morton_index(), bounds);
+  this_node.level = static_cast<int32_t>(node_index.levels()) - 1;
+  this_node.max_depth = root_node.max_depth;
+  this_node.max_spacing = root_node.max_spacing / std::pow(2, node_index.levels());
+  this_node.morton_index = node_index.to_static_morton_index();
+  this_node.name = std::string{ "r" } + OctreeNodeIndex64::to_string(node_index);
 
-  // return { std::move(merged_data), root_node, this_node };
+  return { std::move(merged_data), root_node, this_node };
+}
+
+void
+TilingAlgorithmV2::reconstruct_left_out_nodes(
+  const std::unordered_set<OctreeNodeIndex64>& left_out_nodes)
+{
+  // TODO Implement
+  util::write_log("Reconstructing left out nodes [not implemented ATM]...");
 }
 
 #pragma endregion

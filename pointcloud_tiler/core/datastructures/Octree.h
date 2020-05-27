@@ -3,9 +3,17 @@
 #include "datastructures/OctreeNodeIndex.h"
 
 #include <functional>
+#include <iterator>
 #include <optional>
 #include <queue>
 #include <unordered_map>
+
+#include <types/type_util.h>
+
+template<typename Tree>
+struct LevelOrderIterator;
+struct PreOrderIterator;
+struct PostOrderIterator;
 
 /**
  * Very general Octree datastructure
@@ -36,6 +44,9 @@ struct Octree
     {}
 
     TreeValueType& operator*() const { return _octree->_nodes.at(_index); }
+    TreeValueType* operator->() const { return &_octree->_nodes.at(_index); }
+
+    const OctreeNodeIndex64& index() const { return _index; }
 
     std::vector<Node> children() const
     {
@@ -101,10 +112,49 @@ struct Octree
       _octree->erase(_index);
     }
 
+    bool is_leaf() const
+    {
+      if (_index.levels() == OctreeNodeIndex64::MAX_LEVELS) {
+        return true;
+      }
+
+      return _octree->_nodes.find(_index.child(0)) == std::end(_octree->_nodes);
+    }
+
   private:
     Tree* _octree;
     OctreeNodeIndex64 _index;
   };
+
+  using ConstNode = Node<const Octree>;
+  using MutableNode = Node<Octree>;
+
+  /**
+   * Proxy object which can be used in a range-based for-loop to traverse the Octree. It
+   * accepts different iterators for different ways of traversing the tree
+   */
+  template<typename Iterator, typename Tree>
+  struct TraversalProxy
+  {
+    TraversalProxy(Tree* octree)
+      : _octree(octree)
+    {}
+
+    Iterator begin() const { return Iterator::begin(_octree); }
+
+    Iterator end() const { return Iterator::end(_octree); }
+
+  private:
+    Tree* _octree;
+  };
+
+  template<typename Tree>
+  friend struct LevelOrderIterator;
+  friend struct PreOrderIterator;
+  friend struct PostOrderIterator;
+
+  template<typename U>
+  friend struct Octree;
 
   Octree() {}
   Octree(std::initializer_list<std::pair<const OctreeNodeIndex64, T>> nodes)
@@ -172,6 +222,29 @@ struct Octree
   }
 
   /**
+   * Returns the size of this Octree (i.e. the number of nodes)
+   */
+  size_t size() const { return _nodes.size(); }
+
+  /**
+   * Returns an object that has begin() and end() member-functions to traverse this Octree in level
+   * order
+   */
+  TraversalProxy<LevelOrderIterator<Octree<T>>, Octree<T>> traverse_level_order()
+  {
+    return { this };
+  }
+
+  /**
+   * Returns an object that has begin() and end() member-functions to traverse this Octree in level
+   * order
+   */
+  TraversalProxy<LevelOrderIterator<const Octree<T>>, const Octree<T>> traverse_level_order() const
+  {
+    return { this };
+  }
+
+  /**
    * Returns true if the given Octrees are equal. Two Octrees are equal iff they have the exact same
    * nodes. The contents of the nodes are irrelevant, only the structure is relevant.
    */
@@ -208,6 +281,73 @@ struct Octree
     }
 
     return merged;
+  }
+
+  /**
+   * Same as merge(), but allows to transform the type of the data that the octree stored
+   */
+  template<typename U, typename UnaryFunc, typename BinaryFunc = std::plus<T>>
+  static Octree<T> transform_merge(const Octree<T>& l,
+                                   const Octree<U>& r,
+                                   UnaryFunc transform_func,
+                                   BinaryFunc merge_func = {})
+  {
+    Octree<T> merged;
+    for (auto& kv : l._nodes) {
+      auto iter_in_r = r._nodes.find(kv.first);
+      if (iter_in_r == std::end(r._nodes)) {
+        merged.insert(kv.first, kv.second);
+      } else {
+        merged.insert(kv.first, merge_func(kv.second, transform_func(iter_in_r->second)));
+      }
+    }
+
+    for (auto& kv : r._nodes) {
+      auto iter_in_merged = merged._nodes.find(kv.first);
+      if (iter_in_merged != std::end(merged._nodes))
+        continue; // Already added to 'merged'
+
+      merged.insert(kv.first, transform_func(kv.second));
+    }
+
+    return merged;
+  }
+
+  template<typename LabelFunc, typename IncludeFunc = AlwaysTruePredicate>
+  std::string to_graphviz(LabelFunc label_func, IncludeFunc include_func = {}) const
+  {
+    std::stringstream ss;
+
+    ss << "digraph octree {\n";
+
+    for (auto node : traverse_level_order()) {
+      if (!include_func(node))
+        continue;
+
+      if (node.index() == OctreeNodeIndex64{}) {
+        ss << "\troot [label=\"" << label_func(node) << "\"];\n";
+      } else {
+        ss << "\t" << OctreeNodeIndex64::to_string(node.index()) << " [label=\"" << label_func(node)
+           << "\"];\n";
+      }
+    }
+
+    for (auto node : traverse_level_order()) {
+      if (!include_func(node))
+        continue;
+
+      if (node.index() == OctreeNodeIndex64{}) {
+        ss << "\troot;\n";
+      } else {
+        const std::string parent_name = (node.index().parent().levels() == 0)
+                                          ? ("root")
+                                          : (OctreeNodeIndex64::to_string(node.index().parent()));
+        ss << "\t" << parent_name << " -> " << OctreeNodeIndex64::to_string(node.index()) << ";\n";
+      }
+    }
+
+    ss << "}";
+    return ss.str();
   }
 
 private:
@@ -276,4 +416,73 @@ private:
       }
     }
   }
+};
+
+template<typename Tree>
+struct LevelOrderIterator
+{
+
+  using difference_type = std::ptrdiff_t;
+  using value_type = typename Tree::template Node<Tree>;
+  using pointer = value_type*;
+  using reference = value_type&;
+  using iterator_category = std::forward_iterator_tag;
+
+  static LevelOrderIterator begin(Tree* octree)
+  {
+    LevelOrderIterator iter{ octree };
+    if (!octree->contains({}))
+      return iter;
+
+    auto root_node = octree->at({});
+    iter._next.push(root_node);
+    return iter;
+  }
+
+  static LevelOrderIterator end(Tree* octree) { return { octree }; }
+
+  friend bool operator==(const LevelOrderIterator& l, const LevelOrderIterator& r)
+  {
+    if (l._octree != r._octree)
+      return false;
+    if (l._next.size() != r._next.size())
+      return false;
+    if (l._next.empty())
+      return true;
+
+    return l._next.front().index() == r._next.front().index();
+  }
+
+  friend bool operator!=(const LevelOrderIterator& l, const LevelOrderIterator& r)
+  {
+    return !(l == r);
+  }
+
+  const value_type& operator*() const { return _next.front(); }
+
+  const value_type& operator->() const { return _next.front(); }
+
+  LevelOrderIterator& operator++()
+  {
+    auto children = _next.front().children();
+    for (auto child : children)
+      _next.push(child);
+    _next.pop();
+    return *this;
+  }
+
+  LevelOrderIterator operator++(int) const
+  {
+    auto it = *this;
+    ++*this;
+    return it;
+  }
+
+private:
+  LevelOrderIterator(Tree* octree)
+    : _octree(octree)
+  {}
+
+  Tree* _octree;
+  std::queue<value_type> _next;
 };

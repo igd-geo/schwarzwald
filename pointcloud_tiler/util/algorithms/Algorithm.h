@@ -110,12 +110,13 @@ merge_ranges(util::Range<ForwardIter> in_ranges, util::Range<OutputIter> out_ran
    */
   const auto get_and_increment_lowest_head = [&comparator](std::vector<InputRangeType>& heads,
                                                            auto& element) {
-    auto iter_to_lowest_head = std::begin(heads);
-    for (auto iter = std::begin(heads) + 1; iter != std::end(heads); ++iter) {
+    auto iter_to_lowest_head = std::end(heads);
+    for (auto iter = std::begin(heads); iter != std::end(heads); ++iter) {
       if (!iter->size())
         continue;
 
-      if (comparator(*std::begin(*iter), *std::begin(*iter_to_lowest_head))) {
+      if (iter_to_lowest_head == std::end(heads) ||
+          comparator(*std::begin(*iter), *std::begin(*iter_to_lowest_head))) {
         iter_to_lowest_head = iter;
       }
     }

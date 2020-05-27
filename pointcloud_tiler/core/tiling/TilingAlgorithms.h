@@ -151,19 +151,19 @@ private:
   /**
    * A range of indexed points for a specific octree node
    */
-  struct IndexedPointsForNode
-  {
-    IndexedPointsForNode()
-      : is_start_node(false)
-    {}
-    IndexedPointsForNode(bool is_start_node, std::vector<util::Range<IndexedPointsIter>> ranges)
-      : is_start_node(is_start_node)
-      , ranges(std::move(ranges))
-    {}
+  // struct IndexedPointsForNode
+  // {
+  //   IndexedPointsForNode()
+  //     : is_start_node(false)
+  //   {}
+  //   IndexedPointsForNode(bool is_start_node, std::vector<util::Range<IndexedPointsIter>> ranges)
+  //     : is_start_node(is_start_node)
+  //     , ranges(std::move(ranges))
+  //   {}
 
-    bool is_start_node;
-    std::vector<util::Range<IndexedPointsIter>> ranges;
-  };
+  //   bool is_start_node;
+  //   std::vector<util::Range<IndexedPointsIter>> ranges;
+  // };
 
   /**
    * Takes a range of points from a PointBuffer, calculates the Morton indices for the points
@@ -173,24 +173,30 @@ private:
                              util::Range<IndexedPointsIter> indexed_points,
                              const AABB& bounds) const;
 
-  Octree<IndexedPointsForNode> split_indexed_points_into_subranges(
+  Octree<util::Range<IndexedPointsIter>> split_indexed_points_into_subranges(
     util::Range<IndexedPointsIter> indexed_points,
     size_t min_number_of_ranges) const;
 
   /**
    * Merge the results of multiple 'split_indexed_points_into_subranges' invocations
    */
-  Octree<IndexedPointsForNode> merge_selected_start_nodes(
-    const std::vector<Octree<IndexedPointsForNode>>& selected_nodes,
+  Octree<std::vector<util::Range<IndexedPointsIter>>> merge_selected_start_nodes(
+    const std::vector<Octree<util::Range<IndexedPointsIter>>>& selected_nodes,
     size_t min_number_of_ranges);
 
   /**
    * Takes a range of sorted IndexedPoint ranges for a single node, merges the ranges into a single
    * sorted range and returns the necessary data for tiling this node
    */
-  NodeTilingData prepare_range_for_tiling(const IndexedPointsForNode& start_node_data,
-                                          OctreeNodeIndex64 node_index,
-                                          const AABB& bounds);
+  NodeTilingData prepare_range_for_tiling(
+    const std::vector<util::Range<IndexedPointsIter>>& start_node_data,
+    OctreeNodeIndex64 node_index,
+    const AABB& bounds);
 
-  std::vector<Octree<IndexedPointsForNode>> _indexed_points_ranges;
+  /**
+   * Reconstruct the nodes that we left out initially
+   */
+  void reconstruct_left_out_nodes(const std::unordered_set<OctreeNodeIndex64>& left_out_nodes);
+
+  std::vector<Octree<util::Range<IndexedPointsIter>>> _indexed_points_ranges;
 };

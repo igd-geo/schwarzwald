@@ -310,6 +310,15 @@ struct OctreeNodeIndex
   }
 
   /**
+   * Converts this structure into a fixed-size MortonIndex
+   */
+  constexpr MortonIndex<MaxLevels> to_static_morton_index() const
+  {
+    const auto shift = static_cast<StorageType>((MaxLevels - _levels) * 3);
+    return { static_cast<StorageType>(_index << shift) };
+  }
+
+  /**
    * Tries to parse the given string into an OctreeNodeIndex. Returns the parsed index on success
    * and the reason for failure otherwise.
    */
