@@ -3,6 +3,7 @@
 #include "datastructures/DynamicMortonIndex.h"
 #include "datastructures/MortonIndex.h"
 #include "datastructures/PointBuffer.h"
+#include "datastructures/OctreeNodeIndex.h"
 #include "math/AABB.h"
 #include "tiling/Sampling.h"
 #include "util/stuff.h"
@@ -62,6 +63,13 @@ get_octant_bounds(uint8_t octant, const AABB& parent_bounds);
  */
 AABB
 get_bounds_from_node_name(const std::string& node_name, const AABB& root_bounds);
+
+/**
+ * Returns the root bounds of the octree that the given node belongs to, based on the
+ * bounds of the node
+ */
+AABB
+get_root_bounds_from_node(OctreeNodeIndex64 node_index, const AABB& node_bounds);
 
 /**
  * Returns the index of the octant of 'bounds' that the given position lies in

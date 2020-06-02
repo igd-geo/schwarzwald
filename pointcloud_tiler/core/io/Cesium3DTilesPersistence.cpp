@@ -1,11 +1,13 @@
 #include "io/Cesium3DTilesPersistence.h"
 
 #include "datastructures/DynamicMortonIndex.h"
+#include "datastructures/OctreeNodeIndex.h"
 #include "io/PNTSReader.h"
 #include "io/PNTSWriter.h"
 #include "io/TileSetWriter.h"
 #include "pointcloud/PointAttributes.h"
 #include "threading/Parallel.h"
+#include "tiling/OctreeAlgorithms.h"
 #include "util/Transformation.h"
 #include "util/stuff.h"
 
@@ -60,46 +62,82 @@ Cesium3DTilesPersistence::on_write_node(const std::string& node_name, const AABB
 {
   std::lock_guard _{ *_tilesets_lock };
 
-  const auto setup_tileset = [this, &node_name, &node_bounds](Tileset& tileset) {
-    const auto node_morton_index =
-      DynamicMortonIndex::parse_string(node_name, MortonIndexNamingConvention::Potree).value();
+  const auto setup_tileset =
+    [this](Tileset& tileset, const std::string& node_name, const AABB& node_bounds) {
+      const auto node_morton_index =
+        DynamicMortonIndex::parse_string(node_name, MortonIndexNamingConvention::Potree).value();
 
-    tileset.boundingVolume = boundingVolumeFromAABB(node_bounds.translate(_global_offset));
-    tileset.content_url = concat(node_name, ".pnts");
-    tileset.url = concat(node_name, ".json");
-    tileset.geometricError =
-      _spacing_at_root / std::pow(2.0, static_cast<double>(node_morton_index.depth()));
-    tileset.name = node_name;
-  };
+      tileset.boundingVolume = boundingVolumeFromAABB(node_bounds.translate(_global_offset));
+      tileset.content_url = concat(node_name, ".pnts");
+      tileset.url = concat(node_name, ".json");
+      tileset.geometricError =
+        _spacing_at_root / std::pow(2.0, static_cast<double>(node_morton_index.depth()));
+      tileset.name = node_name;
+    };
 
   if (!_root_tileset) {
-    if (node_name != "r")
-      throw std::runtime_error{ "Root node must be the first node written!" };
+    // if (node_name != "r") {
+    //   // TODO Why is this check here? It seems reasonable to start with a deeper node and simply
+    //   // reconstruct the higher tilesets on demand. We
+    //   // have the bounds and everything available (or can calculate it)
+    //   throw std::runtime_error{ "Root node must be the first node written!" };
+    // }
+
+    const auto node_index = OctreeNodeIndex64::from_string(node_name.substr(1)).value();
+    const auto root_bounds = get_root_bounds_from_node(node_index, node_bounds);
 
     _root_tileset = Tileset{};
-    setup_tileset(*_root_tileset);
+    setup_tileset(*_root_tileset, "r", root_bounds);
+
+    auto current_tileset = &*_root_tileset;
+    auto current_bounds = root_bounds;
+
+    for (uint32_t level = 0; level < node_index.levels(); ++level) {
+      const auto current_octant = node_index.octant_at_level(level);
+      current_bounds = get_octant_bounds(current_octant, current_bounds);
+      const auto child_name = current_tileset->name + (static_cast<char>('0' + current_octant));
+
+      auto& child = current_tileset->children.emplace_back();
+      setup_tileset(child, child_name, current_bounds);
+
+      current_tileset = &child;
+    }
 
     return;
   }
 
-  // Find the matching tileset, or the immediate parent
+  // Find the matching tileset or one of its parents, and create all the missing tilesets between
+  // the next parent and this node
+  const auto node_index = OctreeNodeIndex64::from_string(node_name.substr(1)).value();
   auto current_tileset = &*_root_tileset;
+  auto current_bounds = get_root_bounds_from_node(node_index, node_bounds);
+
   for (size_t idx = 1; idx < node_name.size(); ++idx) {
+    const auto child_index = node_index.parent_at_level(idx);
+    const auto octant = child_index.octant_at_level(idx);
+
     auto substr = node_name.substr(0, idx + 1);
     auto child_iter =
       std::find_if(std::begin(current_tileset->children),
                    std::end(current_tileset->children),
                    [&substr](const Tileset& tileset) { return tileset.name == substr; });
 
+    const auto child_bounds = get_octant_bounds(octant, current_bounds);
+
     if (child_iter == std::end(current_tileset->children)) {
-      assert(idx == node_name.size() - 1);
-      // Add as new child
+
       auto& child = current_tileset->children.emplace_back();
-      setup_tileset(child);
-      break;
+      setup_tileset(child, substr, child_bounds);
+
+      child_iter = std::prev(std::end(current_tileset->children));
+
+      if (idx == node_name.size() - 1) {
+        break;
+      }
     }
 
     current_tileset = &*child_iter;
+    current_bounds = child_bounds;
   }
 }
 
