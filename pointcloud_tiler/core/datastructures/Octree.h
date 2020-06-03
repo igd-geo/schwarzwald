@@ -266,9 +266,9 @@ struct Octree
     for (auto& kv : l._nodes) {
       auto iter_in_r = r._nodes.find(kv.first);
       if (iter_in_r == std::end(r._nodes)) {
-        merged.insert(kv.first, kv.second);
+        merged._nodes.insert_or_assign(kv.first, kv.second);
       } else {
-        merged.insert(kv.first, merge_func(kv.second, iter_in_r->second));
+        merged._nodes.insert_or_assign(kv.first, merge_func(kv.second, iter_in_r->second));
       }
     }
 
@@ -277,7 +277,7 @@ struct Octree
       if (iter_in_merged != std::end(merged._nodes))
         continue; // Already added to 'merged'
 
-      merged.insert(kv.first, kv.second);
+      merged._nodes.insert_or_assign(kv.first, kv.second);
     }
 
     return merged;
@@ -292,13 +292,16 @@ struct Octree
                                    UnaryFunc transform_func,
                                    BinaryFunc merge_func = {})
   {
+    // Merging two valid octrees means that we don't need any checks for existing parent/sibling
+    // nodes. We can just add all nodes directly, merge duplicated nodes accordingly, and are done
     Octree<T> merged;
     for (auto& kv : l._nodes) {
       auto iter_in_r = r._nodes.find(kv.first);
       if (iter_in_r == std::end(r._nodes)) {
-        merged.insert(kv.first, kv.second);
+        merged._nodes.insert_or_assign(kv.first, kv.second);
       } else {
-        merged.insert(kv.first, merge_func(kv.second, transform_func(iter_in_r->second)));
+        merged._nodes.insert_or_assign(kv.first,
+                                       merge_func(kv.second, transform_func(iter_in_r->second)));
       }
     }
 
@@ -307,7 +310,7 @@ struct Octree
       if (iter_in_merged != std::end(merged._nodes))
         continue; // Already added to 'merged'
 
-      merged.insert(kv.first, transform_func(kv.second));
+      merged._nodes.insert_or_assign(kv.first, transform_func(kv.second));
     }
 
     return merged;
