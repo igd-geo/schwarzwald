@@ -8,24 +8,28 @@
 
 namespace bio = boost::iostreams;
 
-BinaryPersistence::BinaryPersistence(const std::string &work_dir,
-                                     const PointAttributes &point_attributes,
+BinaryPersistence::BinaryPersistence(const std::string& work_dir,
+                                     const PointAttributes& point_attributes,
                                      Compressed compressed)
-    : _work_dir(work_dir), _point_attributes(point_attributes),
-      _compressed(compressed),
-      _file_extension(compressed == Compressed::Yes ? ".binz" : ".bin") {}
+  : _work_dir(work_dir)
+  , _point_attributes(point_attributes)
+  , _compressed(compressed)
+  , _file_extension(compressed == Compressed::Yes ? ".binz" : ".bin")
+{}
 
 BinaryPersistence::~BinaryPersistence() {}
 
-void BinaryPersistence::persist_points(PointBuffer const &points,
-                                       const AABB &bounds,
-                                       const std::string &node_name) {
+void
+BinaryPersistence::persist_points(PointBuffer const& points,
+                                  const AABB& bounds,
+                                  const std::string& node_name)
+{
   if (!points.count())
-    throw std::runtime_error{"No points selected"};
+    throw std::runtime_error{ "No points selected" };
 
   const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
 
-  bio::file_sink fs{file_path, std::ios::out | std::ios::binary};
+  bio::file_sink fs{ file_path, std::ios::out | std::ios::binary };
   if (!fs.is_open()) {
     std::cerr << "Could not write points file " << file_path << std::endl;
     return;
@@ -35,15 +39,14 @@ void BinaryPersistence::persist_points(PointBuffer const &points,
   if (_compressed == Compressed::Yes) {
     bio::zlib_params zlib_params;
     zlib_params.level = bio::zlib::best_speed;
-    stream.push(bio::zlib_compressor{zlib_params, 1 << 18});
+    stream.push(bio::zlib_compressor{ zlib_params, 1 << 18 });
   }
   stream.push(fs);
 
-  const uint32_t properties_bitmask =
-      (points.hasColors() ? COLOR_BIT : 0u) |
-      (points.hasNormals() ? NORMAL_BIT : 0u) |
-      (points.hasIntensities() ? INTENSITY_BIT : 0u) |
-      (points.hasClassifications() ? CLASSIFICATION_BIT : 0u);
+  const uint32_t properties_bitmask = (points.hasColors() ? COLOR_BIT : 0u) |
+                                      (points.hasNormals() ? NORMAL_BIT : 0u) |
+                                      (points.hasIntensities() ? INTENSITY_BIT : 0u) |
+                                      (points.hasClassifications() ? CLASSIFICATION_BIT : 0u);
 
   write_binary(properties_bitmask, stream);
   write_binary(static_cast<uint64_t>(points.count()), stream);
@@ -80,13 +83,14 @@ void BinaryPersistence::persist_points(PointBuffer const &points,
   stream.pop();
 }
 
-void BinaryPersistence::retrieve_points(const std::string &node_name,
-                                        PointBuffer &points) {
+void
+BinaryPersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
+{
   const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
   if (!std::experimental::filesystem::exists(file_path))
     return;
 
-  bio::file_source fs{file_path, std::ios::in | std::ios::binary};
+  bio::file_source fs{ file_path, std::ios::in | std::ios::binary };
   if (!fs.is_open()) {
     std::cerr << "Could not read points file " << file_path << std::endl;
     return;
@@ -107,8 +111,7 @@ void BinaryPersistence::retrieve_points(const std::string &node_name,
   const auto has_colors = (properties_bitmask & COLOR_BIT) != 0;
   const auto has_normals = (properties_bitmask & NORMAL_BIT) != 0;
   const auto has_intensities = (properties_bitmask & INTENSITY_BIT) != 0;
-  const auto has_classifications =
-      (properties_bitmask & CLASSIFICATION_BIT) != 0;
+  const auto has_classifications = (properties_bitmask & CLASSIFICATION_BIT) != 0;
 
   std::vector<Vector3<double>> positions;
   std::vector<Vector3<uint8_t>> colors;
@@ -117,39 +120,45 @@ void BinaryPersistence::retrieve_points(const std::string &node_name,
   std::vector<uint8_t> classifications;
 
   positions.resize(points_count);
-  for (auto &position : positions) {
+  for (auto& position : positions) {
     read_binary(position, stream);
   }
 
   if (has_colors) {
     colors.resize(points_count);
-    for (auto &color : colors) {
+    for (auto& color : colors) {
       read_binary(color, stream);
     }
   }
 
   if (has_normals) {
     normals.resize(points_count);
-    for (auto &normal : normals) {
+    for (auto& normal : normals) {
       read_binary(normal, stream);
     }
   }
 
   if (has_intensities) {
     intensities.resize(points_count);
-    for (auto &intensity : intensities) {
+    for (auto& intensity : intensities) {
       read_binary(intensity, stream);
     }
   }
 
   if (has_classifications) {
     classifications.resize(points_count);
-    for (auto &classification : classifications) {
+    for (auto& classification : classifications) {
       read_binary(classification, stream);
     }
   }
 
-  points = PointBuffer{points_count,           std::move(positions),
-                       std::move(colors),      std::move(normals),
-                       std::move(intensities), std::move(classifications)};
+  points = PointBuffer{ points_count,       std::move(positions),   std::move(colors),
+                        std::move(normals), std::move(intensities), std::move(classifications) };
+}
+
+bool
+BinaryPersistence::node_exists(const std::string& node_name) const
+{
+  const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
+  return fs::exists(file_path);
 }

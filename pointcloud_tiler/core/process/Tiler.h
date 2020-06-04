@@ -16,6 +16,7 @@
 #include <thread>
 
 struct ProgressReporter;
+struct TilingAlgorithmBase;
 
 struct TilerMetaParameters
 {
@@ -57,6 +58,8 @@ private:
   fs::path _output_directory;
 
   PointBuffer _store;
+
+  std::unique_ptr<TilingAlgorithmBase> _tiling_algorithm;
 
   std::thread _indexing_thread;
   Semaphore _producers, _consumers;

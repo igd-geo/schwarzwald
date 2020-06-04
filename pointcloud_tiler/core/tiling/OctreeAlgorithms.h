@@ -1,5 +1,6 @@
 #pragma once
 
+#include "containers/Range.h"
 #include "datastructures/DynamicMortonIndex.h"
 #include "datastructures/MortonIndex.h"
 #include "datastructures/OctreeNodeIndex.h"
@@ -222,10 +223,10 @@ Iter filter_points_for_octree_node(
  * 'Iter' has to dereference to IndexedPoint<N> for arbitrary N
  */
 template <typename Iter>
-std::array<std::pair<Iter, Iter>, 8>
+std::array<util::Range<Iter>, 8>
 partition_points_into_child_octants(Iter begin, Iter end,
                                     uint32_t level_to_partition_at) {
-  std::array<std::pair<Iter, Iter>, 8> partitions;
+  std::array<util::Range<Iter>, 8> partitions;
   auto current_begin = begin;
 
   for (uint8_t octant = 0; octant < 8; ++octant) {
@@ -238,7 +239,7 @@ partition_points_into_child_octants(Iter begin, Iter end,
                      level_to_partition_at) > octant;
         });
 
-    partitions[octant] = std::make_pair(current_begin, current_end);
+    partitions[octant] = {current_begin, current_end};
     current_begin = current_end;
   }
 

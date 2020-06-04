@@ -41,6 +41,11 @@ struct PointsPersistence
     std::visit([&](auto& impl) { impl.retrieve_points(node_name, points); }, _impl);
   }
 
+  inline bool node_exists(const std::string& node_name) const
+  {
+    return std::visit([&](auto& impl) { return impl.node_exists(node_name); }, _impl);
+  }
+
   template<typename T>
   const T& get() const
   {

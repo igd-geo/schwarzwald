@@ -150,11 +150,12 @@ find_start_nodes_of_batch(PointBuffer::PointIterator points_begin,
 [[maybe_unused]] static std::vector<NodeWithPointCount>
 select_start_nodes(const PointsPerNode& nodes_tree, size_t desired_nodes_count)
 {
-  // Let 'nodes_tree' be an octree where each node contains the number of points that belong
-  // to this node. This function then selects as close to 'desired_nodes_count' nodes as possible
-  // from this tree, starting from the root node. Nodes are recursively split as long as the total
-  // node count is less than 'desired_nodes_count'. For splitting, the node with the largest number
-  // of points is used.
+  // Let 'nodes_tree' be an octree where each node contains the number of points
+  // that belong to this node. This function then selects as close to
+  // 'desired_nodes_count' nodes as possible from this tree, starting from the
+  // root node. Nodes are recursively split as long as the total node count is
+  // less than 'desired_nodes_count'. For splitting, the node with the largest
+  // number of points is used.
   PointsPerNode selected_nodes;
 
   const auto node_has_children = [](const NodeWithPointCount& node, const PointsPerNode& nodes) {
@@ -183,7 +184,8 @@ select_start_nodes(const PointsPerNode& nodes_tree, size_t desired_nodes_count)
 
   const auto split_node_with_largest_count =
     [&selected_nodes, &nodes_tree, find_max_node]() -> bool {
-    // Find node with largest count THAT HAS CHILDREN! If no node has children, we are done
+    // Find node with largest count THAT HAS CHILDREN! If no node has children,
+    // we are done
     const auto max_node = find_max_node(selected_nodes);
     if (!max_node)
       return false;
@@ -225,7 +227,8 @@ filter_and_sort_indexed_points(std::vector<IndexedPoint64>::iterator indexed_poi
   // Sort the indexed points...
   std::sort(indexed_points_begin, indexed_points_end);
 
-  //...then split the whole range up into N ranges where each range encompasses all points that
+  //...then split the whole range up into N ranges where each range encompasses
+  // all points that
   // belong to a single node in 'nodes'
   std::vector<IndexedPointRange> indexed_ranges;
   indexed_ranges.reserve(nodes.size());
@@ -314,12 +317,13 @@ merge_and_process_points(const std::vector<IndexedPointRange>& sorted_ranges_for
     node_data.push_back(*next_range.begin++);
   }
 
-  // TODO Continue implementing this algorithm. Should be just creating the NodeStructure and
-  // calling process_node
+  // TODO Continue implementing this algorithm. Should be just creating the
+  // NodeStructure and calling process_node
   octree::NodeStructure node_structure;
   node_structure.bounds = get_bounds_from_morton_index(morton_index_of_node, root_node.bounds);
-  node_structure.level = static_cast<int32_t>(morton_index_of_node.depth()) -
-                         1; // TODO Definitiely fix this hacky 'root-level-is-negative-one' stuff...
+  node_structure.level =
+    static_cast<int32_t>(morton_index_of_node.depth()) - 1; // TODO Definitiely fix this hacky
+                                                            // 'root-level-is-negative-one' stuff...
   node_structure.max_depth = root_node.max_depth;
   node_structure.max_spacing = root_node.max_spacing / (1 << morton_index_of_node.depth());
   node_structure.morton_index = morton_index_of_node.to_static_morton_index<MAX_OCTREE_LEVELS>();
@@ -359,6 +363,14 @@ Tiler::Tiler(const AABB& aabb,
   }
 
   _indexing_thread = std::thread([this]() { run_worker(); });
+
+  _tiling_algorithm =
+    std::make_unique<TilingAlgorithmV3>(_sampling_strategy,
+                                        _progress_reporter,
+                                        _persistence,
+                                        _meta_parameters,
+                                        _output_directory,
+                                        std::max(1u, std::thread::hardware_concurrency() - 1));
 }
 
 Tiler::~Tiler()
@@ -408,6 +420,8 @@ Tiler::close()
   _producers.notify();
 
   _indexing_thread.join();
+
+  _tiling_algorithm->finalize(_aabb);
 }
 
 void
@@ -423,10 +437,6 @@ Tiler::run_worker()
     executor_observer = executor.make_observer<ExecutorObserver>();
   }
 
-  auto tiling_algorithm = TilingAlgorithmV2{
-    _sampling_strategy, _progress_reporter, _persistence, _meta_parameters, concurrency
-  };
-
   while (_run_indexing_thread) {
     _producers.wait();
     if (!_run_indexing_thread)
@@ -434,7 +444,7 @@ Tiler::run_worker()
 
     tf::Taskflow taskflow;
 
-    tiling_algorithm.build_execution_graph(_indexing_point_cache, _aabb, taskflow);
+    _tiling_algorithm->build_execution_graph(_indexing_point_cache, _aabb, taskflow);
 
     executor.run(taskflow).wait();
 

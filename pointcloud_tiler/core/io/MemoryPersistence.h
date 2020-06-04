@@ -35,6 +35,8 @@ struct MemoryPersistence
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
+  bool node_exists(const std::string& node_name) const;
+
   const auto& get_points() const { return _points_cache; }
 
 private:

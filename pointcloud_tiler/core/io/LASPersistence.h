@@ -12,20 +12,25 @@
 
 struct SRSTransformHelper;
 
-double compute_las_scale_from_bounds(const AABB &bounds);
+double
+compute_las_scale_from_bounds(const AABB& bounds);
 
 /**
  * Sink for writing LAS files
  */
-struct LASPersistence {
-  LASPersistence(const std::string &work_dir,
-                 const PointAttributes &point_attributes,
+struct LASPersistence
+{
+  LASPersistence(const std::string& work_dir,
+                 const PointAttributes& point_attributes,
                  Compressed compressed = Compressed::No);
   ~LASPersistence();
 
-  template <typename Iter>
-  void persist_points(Iter points_begin, Iter points_end, const AABB &bounds,
-                      const std::string &node_name) {
+  template<typename Iter>
+  void persist_points(Iter points_begin,
+                      Iter points_end,
+                      const AABB& bounds,
+                      const std::string& node_name)
+  {
     const auto points_count = std::distance(points_begin, points_end);
     if (!points_count)
       return;
@@ -34,18 +39,16 @@ struct LASPersistence {
     laszip_create(&laswriter);
 
     if (!laswriter) {
-      std::cerr << "Could not create LAS writer for node " << node_name
-                << std::endl;
+      std::cerr << "Could not create LAS writer for node " << node_name << std::endl;
       return;
     }
 
     BOOST_SCOPE_EXIT_TPL(&laswriter) { laszip_destroy(laswriter); }
     BOOST_SCOPE_EXIT_END
 
-    laszip_header *las_header;
+    laszip_header* las_header;
     if (laszip_get_header_pointer(laswriter, &las_header)) {
-      std::cerr << "Could not write LAS header for node " << node_name
-                << std::endl;
+      std::cerr << "Could not write LAS header for node " << node_name << std::endl;
       return;
     }
 
@@ -58,14 +61,11 @@ struct LASPersistence {
     // las_header->header_size = sizeof(laszip_header);
     las_header->number_of_point_records = points_count;
     las_header->number_of_points_by_return[0] = points_count;
-    las_header->number_of_points_by_return[1] =
-        las_header->number_of_points_by_return[2] =
-            las_header->number_of_points_by_return[3] =
-                las_header->number_of_points_by_return[4] = 0;
+    las_header->number_of_points_by_return[1] = las_header->number_of_points_by_return[2] =
+      las_header->number_of_points_by_return[3] = las_header->number_of_points_by_return[4] = 0;
     las_header->version_major = 1;
     las_header->version_minor = 2;
-    std::memcpy(las_header->generating_software, "pointcloud_tiler",
-                sizeof("pointcloud_tiler"));
+    std::memcpy(las_header->generating_software, "pointcloud_tiler", sizeof("pointcloud_tiler"));
     las_header->offset_to_point_data = las_header->header_size;
     las_header->number_of_variable_length_records = 0;
     las_header->point_data_format = 2;
@@ -81,33 +81,29 @@ struct LASPersistence {
     las_header->max_y = bounds.max.y; // - local_offset_to_world.y;
     las_header->max_z = bounds.max.z; // - local_offset_to_world.z;
 
-    las_header->x_scale_factor = las_header->y_scale_factor =
-        las_header->z_scale_factor = compute_las_scale_from_bounds(bounds);
+    las_header->x_scale_factor = las_header->y_scale_factor = las_header->z_scale_factor =
+      compute_las_scale_from_bounds(bounds);
 
     const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
-    if (laszip_open_writer(laswriter, file_path.c_str(),
-                           (_compressed == Compressed::Yes))) {
-      std::cerr << "Could not write LAS file for node " << node_name
-                << std::endl;
+    if (laszip_open_writer(laswriter, file_path.c_str(), (_compressed == Compressed::Yes))) {
+      std::cerr << "Could not write LAS file for node " << node_name << std::endl;
       return;
     }
 
     BOOST_SCOPE_EXIT_TPL(&laswriter) { laszip_close_writer(laswriter); }
     BOOST_SCOPE_EXIT_END
 
-    laszip_point *laspoint;
+    laszip_point* laspoint;
     if (laszip_get_point_pointer(laswriter, &laspoint)) {
-      std::cerr << "Could not write LAS points for node " << node_name
-                << std::endl;
+      std::cerr << "Could not write LAS points for node " << node_name << std::endl;
       return;
     }
 
-    std::for_each(points_begin, points_end, [&](const auto &point_ref) {
+    std::for_each(points_begin, points_end, [&](const auto& point_ref) {
       const auto pos = point_ref.position();
-      laszip_F64 coordinates[3] = {pos.x, pos.y, pos.z};
+      laszip_F64 coordinates[3] = { pos.x, pos.y, pos.z };
       if (laszip_set_coordinates(laswriter, coordinates)) {
-        std::cerr << "Could not set coordinates for LAS point at node "
-                  << node_name << std::endl;
+        std::cerr << "Could not set coordinates for LAS point at node " << node_name << std::endl;
         return;
       }
 
@@ -130,21 +126,21 @@ struct LASPersistence {
       }
 
       if (laszip_write_point(laswriter)) {
-        std::cerr << "Could not write LAS point for node " << node_name
-                  << std::endl;
+        std::cerr << "Could not write LAS point for node " << node_name << std::endl;
         return;
       }
     });
   }
 
-  void persist_points(PointBuffer const &points, const AABB &bounds,
-                      const std::string &node_name);
+  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
 
-  void retrieve_points(const std::string &node_name, PointBuffer &points);
+  void retrieve_points(const std::string& node_name, PointBuffer& points);
+
+  bool node_exists(const std::string& node_name) const;
 
 private:
   std::string _work_dir;
-  const PointAttributes &_point_attributes;
+  const PointAttributes& _point_attributes;
   Compressed _compressed;
   std::string _file_extension;
 };
