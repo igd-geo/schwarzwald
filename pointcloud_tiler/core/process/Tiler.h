@@ -18,6 +18,24 @@
 struct ProgressReporter;
 struct TilingAlgorithmBase;
 
+/**
+ * Which tiling strategy to use?
+ */
+enum class TilingStrategy
+{
+  /**
+   * Use the accurate strategy that samples from the root node. This will be slower than
+   * the 'Fast' strategy, that skips the first couple of levels and reconstructs them afterwards
+   */
+  Accurate,
+  /**
+   * Use the fast strategy that skips the first couple of levels and starts tiling deeper in the
+   * octree to enable increased parallelism. The skipped levels are reconstructed and thus contain
+   * duplicated data
+   */
+  Fast
+};
+
 struct TilerMetaParameters
 {
   float spacing_at_root;
@@ -25,6 +43,7 @@ struct TilerMetaParameters
   size_t max_points_per_node;
   size_t internal_cache_size;
   bool create_journal;
+  TilingStrategy tiling_strategy;
 };
 
 struct Tiler

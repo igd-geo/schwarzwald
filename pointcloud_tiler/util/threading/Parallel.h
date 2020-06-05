@@ -175,7 +175,8 @@ scatter(InputIterator begin,
         InputIterator end,
         Func func,
         Taskflow& taskflow,
-        size_t scatter_factor)
+        size_t scatter_factor,
+        std::string name_prefix = "")
 {
   const auto distance = static_cast<size_t>(std::abs(std::distance(begin, end)));
   if (distance < scatter_factor) {
@@ -190,10 +191,19 @@ scatter(InputIterator begin,
   result.begin_task = taskflow.placeholder();
   result.scattered_tasks.reserve(scatter_factor);
 
+  const auto name_tasks = !name_prefix.empty();
+  if (name_tasks) {
+    result.begin_task.name(util::concat(name_prefix, "_begin"));
+  }
+
   for (size_t idx = 0; idx < scatter_factor; ++idx) {
     const auto [chunk_begin, chunk_end] = scatter_chunks[idx];
     auto worker_task = taskflow.emplace(
       [chunk_begin, chunk_end, func, idx]() { func(chunk_begin, chunk_end, idx); });
+
+    if (name_tasks) {
+      worker_task.name(util::concat(name_prefix, "_", idx));
+    }
 
     result.begin_task.precede(worker_task);
     result.scattered_tasks.push_back(worker_task);

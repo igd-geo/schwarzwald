@@ -10,6 +10,22 @@
 #include <variant>
 
 /**
+ * Different behaviours for the SamplingStrategies based on the number of points
+ * that they process
+ */
+enum class SamplingBehaviour {
+  /**
+   * If 'sample_points' is called with a range that has <= max_points points, the 
+   * sampling process will be skipped and all points are taken instead
+   */
+  TakeAllWhenCountBelowMaxPoints,
+  /**
+   * No matter the point count, always adhere to the minimum spacing
+   */
+  AlwaysAdhereToMinSpacing
+};
+
+/**
  * Sampling strategy that partitions a node into an even grid and takes the
  * first point to fall into each grid cell
  */
@@ -23,14 +39,19 @@ struct RandomSortedGridSampling
                      MortonIndex<MaxLevels> node_key,
                      int32_t node_level,
                      const AABB& root_bounds,
-                     float spacing_at_root)
+                     float spacing_at_root,
+                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    const auto num_points_to_process = static_cast<size_t>(std::distance(begin, end));
-    if (num_points_to_process <= _max_points_per_node) {
-      return end;
+    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+      const auto num_points_to_process =
+        static_cast<size_t>(std::distance(begin, end));
+      if (num_points_to_process <= _max_points_per_node) {
+        return end;
+      }
     }
 
-    const auto spacing_at_this_node = spacing_at_root / std::pow(2, node_level + 1);
+    const auto spacing_at_this_node =
+      spacing_at_root / std::pow(2, node_level + 1);
     // candidate_level_in_octree is the last level in the octree at which the
     // node sidelength is >= spacing we use floor() here because this guarantees
     // that we always get a node with sidelength
@@ -44,7 +65,8 @@ struct RandomSortedGridSampling
     // round to the larger node
     const auto candidate_level_in_octree =
       std::max(-1,
-               (int)std::floor(std::log2f(root_bounds.extent().x / spacing_at_this_node)) -
+               (int)std::floor(
+                 std::log2f(root_bounds.extent().x / spacing_at_this_node)) -
                  1); // the root node (whole octree) is level '-1', so level
                      // 0 has a sidelength of half the max octree, hence we
                      // have to subtract one here
@@ -73,7 +95,9 @@ struct RandomSortedGridSampling
 
       size_t num_taken_indices = 0;
       partition_point = stable_partition_with_jumps(
-        begin, end, [this, &num_taken_indices, level](const auto curBegin, const auto end) {
+        begin,
+        end,
+        [this, &num_taken_indices, level](const auto curBegin, const auto end) {
           // Take the first point, then look for the next point that falls
           // into a different cell up to the current level
           const auto taken_iter = curBegin;
@@ -82,7 +106,8 @@ struct RandomSortedGridSampling
           //   return std::make_pair(taken_iter, end);
           // }
 
-          const auto taken_cell_idx = taken_iter->morton_index.truncate_to_level(level);
+          const auto taken_cell_idx =
+            taken_iter->morton_index.truncate_to_level(level);
           // const auto next_iter =
           //   std::find_if(taken_iter + 1, end, [taken_cell_idx, level](const
           //   auto& other_point) {
@@ -91,7 +116,9 @@ struct RandomSortedGridSampling
           //            taken_cell_idx.get();
           //   });
           const auto next_iter = std::partition_point(
-            taken_iter + 1, end, [taken_cell_idx, level](const auto& other_point) {
+            taken_iter + 1,
+            end,
+            [taken_cell_idx, level](const auto& other_point) {
               return other_point.morton_index.truncate_to_level(level).get() <=
                      taken_cell_idx.get();
             });
@@ -137,16 +164,24 @@ struct GridCenterSampling
                      MortonIndex<MaxLevels> node_key,
                      int32_t node_level,
                      const AABB& root_bounds,
-                     float spacing_at_root)
+                     float spacing_at_root,
+                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    const auto num_points_to_process = static_cast<size_t>(std::distance(begin, end));
-    if (num_points_to_process <= _max_points_per_node) {
-      return end;
+    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+      const auto num_points_to_process =
+        static_cast<size_t>(std::distance(begin, end));
+      if (num_points_to_process <= _max_points_per_node) {
+        return end;
+      }
     }
 
-    const auto spacing_at_this_node = spacing_at_root / std::pow(2, node_level + 1);
+    const auto spacing_at_this_node =
+      spacing_at_root / std::pow(2, node_level + 1);
     const auto candidate_level_in_octree =
-      std::max(-1, (int)std::floor(std::log2f(root_bounds.extent().x / spacing_at_this_node)) - 1);
+      std::max(-1,
+               (int)std::floor(
+                 std::log2f(root_bounds.extent().x / spacing_at_this_node)) -
+                 1);
     auto partition_point = begin;
 
     if (candidate_level_in_octree == -1) {
@@ -157,8 +192,8 @@ struct GridCenterSampling
     return stable_partition_with_jumps(
       begin,
       end,
-      [this, candidate_level_in_octree, &num_selected_points, &root_bounds](const auto cur_begin,
-                                                                            const auto cur_end) {
+      [this, candidate_level_in_octree, &num_selected_points, &root_bounds](
+        const auto cur_begin, const auto cur_end) {
         /*
         HACK truncate_to_level shifts down but it should just mask away the
         lower levels. This causes bugs because the new key starts at
@@ -180,9 +215,11 @@ struct GridCenterSampling
         const auto points_in_same_cell_end = std::partition_point(
           cur_begin + 1,
           cur_end,
-          [current_cell_idx, candidate_level_in_octree](const auto& other_point) {
-            return other_point.morton_index.truncate_to_level(candidate_level_in_octree).get() <=
-                   current_cell_idx.get();
+          [current_cell_idx,
+           candidate_level_in_octree](const auto& other_point) {
+            return other_point.morton_index
+                     .truncate_to_level(candidate_level_in_octree)
+                     .get() <= current_cell_idx.get();
           });
 
         // Find the point closest to the center of the current cell bounds
@@ -191,11 +228,15 @@ struct GridCenterSampling
         const auto current_cell_center = current_cell_bounds.getCenter();
 
         const auto min_point = std::min_element(
-          cur_begin, points_in_same_cell_end, [&current_cell_center](const auto& l, const auto& r) {
+          cur_begin,
+          points_in_same_cell_end,
+          [&current_cell_center](const auto& l, const auto& r) {
             const auto l_dist_to_center =
-              l.point_reference.position().squaredDistanceTo(current_cell_center);
+              l.point_reference.position().squaredDistanceTo(
+                current_cell_center);
             const auto r_dist_to_center =
-              r.point_reference.position().squaredDistanceTo(current_cell_center);
+              r.point_reference.position().squaredDistanceTo(
+                current_cell_center);
             return l_dist_to_center < r_dist_to_center;
           });
 
@@ -225,16 +266,23 @@ struct PoissonDiskSampling
                      MortonIndex<MaxLevels> node_key,
                      int32_t node_level,
                      const AABB& root_bounds,
-                     float spacing_at_root)
+                     float spacing_at_root,
+                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    const auto num_points_to_process = static_cast<size_t>(std::distance(begin, end));
-    if (num_points_to_process <= _max_points_per_node) {
-      return end;
+    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+      const auto num_points_to_process =
+        static_cast<size_t>(std::distance(begin, end));
+      if (num_points_to_process <= _max_points_per_node) {
+        return end;
+      }
     }
+
     const auto bounds_at_this_node =
       get_bounds_from_morton_index(node_key, root_bounds, node_level + 1);
-    const auto spacing_at_this_node = spacing_at_root / std::pow(2, node_level + 1);
-    SparseGrid sparse_grid{ bounds_at_this_node, static_cast<float>(spacing_at_this_node) };
+    const auto spacing_at_this_node =
+      spacing_at_root / std::pow(2, node_level + 1);
+    SparseGrid sparse_grid{ bounds_at_this_node,
+                            static_cast<float>(spacing_at_this_node) };
     size_t num_points_taken = 0;
 
     return std::stable_partition(
@@ -271,16 +319,24 @@ struct AdaptivePoissonDiskSampling
                      MortonIndex<MaxLevels> node_key,
                      int32_t node_level,
                      const AABB& root_bounds,
-                     float spacing_at_root)
+                     float spacing_at_root,
+                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    const auto num_points_to_process = static_cast<size_t>(std::distance(begin, end));
-    if (num_points_to_process <= _max_points_per_node) {
-      return end;
+    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+      const auto num_points_to_process =
+        static_cast<size_t>(std::distance(begin, end));
+      if (num_points_to_process <= _max_points_per_node) {
+        return end;
+      }
     }
 
-    const auto spacing_at_this_node = spacing_at_root / std::pow(2, node_level + 1);
+    const auto spacing_at_this_node =
+      spacing_at_root / std::pow(2, node_level + 1);
     const auto candidate_level_in_octree =
-      std::max(-1, (int)std::floor(std::log2f(root_bounds.extent().x / spacing_at_this_node)) - 1);
+      std::max(-1,
+               (int)std::floor(
+                 std::log2f(root_bounds.extent().x / spacing_at_this_node)) -
+                 1);
     auto partition_point = begin;
 
     if (candidate_level_in_octree == -1) {
@@ -289,16 +345,21 @@ struct AdaptivePoissonDiskSampling
 
     const auto bounds_at_this_node =
       get_bounds_from_morton_index(node_key, root_bounds, node_level + 1);
-    SparseGrid sparse_grid{ bounds_at_this_node, static_cast<float>(spacing_at_this_node) };
+    SparseGrid sparse_grid{ bounds_at_this_node,
+                            static_cast<float>(spacing_at_this_node) };
 
     // Density determines the ratio of points that will be analyzed, e.g. a
     // density of 0.1 means 10% of all points get analyzed, or in other words 9
     // out of 10 points are ignored
-    const auto nth_point = static_cast<uint32_t>(std::round(1 / _density_per_level(node_level)));
-    uint32_t point_counter = nth_point - 1; // Guarantees that at least one point is analyzed
+    const auto nth_point =
+      static_cast<uint32_t>(std::round(1 / _density_per_level(node_level)));
+    uint32_t point_counter =
+      nth_point - 1; // Guarantees that at least one point is analyzed
 
     return std::stable_partition(
-      begin, end, [this, &point_counter, nth_point, &sparse_grid](const auto& point) {
+      begin,
+      end,
+      [this, &point_counter, nth_point, &sparse_grid](const auto& point) {
         if (++point_counter == nth_point) {
           point_counter = 0;
           return sparse_grid.add(point.point_reference.position());
@@ -328,28 +389,36 @@ struct ZOrderNextSampling
                      MortonIndex<MaxLevels> node_key,
                      int32_t node_level,
                      const AABB& root_bounds,
-                     float spacing_at_root)
+                     float spacing_at_root,
+                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    const auto num_points_to_process = static_cast<size_t>(std::distance(begin, end));
-    if (num_points_to_process <= _max_points_per_node) {
-      return end;
+    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+      const auto num_points_to_process =
+        static_cast<size_t>(std::distance(begin, end));
+      if (num_points_to_process <= _max_points_per_node) {
+        return end;
+      }
     }
 
-    const auto spacing_at_this_node = spacing_at_root / std::pow(2, node_level + 1);
+    const auto spacing_at_this_node =
+      spacing_at_root / std::pow(2, node_level + 1);
     const auto sqr_spacing = spacing_at_this_node * spacing_at_this_node;
 
     // auto last_taken_point_iter = begin;
 
-    return stable_partition_with_jumps(begin, end, [&](const auto cur_begin, const auto cur_end) {
-      // Take the current point, search for next point that is outside of
-      // min distance
-      const auto current_position = cur_begin->point_reference.position();
-      const auto next_begin = std::find_if(cur_begin + 1, cur_end, [&](const auto& other) {
-        return other.point_reference.position().squaredDistanceTo(current_position) >= sqr_spacing;
-      });
+    return stable_partition_with_jumps(
+      begin, end, [&](const auto cur_begin, const auto cur_end) {
+        // Take the current point, search for next point that is outside of
+        // min distance
+        const auto current_position = cur_begin->point_reference.position();
+        const auto next_begin =
+          std::find_if(cur_begin + 1, cur_end, [&](const auto& other) {
+            return other.point_reference.position().squaredDistanceTo(
+                     current_position) >= sqr_spacing;
+          });
 
-      return std::make_pair(cur_begin, next_begin);
-    });
+        return std::make_pair(cur_begin, next_begin);
+      });
   }
 
 private:
@@ -381,7 +450,8 @@ make_sampling_strategy_from_name(const std::string& name, Args&&... args)
   if (name == "MIN_DISTANCE_FAST")
     return AdaptivePoissonDiskSampling{ std::forward<Args>(args)... };
 
-  throw std::runtime_error{ "Unrecognized sampling strategy name \"" + name + "\"" };
+  throw std::runtime_error{ "Unrecognized sampling strategy name \"" + name +
+                            "\"" };
 }
 
 /**
@@ -398,11 +468,13 @@ sample_points(SamplingStrategy& sampling_strategy,
               MortonIndex<MaxLevels> node_key,
               int32_t node_level,
               const AABB& root_bounds,
-              float spacing_at_root)
+              float spacing_at_root,
+              SamplingBehaviour sampling_behaviour)
 {
   return std::visit(
     [&](auto& strategy) {
-      return strategy.sample_points(begin, end, node_key, node_level, root_bounds, spacing_at_root);
+      return strategy.sample_points(
+        begin, end, node_key, node_level, root_bounds, spacing_at_root, sampling_behaviour);
     },
     sampling_strategy);
 }

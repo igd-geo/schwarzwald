@@ -364,13 +364,25 @@ Tiler::Tiler(const AABB& aabb,
 
   _indexing_thread = std::thread([this]() { run_worker(); });
 
-  _tiling_algorithm =
-    std::make_unique<TilingAlgorithmV3>(_sampling_strategy,
-                                        _progress_reporter,
-                                        _persistence,
-                                        _meta_parameters,
-                                        _output_directory,
-                                        std::max(1u, std::thread::hardware_concurrency() - 1));
+  switch (meta_parameters.tiling_strategy) {
+    case TilingStrategy::Accurate:
+      _tiling_algorithm =
+        std::make_unique<TilingAlgorithmV1>(_sampling_strategy,
+                                            _progress_reporter,
+                                            _persistence,
+                                            _meta_parameters,
+                                            std::max(1u, std::thread::hardware_concurrency() - 1));
+      break;
+    case TilingStrategy::Fast:
+      _tiling_algorithm =
+        std::make_unique<TilingAlgorithmV3>(_sampling_strategy,
+                                            _progress_reporter,
+                                            _persistence,
+                                            _meta_parameters,
+                                            _output_directory,
+                                            std::max(1u, std::thread::hardware_concurrency() - 1));
+      break;
+  }
 }
 
 Tiler::~Tiler()
@@ -437,16 +449,32 @@ Tiler::run_worker()
     executor_observer = executor.make_observer<ExecutorObserver>();
   }
 
+  size_t batch_idx = 0;
+
   while (_run_indexing_thread) {
     _producers.wait();
     if (!_run_indexing_thread)
       break;
+
+    const auto t_start = std::chrono::high_resolution_clock::now();
 
     tf::Taskflow taskflow;
 
     _tiling_algorithm->build_execution_graph(_indexing_point_cache, _aabb, taskflow);
 
     executor.run(taskflow).wait();
+
+    const auto t_end = std::chrono::high_resolution_clock::now();
+    const auto delta_t = t_end - t_start;
+
+    if (debug::Journal::instance().is_enabled()) {
+      const auto delta_t_seconds = static_cast<double>(delta_t.count()) / 1e9;
+      const auto points_per_second = _indexing_point_cache.count() / delta_t_seconds;
+      debug::Journal::instance().add_entry(
+        (boost::format("Indexing (batch %1%): %2% s | %3% pts/s") % batch_idx++ % delta_t_seconds %
+         unit::format_with_metric_prefix(points_per_second))
+          .str());
+    }
 
     _consumers.notify();
   }
