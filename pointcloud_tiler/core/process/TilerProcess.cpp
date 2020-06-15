@@ -146,10 +146,6 @@ check_if_file_exists(const fs::path& file, util::IgnoreErrors errors_to_ignore)
 
   if (errors_to_ignore & util::IgnoreErrors::MissingFiles) {
     std::cout << "Ignoring file " << file.string() << " because it does not exist!\n";
-    // util::write_log(
-    //     (boost::format("Ignoring file %1% because it does not exist!") %
-    //      file.filename())
-    //         .str());
     return false;
   }
 
@@ -166,11 +162,6 @@ check_if_file_format_is_supported(const fs::path& file, util::IgnoreErrors error
   if (errors_to_ignore & util::IgnoreErrors::UnsupportedFileFormat) {
     std::cout << "Ignoring file " << file.string() << " because its file format ("
               << file.extension().string() << ") is not supported!\n";
-    // util::write_log(
-    //     (boost::format(
-    //          "Ignoring file %1% because its file format is not supported!") %
-    //      file.filename())
-    //         .str());
     return false;
   }
 
