@@ -13,7 +13,6 @@
 #include "io/Cesium3DTilesPersistence.h"
 #include "io/LASFile.h"
 #include "io/LASPersistence.h"
-#include "io/LASPointReader.h"
 #include "point_source/PointSource.h"
 #include "util/Stats.h"
 #include "util/Transformation.h"

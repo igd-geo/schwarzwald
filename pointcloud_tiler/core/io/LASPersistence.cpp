@@ -60,6 +60,11 @@ LASPersistence::persist_points(PointBuffer const& points,
     return;
   }
 
+  const auto point_data_format =
+    static_cast<uint8_t>((points.has_gps_times() ? 1 : 0) + (points.hasColors() ? 2 : 0));
+  const auto point_record_length =
+    static_cast<uint16_t>(20 + (points.has_gps_times() ? 8 : 0) + (points.hasColors() ? 6 : 0));
+
   // las_header->file_source_ID = 0;
   // las_header->global_encoding = 0;
   // las_header->project_ID_GUID_data_1 = 0;
@@ -76,8 +81,8 @@ LASPersistence::persist_points(PointBuffer const& points,
   std::memcpy(las_header->generating_software, "pointcloud_tiler", sizeof("pointcloud_tiler"));
   las_header->offset_to_point_data = las_header->header_size;
   las_header->number_of_variable_length_records = 0;
-  las_header->point_data_format = 2;
-  las_header->point_data_record_length = 26;
+  las_header->point_data_format = point_data_format;
+  las_header->point_data_record_length = point_record_length;
 
   las_header->x_offset = bounds.min.x;
   las_header->y_offset = bounds.min.y;
@@ -117,10 +122,11 @@ LASPersistence::persist_points(PointBuffer const& points,
 
     const auto rgb = point_ref.rgbColor();
     if (rgb) {
-      laspoint->rgb[0] = rgb->x;
-      laspoint->rgb[1] = rgb->y;
-      laspoint->rgb[2] = rgb->z;
-      laspoint->rgb[3] = static_cast<uint8_t>(255);
+      // See comment in templated version of persist_points in LASPersistence.h for
+      // an explanation of the bit-shift
+      laspoint->rgb[0] = rgb->x << 8;
+      laspoint->rgb[1] = rgb->y << 8;
+      laspoint->rgb[2] = rgb->z << 8;
     }
 
     const auto intensity = point_ref.intensity();
@@ -131,6 +137,46 @@ LASPersistence::persist_points(PointBuffer const& points,
     const auto classification = point_ref.classification();
     if (classification) {
       laspoint->classification = *classification;
+    }
+
+    const auto eof_line = point_ref.edge_of_flight_line();
+    if (eof_line) {
+      laspoint->edge_of_flight_line = *eof_line;
+    }
+
+    const auto gps_time = point_ref.gps_time();
+    if (gps_time) {
+      laspoint->gps_time = *gps_time;
+    }
+
+    const auto number_of_returns = point_ref.number_of_returns();
+    if (number_of_returns) {
+      laspoint->number_of_returns = *number_of_returns;
+    }
+
+    const auto return_number = point_ref.return_number();
+    if (return_number) {
+      laspoint->return_number = *return_number;
+    }
+
+    const auto point_source_id = point_ref.point_source_id();
+    if (point_source_id) {
+      laspoint->point_source_ID = *point_source_id;
+    }
+
+    const auto scan_angle_rank = point_ref.scan_angle_rank();
+    if (scan_angle_rank) {
+      laspoint->scan_angle_rank = *scan_angle_rank;
+    }
+
+    const auto scan_direction_flag = point_ref.scan_direction_flag();
+    if (scan_direction_flag) {
+      laspoint->scan_direction_flag = *scan_direction_flag;
+    }
+
+    const auto user_data = point_ref.user_data();
+    if (user_data) {
+      laspoint->user_data = *user_data;
     }
 
     if (laszip_write_point(laswriter)) {

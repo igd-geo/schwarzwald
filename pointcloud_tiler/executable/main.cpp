@@ -42,11 +42,17 @@ enum class Mode
 };
 
 static void
-verify_output_attributes(const PointAttributes& outputAttributes)
+verify_output_attributes(PointAttributes& outputAttributes)
 {
   const auto hasAttribute = [](const auto& attributes, const PointAttribute& attribute) {
     return std::find(attributes.begin(), attributes.end(), attribute) != attributes.end();
   };
+
+  if (!hasAttribute(outputAttributes, PointAttribute::Position)) {
+    std::cout << "POSITION point attribute not set but it is mandatory, adding POSITION to the "
+                 "output attributes!\n";
+    outputAttributes.insert(PointAttribute::Position);
+  }
 
   if (hasAttribute(outputAttributes, PointAttribute::RGB) &&
       hasAttribute(outputAttributes, PointAttribute::RGBFromIntensity)) {

@@ -25,6 +25,14 @@ struct BinaryPersistence
   constexpr static uint32_t NORMAL_BIT = (1 << 1);
   constexpr static uint32_t INTENSITY_BIT = (1 << 2);
   constexpr static uint32_t CLASSIFICATION_BIT = (1 << 3);
+  constexpr static uint32_t EDGE_OF_FLIGHT_LINE_BIT = (1 << 4);
+  constexpr static uint32_t GPS_TIME_BIT = (1 << 5);
+  constexpr static uint32_t NUMBER_OF_RETURN_BIT = (1 << 6);
+  constexpr static uint32_t RETURN_NUMBER_BIT = (1 << 7);
+  constexpr static uint32_t POINT_SOURCE_ID_BIT = (1 << 8);
+  constexpr static uint32_t SCAN_DIRECTION_FLAG_BIT = (1 << 9);
+  constexpr static uint32_t SCAN_ANGLE_RANK_BIT = (1 << 10);
+  constexpr static uint32_t USER_DATA_BIT = (1 << 11);
 
   BinaryPersistence(const std::string& work_dir,
                     const PointAttributes& point_attributes,
@@ -61,10 +69,25 @@ struct BinaryPersistence
     const auto has_normals = points_begin->normal() != nullptr;
     const auto has_intensities = points_begin->intensity() != nullptr;
     const auto has_classifications = points_begin->classification() != nullptr;
+    const auto has_edge_of_flight_lines = points_begin->edge_of_flight_line() != nullptr;
+    const auto has_gps_times = points_begin->gps_time() != nullptr;
+    const auto has_number_of_returns = points_begin->number_of_returns() != nullptr;
+    const auto has_return_numbers = points_begin->return_number() != nullptr;
+    const auto has_point_source_ids = points_begin->point_source_id() != nullptr;
+    const auto has_scan_angle_ranks = points_begin->scan_angle_rank() != nullptr;
+    const auto has_scan_direction_flags = points_begin->scan_direction_flag() != nullptr;
+    const auto has_user_data = points_begin->user_data() != nullptr;
 
     const uint32_t properties_bitmask =
       (has_colors ? COLOR_BIT : 0u) | (has_normals ? NORMAL_BIT : 0u) |
-      (has_intensities ? INTENSITY_BIT : 0u) | (has_classifications ? CLASSIFICATION_BIT : 0u);
+      (has_intensities ? INTENSITY_BIT : 0u) | (has_classifications ? CLASSIFICATION_BIT : 0u) |
+      (has_edge_of_flight_lines ? EDGE_OF_FLIGHT_LINE_BIT : 0u) |
+      (has_gps_times ? GPS_TIME_BIT : 0u) | (has_number_of_returns ? NUMBER_OF_RETURN_BIT : 0u) |
+      (has_return_numbers ? RETURN_NUMBER_BIT : 0u) |
+      (has_point_source_ids ? POINT_SOURCE_ID_BIT : 0u) |
+      (has_scan_angle_ranks ? SCAN_ANGLE_RANK_BIT : 0u) |
+      (has_scan_direction_flags ? SCAN_DIRECTION_FLAG_BIT : 0u) |
+      (has_user_data ? USER_DATA_BIT : 0u);
 
     write_binary(properties_bitmask, stream);
     write_binary(static_cast<uint64_t>(points_count), stream);
@@ -93,6 +116,54 @@ struct BinaryPersistence
     if (has_classifications) {
       std::for_each(points_begin, points_end, [&stream](auto& point) {
         write_binary(*point.classification(), stream);
+      });
+    }
+
+    if (has_edge_of_flight_lines) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.edge_of_flight_line(), stream);
+      });
+    }
+
+    if (has_gps_times) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.gps_time(), stream);
+      });
+    }
+
+    if (has_number_of_returns) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.number_of_returns(), stream);
+      });
+    }
+
+    if (has_return_numbers) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.return_number(), stream);
+      });
+    }
+
+    if (has_point_source_ids) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.point_source_id(), stream);
+      });
+    }
+
+    if (has_scan_angle_ranks) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.scan_angle_rank(), stream);
+      });
+    }
+
+    if (has_scan_direction_flags) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.scan_direction_flag(), stream);
+      });
+    }
+
+    if (has_user_data) {
+      std::for_each(points_begin, points_end, [&stream](auto& point) {
+        write_binary(*point.user_data(), stream);
       });
     }
 
