@@ -408,11 +408,20 @@ las_file_has_attribute(laszip_header const& header, PointAttribute const& attrib
     case PointAttribute::RGBFromIntensity:
       return true;
     case PointAttribute::Normal:
-      return false; // TODO We could look in the additional data fields, but only
-                    // from the header we can't tell, so this requires an API
-                    // change
+      return false; // TODO We could look in the additional data fields, but
+                    // only from the header we can't tell, so this requires an
+                    // API change
     case PointAttribute::Classification:
-      return true; // LAS always has classifications
+    case PointAttribute::EdgeOfFlightLine:
+    case PointAttribute::NumberOfReturns:
+    case PointAttribute::PointSourceID:
+    case PointAttribute::ReturnNumber:
+    case PointAttribute::ScanAngleRank:
+    case PointAttribute::ScanDirectionFlag:
+    case PointAttribute::UserData:
+      return true;
+    case PointAttribute::GPSTime:
+      return header.point_data_format == 1 || header.point_data_format == 3;
     default:
       throw std::runtime_error{ "Unrecognized attribute type!" };
   }
@@ -432,6 +441,14 @@ las_read_points(LASInputIterator begin,
   std::vector<Vector3<float>> normals;
   std::vector<uint16_t> intensities;
   std::vector<uint8_t> classifications;
+  std::vector<double> gps_times;
+  std::vector<uint8_t> edge_of_flight_lines;
+  std::vector<uint8_t> number_of_returns;
+  std::vector<uint8_t> return_numbers;
+  std::vector<uint16_t> point_source_ids;
+  std::vector<int8_t> scan_angle_ranks;
+  std::vector<uint8_t> scan_direction_flags;
+  std::vector<uint8_t> user_data;
 
   const auto has_color_from_intensity = has_attribute(attributes, PointAttribute::RGBFromIntensity);
   const auto has_colors = has_attribute(attributes, PointAttribute::RGB);
@@ -441,6 +458,15 @@ las_read_points(LASInputIterator begin,
   //                         attributes::NORMAL_SPHEREMAPPED);
   const auto has_intensities = has_attribute(attributes, PointAttribute::Intensity);
   const auto has_classifications = has_attribute(attributes, PointAttribute::Classification);
+  const auto has_gps_times = has_attribute(attributes, PointAttribute::GPSTime);
+  const auto has_edge_of_flight_lines = has_attribute(attributes, PointAttribute::EdgeOfFlightLine);
+  const auto has_number_of_returns = has_attribute(attributes, PointAttribute::NumberOfReturns);
+  const auto has_return_numbers = has_attribute(attributes, PointAttribute::ReturnNumber);
+  const auto has_point_source_ids = has_attribute(attributes, PointAttribute::PointSourceID);
+  const auto has_scan_angle_ranks = has_attribute(attributes, PointAttribute::ScanAngleRank);
+  const auto has_scan_direction_flags =
+    has_attribute(attributes, PointAttribute::ScanDirectionFlag);
+  const auto has_user_data = has_attribute(attributes, PointAttribute::UserData);
 
   positions.reserve(to_read_count);
   if (has_colors || has_color_from_intensity) {
@@ -454,6 +480,30 @@ las_read_points(LASInputIterator begin,
   }
   if (has_classifications) {
     classifications.reserve(to_read_count);
+  }
+  if (has_gps_times) {
+    gps_times.reserve(to_read_count);
+  }
+  if (has_edge_of_flight_lines) {
+    edge_of_flight_lines.reserve(to_read_count);
+  }
+  if (has_number_of_returns) {
+    number_of_returns.reserve(to_read_count);
+  }
+  if (has_return_numbers) {
+    return_numbers.reserve(to_read_count);
+  }
+  if (has_point_source_ids) {
+    point_source_ids.reserve(to_read_count);
+  }
+  if (has_scan_angle_ranks) {
+    scan_angle_ranks.reserve(to_read_count);
+  }
+  if (has_scan_direction_flags) {
+    scan_direction_flags.reserve(to_read_count);
+  }
+  if (has_user_data) {
+    user_data.reserve(to_read_count);
   }
 
   for (size_t idx = 0; idx < to_read_count; ++idx, ++begin) {
@@ -477,10 +527,48 @@ las_read_points(LASInputIterator begin,
     if (has_classifications) {
       classifications.push_back(point.classification);
     }
+    if (has_gps_times) {
+      gps_times.push_back(point.gps_time);
+    }
+    if (has_edge_of_flight_lines) {
+      edge_of_flight_lines.push_back(point.edge_of_flight_line);
+    }
+    if (has_number_of_returns) {
+      number_of_returns.push_back(point.number_of_returns);
+    }
+    if (has_return_numbers) {
+      return_numbers.push_back(point.return_number);
+    }
+    if (has_point_source_ids) {
+      point_source_ids.push_back(point.point_source_ID);
+    }
+    if (has_scan_angle_ranks) {
+      scan_angle_ranks.push_back(point.scan_angle_rank);
+    }
+    if (has_scan_direction_flags) {
+      scan_direction_flags.push_back(point.scan_direction_flag);
+    }
+    if (has_user_data) {
+      user_data.push_back(point.user_data);
+    }
   }
 
-  points = { to_read_count,      std::move(positions),   std::move(colors),
-             std::move(normals), std::move(intensities), std::move(classifications) };
+  // TODO Use builder pattern for PointBuffer
+
+  points = { to_read_count,
+             std::move(positions),
+             std::move(colors),
+             std::move(normals),
+             std::move(intensities),
+             std::move(classifications),
+             std::move(edge_of_flight_lines),
+             std::move(gps_times),
+             std::move(number_of_returns),
+             std::move(return_numbers),
+             std::move(point_source_ids),
+             std::move(scan_direction_flags),
+             std::move(scan_angle_ranks),
+             std::move(user_data) };
   return begin;
 }
 

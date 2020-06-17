@@ -2,7 +2,6 @@
 
 #include "datastructures/DynamicMortonIndex.h"
 #include "io/Cesium3DTilesPersistence.h"
-#include "io/LASPointReader.h"
 #include "io/PNTSWriter.h"
 #include "io/PointsPersistence.h"
 #include "io/TileSetWriter.h"

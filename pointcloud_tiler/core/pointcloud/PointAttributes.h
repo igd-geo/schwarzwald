@@ -21,11 +21,20 @@ enum class PointAttribute
   Intensity,
   Classification,
   Normal,
+  GPSTime,
+  EdgeOfFlightLine,
+  NumberOfReturns,
+  ReturnNumber,
+  PointSourceID,
+  ScanAngleRank,
+  ScanDirectionFlag,
+  UserData
 };
 
 namespace util {
 namespace {
-static const std::unordered_set<std::pair<PointAttribute, std::string>, util::PairHash>
+static const std::unordered_set<std::pair<PointAttribute, std::string>,
+                                util::PairHash>
   POINT_ATTRIBUTE_STRING_MAPPING = {
     { PointAttribute::Position, "POSITION" },
     { PointAttribute::RGB, "RGB" },
@@ -33,6 +42,14 @@ static const std::unordered_set<std::pair<PointAttribute, std::string>, util::Pa
     { PointAttribute::Intensity, "INTENSITY" },
     { PointAttribute::Classification, "CLASSIFICATION" },
     { PointAttribute::Normal, "NORMAL" },
+    { PointAttribute::GPSTime, "GPS_TIME" },
+    { PointAttribute::EdgeOfFlightLine, "EDGE_OF_FLIGHT_LINE" },
+    { PointAttribute::NumberOfReturns, "NUMBER_OF_RETURNS" },
+    { PointAttribute::ReturnNumber, "RETURN_NUMBER" },
+    { PointAttribute::PointSourceID, "POINT_SOURCE_ID" },
+    { PointAttribute::ScanAngleRank, "SCAN_ANGLE_RANK" },
+    { PointAttribute::ScanDirectionFlag, "SCAN_DIRECTION_FLAG" },
+    { PointAttribute::UserData, "USER_DATA" },
   };
 }
 
@@ -40,12 +57,14 @@ template<>
 inline tl::expected<PointAttribute, std::string>
 try_parse(const std::string& token)
 {
-  const auto iter = std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
-                                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
-                                 [&token](const auto& pair) { return pair.second == token; });
+  const auto iter =
+    std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
+                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
+                 [&token](const auto& pair) { return pair.second == token; });
   if (iter == std::end(POINT_ATTRIBUTE_STRING_MAPPING)) {
     return tl::make_unexpected(
-      (boost::format("Could not parse token \"%1%\" as PointAttribute") % token).str());
+      (boost::format("Could not parse token \"%1%\" as PointAttribute") % token)
+        .str());
   }
 
   return { iter->first };
@@ -55,13 +74,14 @@ template<>
 inline const std::string&
 to_string(PointAttribute attribute)
 {
-  const auto iter = std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
-                                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
-                                 [attribute](const auto& pair) { return pair.first == attribute; });
+  const auto iter = std::find_if(
+    std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
+    std::end(POINT_ATTRIBUTE_STRING_MAPPING),
+    [attribute](const auto& pair) { return pair.first == attribute; });
   if (iter == std::end(POINT_ATTRIBUTE_STRING_MAPPING)) {
-    throw std::invalid_argument{
-      (boost::format("Invalid PointAttribute %1%") % static_cast<int>(attribute)).str()
-    };
+    throw std::invalid_argument{ (boost::format("Invalid PointAttribute %1%") %
+                                  static_cast<int>(attribute))
+                                   .str() };
   }
 
   return iter->second;
@@ -71,10 +91,14 @@ to_string(PointAttribute attribute)
 using PointAttributes = std::unordered_set<PointAttribute>;
 
 void
-validate(boost::any& v, const std::vector<std::string>& values, PointAttributes*, int);
+validate(boost::any& v,
+         const std::vector<std::string>& values,
+         PointAttributes*,
+         int);
 
 bool
-has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_find);
+has_attribute(PointAttributes const& attributes,
+              PointAttribute attribute_to_find);
 std::string
 print_attributes(PointAttributes const& attributes);
 
