@@ -43,7 +43,7 @@ This should produce `liblaszip.so` in `~/dev/lastools/LASzip/build/src`.
 cd ~/dev/path-to-this-repository
 mkdir -p build/release
 cd build/release
-cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS= ~/dev/lastools/LASzip/dll -DLASZIP_LIBRARY=~/dev/lastools/LASzip/build/src/liblaszip.so ../../
+cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=~/dev/lastools/LASzip/dll -DLASZIP_LIBRARY=~/dev/lastools/LASzip/build/src/liblaszip.so ../../
 make
 ```
 
