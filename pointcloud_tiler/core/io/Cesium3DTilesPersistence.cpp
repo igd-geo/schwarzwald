@@ -15,10 +15,11 @@
 #include <queue>
 #include <taskflow/taskflow.hpp>
 
-Cesium3DTilesPersistence::Cesium3DTilesPersistence(const std::string& work_dir,
-                                                   const PointAttributes& point_attributes,
-                                                   float spacing_at_root,
-                                                   Vector3<double> const& global_offset)
+Cesium3DTilesPersistence::Cesium3DTilesPersistence(
+  const std::string& work_dir,
+  const PointAttributes& point_attributes,
+  float spacing_at_root,
+  Vector3<double> const& global_offset)
   : _work_dir(work_dir)
   , _point_attributes(point_attributes)
   , _spacing_at_root(spacing_at_root)
@@ -43,7 +44,8 @@ Cesium3DTilesPersistence::persist_points(PointBuffer const& points,
     throw std::runtime_error{ "persist_points requires a non-empty range" };
   }
 
-  PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"), _point_attributes };
+  PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"),
+                     _point_attributes };
   writer.write_points(points);
   writer.flush(_global_offset);
 
@@ -51,7 +53,8 @@ Cesium3DTilesPersistence::persist_points(PointBuffer const& points,
 }
 
 void
-Cesium3DTilesPersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
+Cesium3DTilesPersistence::retrieve_points(const std::string& node_name,
+                                          PointBuffer& points)
 {
   const auto file_path = concat(_work_dir, "/", node_name, ".pnts");
   if (!std::experimental::filesystem::exists(file_path))
@@ -62,34 +65,32 @@ Cesium3DTilesPersistence::retrieve_points(const std::string& node_name, PointBuf
 }
 
 void
-Cesium3DTilesPersistence::on_write_node(const std::string& node_name, const AABB& node_bounds)
+Cesium3DTilesPersistence::on_write_node(const std::string& node_name,
+                                        const AABB& node_bounds)
 {
   std::lock_guard _{ *_tilesets_lock };
 
-  const auto setup_tileset =
-    [this](Tileset& tileset, const std::string& node_name, const AABB& node_bounds) {
-      const auto node_morton_index =
-        DynamicMortonIndex::parse_string(node_name, MortonIndexNamingConvention::Potree).value();
+  const auto setup_tileset = [this](Tileset& tileset,
+                                    const std::string& node_name,
+                                    const AABB& node_bounds) {
+    const auto node_morton_index =
+      DynamicMortonIndex::parse_string(node_name,
+                                       MortonIndexNamingConvention::Potree)
+        .value();
 
-      tileset.boundingVolume = boundingVolumeFromAABB(node_bounds.translate(_global_offset));
-      tileset.content_url = concat(node_name, ".pnts");
-      tileset.url = concat(node_name, ".json");
-      tileset.geometricError =
-        _spacing_at_root / std::pow(2.0, static_cast<double>(node_morton_index.depth()));
-      tileset.name = node_name;
-    };
+    tileset.boundingVolume =
+      boundingVolumeFromAABB(node_bounds.translate(_global_offset));
+    tileset.content_url = concat(node_name, ".pnts");
+    tileset.url = concat(node_name, ".json");
+    tileset.geometricError =
+      _spacing_at_root /
+      std::pow(2.0, static_cast<double>(node_morton_index.depth()));
+    tileset.name = node_name;
+  };
 
   if (!_root_tileset) {
-    // if (node_name != "r") {
-    //   // TODO Why is this check here? It seems reasonable to start with a
-    //   deeper node and simply
-    //   // reconstruct the higher tilesets on demand. We
-    //   // have the bounds and everything available (or can calculate it)
-    //   throw std::runtime_error{ "Root node must be the first node written!"
-    //   };
-    // }
-
-    const auto node_index = OctreeNodeIndex64::from_string(node_name.substr(1)).value();
+    const auto node_index =
+      OctreeNodeIndex64::from_string(node_name.substr(1)).value();
     const auto root_bounds = get_root_bounds_from_node(node_index, node_bounds);
 
     _root_tileset = Tileset{};
@@ -101,7 +102,8 @@ Cesium3DTilesPersistence::on_write_node(const std::string& node_name, const AABB
     for (uint32_t level = 0; level < node_index.levels(); ++level) {
       const auto current_octant = node_index.octant_at_level(level);
       current_bounds = get_octant_bounds(current_octant, current_bounds);
-      const auto child_name = current_tileset->name + (static_cast<char>('0' + current_octant));
+      const auto child_name =
+        current_tileset->name + (static_cast<char>('0' + current_octant));
 
       auto& child = current_tileset->children.emplace_back();
       setup_tileset(child, child_name, current_bounds);
@@ -114,7 +116,8 @@ Cesium3DTilesPersistence::on_write_node(const std::string& node_name, const AABB
 
   // Find the matching tileset or one of its parents, and create all the missing
   // tilesets between the next parent and this node
-  const auto node_index = OctreeNodeIndex64::from_string(node_name.substr(1)).value();
+  const auto node_index =
+    OctreeNodeIndex64::from_string(node_name.substr(1)).value();
   auto current_tileset = &*_root_tileset;
   auto current_bounds = get_root_bounds_from_node(node_index, node_bounds);
 
@@ -123,10 +126,10 @@ Cesium3DTilesPersistence::on_write_node(const std::string& node_name, const AABB
     const auto octant = child_index.octant_at_level(idx);
 
     auto substr = node_name.substr(0, idx + 1);
-    auto child_iter =
-      std::find_if(std::begin(current_tileset->children),
-                   std::end(current_tileset->children),
-                   [&substr](const Tileset& tileset) { return tileset.name == substr; });
+    auto child_iter = std::find_if(
+      std::begin(current_tileset->children),
+      std::end(current_tileset->children),
+      [&substr](const Tileset& tileset) { return tileset.name == substr; });
 
     const auto child_bounds = get_octant_bounds(octant, current_bounds);
 

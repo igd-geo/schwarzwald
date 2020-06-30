@@ -39,7 +39,8 @@ struct LASPersistence
     laszip_create(&laswriter);
 
     if (!laswriter) {
-      std::cerr << "Could not create LAS writer for node " << node_name << std::endl;
+      std::cerr << "Could not create LAS writer for node " << node_name
+                << std::endl;
       return;
     }
 
@@ -48,7 +49,8 @@ struct LASPersistence
 
     laszip_header* las_header;
     if (laszip_get_header_pointer(laswriter, &las_header)) {
-      std::cerr << "Could not write LAS header for node " << node_name << std::endl;
+      std::cerr << "Could not write LAS header for node " << node_name
+                << std::endl;
       return;
     }
 
@@ -69,11 +71,15 @@ struct LASPersistence
     // las_header->header_size = sizeof(laszip_header);
     las_header->number_of_point_records = points_count;
     las_header->number_of_points_by_return[0] = points_count;
-    las_header->number_of_points_by_return[1] = las_header->number_of_points_by_return[2] =
-      las_header->number_of_points_by_return[3] = las_header->number_of_points_by_return[4] = 0;
+    las_header->number_of_points_by_return[1] =
+      las_header->number_of_points_by_return[2] =
+        las_header->number_of_points_by_return[3] =
+          las_header->number_of_points_by_return[4] = 0;
     las_header->version_major = 1;
     las_header->version_minor = 2;
-    std::memcpy(las_header->generating_software, "pointcloud_tiler", sizeof("pointcloud_tiler"));
+    std::memcpy(las_header->generating_software,
+                "pointcloud_tiler",
+                sizeof("pointcloud_tiler"));
     las_header->offset_to_point_data = las_header->header_size;
     las_header->number_of_variable_length_records = 0;
     las_header->point_data_format = point_data_format;
@@ -89,12 +95,14 @@ struct LASPersistence
     las_header->max_y = bounds.max.y; // - local_offset_to_world.y;
     las_header->max_z = bounds.max.z; // - local_offset_to_world.z;
 
-    las_header->x_scale_factor = las_header->y_scale_factor = las_header->z_scale_factor =
-      compute_las_scale_from_bounds(bounds);
+    las_header->x_scale_factor = las_header->y_scale_factor =
+      las_header->z_scale_factor = compute_las_scale_from_bounds(bounds);
 
     const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
-    if (laszip_open_writer(laswriter, file_path.c_str(), (_compressed == Compressed::Yes))) {
-      std::cerr << "Could not write LAS file for node " << node_name << std::endl;
+    if (laszip_open_writer(
+          laswriter, file_path.c_str(), (_compressed == Compressed::Yes))) {
+      std::cerr << "Could not write LAS file for node " << node_name
+                << std::endl;
       return;
     }
 
@@ -103,7 +111,8 @@ struct LASPersistence
 
     laszip_point* laspoint;
     if (laszip_get_point_pointer(laswriter, &laspoint)) {
-      std::cerr << "Could not write LAS points for node " << node_name << std::endl;
+      std::cerr << "Could not write LAS points for node " << node_name
+                << std::endl;
       return;
     }
 
@@ -111,18 +120,21 @@ struct LASPersistence
       const auto pos = point_ref.position();
       laszip_F64 coordinates[3] = { pos.x, pos.y, pos.z };
       if (laszip_set_coordinates(laswriter, coordinates)) {
-        std::cerr << "Could not set coordinates for LAS point at node " << node_name << std::endl;
+        std::cerr << "Could not set coordinates for LAS point at node "
+                  << node_name << std::endl;
         return;
       }
 
       const auto rgb = point_ref.rgbColor();
       if (rgb) {
-        // Shifting by 8 bits to get 16-bit color values. This is per the LAS specification, which
-        // states: "The Red, Green, Blue values should always be normalized to 16 bit values. For
-        // example, when encoding an 8 bit per channel pixel, multiply each channel value by 256
-        // prior to storage in these fields. This normalization allows color values from different
-        // camera bit depths to be accurately merged." [LAS Specification, Version 1.4 - R13, 15
-        // July 2013] (https://www.asprs.org/wp-content/uploads/2010/12/LAS_1_4_r13.pdf)
+        // Shifting by 8 bits to get 16-bit color values. This is per the LAS
+        // specification, which states: "The Red, Green, Blue values should
+        // always be normalized to 16 bit values. For example, when encoding an
+        // 8 bit per channel pixel, multiply each channel value by 256 prior to
+        // storage in these fields. This normalization allows color values from
+        // different camera bit depths to be accurately merged." [LAS
+        // Specification, Version 1.4 - R13, 15 July 2013]
+        // (https://www.asprs.org/wp-content/uploads/2010/12/LAS_1_4_r13.pdf)
         laspoint->rgb[0] = rgb->x << 8;
         laspoint->rgb[1] = rgb->y << 8;
         laspoint->rgb[2] = rgb->z << 8;
@@ -179,17 +191,22 @@ struct LASPersistence
       }
 
       if (laszip_write_point(laswriter)) {
-        std::cerr << "Could not write LAS point for node " << node_name << std::endl;
+        std::cerr << "Could not write LAS point for node " << node_name
+                  << std::endl;
         return;
       }
     });
   }
 
-  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
+  void persist_points(PointBuffer const& points,
+                      const AABB& bounds,
+                      const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
   bool node_exists(const std::string& node_name) const;
+
+  inline bool is_lossless() const { return false; }
 
 private:
   std::string _work_dir;

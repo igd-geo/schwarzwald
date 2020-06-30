@@ -13,10 +13,11 @@
  * Different behaviours for the SamplingStrategies based on the number of points
  * that they process
  */
-enum class SamplingBehaviour {
+enum class SamplingBehaviour
+{
   /**
-   * If 'sample_points' is called with a range that has <= max_points points, the 
-   * sampling process will be skipped and all points are taken instead
+   * If 'sample_points' is called with a range that has <= max_points points,
+   * the sampling process will be skipped and all points are taken instead
    */
   TakeAllWhenCountBelowMaxPoints,
   /**
@@ -40,9 +41,11 @@ struct RandomSortedGridSampling
                      int32_t node_level,
                      const AABB& root_bounds,
                      float spacing_at_root,
-                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
+                     SamplingBehaviour sampling_behaviour =
+                       SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+    if (sampling_behaviour ==
+        SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
       const auto num_points_to_process =
         static_cast<size_t>(std::distance(begin, end));
       if (num_points_to_process <= _max_points_per_node) {
@@ -165,9 +168,11 @@ struct GridCenterSampling
                      int32_t node_level,
                      const AABB& root_bounds,
                      float spacing_at_root,
-                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
+                     SamplingBehaviour sampling_behaviour =
+                       SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+    if (sampling_behaviour ==
+        SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
       const auto num_points_to_process =
         static_cast<size_t>(std::distance(begin, end));
       if (num_points_to_process <= _max_points_per_node) {
@@ -188,6 +193,9 @@ struct GridCenterSampling
       return ++partition_point;
     }
     size_t num_selected_points = 0;
+
+    // TODO Can we write this method in a way that it prevents the out-of-bounds
+    // errors?
 
     return stable_partition_with_jumps(
       begin,
@@ -267,9 +275,11 @@ struct PoissonDiskSampling
                      int32_t node_level,
                      const AABB& root_bounds,
                      float spacing_at_root,
-                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
+                     SamplingBehaviour sampling_behaviour =
+                       SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+    if (sampling_behaviour ==
+        SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
       const auto num_points_to_process =
         static_cast<size_t>(std::distance(begin, end));
       if (num_points_to_process <= _max_points_per_node) {
@@ -320,9 +330,11 @@ struct AdaptivePoissonDiskSampling
                      int32_t node_level,
                      const AABB& root_bounds,
                      float spacing_at_root,
-                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
+                     SamplingBehaviour sampling_behaviour =
+                       SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+    if (sampling_behaviour ==
+        SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
       const auto num_points_to_process =
         static_cast<size_t>(std::distance(begin, end));
       if (num_points_to_process <= _max_points_per_node) {
@@ -390,9 +402,11 @@ struct ZOrderNextSampling
                      int32_t node_level,
                      const AABB& root_bounds,
                      float spacing_at_root,
-                     SamplingBehaviour sampling_behaviour = SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
+                     SamplingBehaviour sampling_behaviour =
+                       SamplingBehaviour::TakeAllWhenCountBelowMaxPoints)
   {
-    if(sampling_behaviour == SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
+    if (sampling_behaviour ==
+        SamplingBehaviour::TakeAllWhenCountBelowMaxPoints) {
       const auto num_points_to_process =
         static_cast<size_t>(std::distance(begin, end));
       if (num_points_to_process <= _max_points_per_node) {
@@ -473,8 +487,13 @@ sample_points(SamplingStrategy& sampling_strategy,
 {
   return std::visit(
     [&](auto& strategy) {
-      return strategy.sample_points(
-        begin, end, node_key, node_level, root_bounds, spacing_at_root, sampling_behaviour);
+      return strategy.sample_points(begin,
+                                    end,
+                                    node_key,
+                                    node_level,
+                                    root_bounds,
+                                    spacing_at_root,
+                                    sampling_behaviour);
     },
     sampling_strategy);
 }

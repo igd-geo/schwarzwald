@@ -60,7 +60,8 @@ handle_las_failure(laszip_POINTER laszip, std::string_view fallback_message)
 decltype(auto)
 handle_las_failure(laszip_POINTER laszip, std::string fallback_message)
 {
-  return [laszip, _fallback_message = std::move(fallback_message)](laszip_I32 error_code) {
+  return [laszip, _fallback_message = std::move(fallback_message)](
+           laszip_I32 error_code) {
     char* error_message;
     if (laszip_get_error(laszip, &error_message)) {
       throw util::chain_error(
@@ -77,11 +78,26 @@ handle_las_failure(laszip_POINTER laszip, std::string fallback_message)
  * Get world coordinates from the given LAS point
  */
 Vector3<double>
-position_from_las_point(laszip_point const& point, laszip_header const& las_header)
+position_from_las_point(laszip_point const& point,
+                        laszip_header const& las_header)
 {
-  return { las_header.x_offset + point.X * las_header.x_scale_factor,
-           las_header.y_offset + point.Y * las_header.y_scale_factor,
-           las_header.z_offset + point.Z * las_header.z_scale_factor };
+  auto position =
+    Vector3<double>{ las_header.x_offset + point.X * las_header.x_scale_factor,
+                     las_header.y_offset + point.Y * las_header.y_scale_factor,
+                     las_header.z_offset +
+                       point.Z * las_header.z_scale_factor };
+
+  // Reading LAS files requires that all points are within the bounds specified
+  // by the LAS header. We guarantee this here by clamping the points into the
+  // bounds
+  position.x =
+    std::min(las_header.max_x, std::max(las_header.min_x, position.x));
+  position.y =
+    std::min(las_header.max_y, std::max(las_header.min_y, position.y));
+  position.z =
+    std::min(las_header.max_z, std::max(las_header.min_z, position.z));
+
+  return position;
 }
 
 #pragma endregion
@@ -106,10 +122,12 @@ LASInputIterator::LASInputIterator(LASFile const& las_file, size_t index)
 
     las::ctry(laszip_seek_point(_las_reader, static_cast<laszip_I64>(index)))
       .or_else(las::handle_las_failure(
-        _las_reader, (boost::format("Could not seek to point at index %1%") % index).str()));
+        _las_reader,
+        (boost::format("Could not seek to point at index %1%") % index).str()));
 
   las::ctry(laszip_read_point(_las_reader))
-    .or_else(las::handle_las_failure(_las_reader, "Could not read next point"sv));
+    .or_else(
+      las::handle_las_failure(_las_reader, "Could not read next point"sv));
 }
 
 bool
@@ -132,7 +150,8 @@ LASInputIterator::operator++()
     return *this;
   }
   las::ctry(laszip_read_point(_las_reader))
-    .or_else(las::handle_las_failure(_las_reader, "Could not read next point"sv));
+    .or_else(
+      las::handle_las_failure(_las_reader, "Could not read next point"sv));
   return *this;
 }
 
@@ -140,7 +159,8 @@ laszip_point const& LASInputIterator::operator*() const
 {
   laszip_point* point;
   las::ctry(laszip_get_point_pointer(_las_reader, &point))
-    .or_else(las::handle_las_failure(_las_reader, "Could not get next point"sv));
+    .or_else(
+      las::handle_las_failure(_las_reader, "Could not get next point"sv));
   return *point;
 }
 
@@ -186,7 +206,8 @@ void
 LASOutputIterator::operator=(laszip_point const& point)
 {
   las::ctry(laszip_set_point(_las_writer, &point))
-    .or_else(las::handle_las_failure(_las_writer, "Could not set point data"sv));
+    .or_else(
+      las::handle_las_failure(_las_writer, "Could not set point data"sv));
   las::ctry(laszip_write_point(_las_writer))
     .or_else(las::handle_las_failure(_las_writer, "Could not write point"sv));
 }
@@ -253,7 +274,9 @@ LASFile::set_metadata(laszip_header const& metadata)
   // HACK LASzip only writes the header when the writer is OPENED...
   laszip_close_writer(_laszip_handle);
   laszip_set_header(_laszip_handle, &metadata);
-  laszip_open_writer(_laszip_handle, _file_path.c_str(), las::is_compressed_las_file(_file_path));
+  laszip_open_writer(_laszip_handle,
+                     _file_path.c_str(),
+                     las::is_compressed_las_file(_file_path));
 }
 
 size_t
@@ -301,33 +324,41 @@ LASFile::open(fs::path const& path, OpenMode file_open_mode)
 
   las::ctry(laszip_create(&_laszip_handle)).or_else([](auto ec) {
     throw std::runtime_error{
-      (boost::format("Could not create LASZip handle (error code %1%)") % ec).str()
+      (boost::format("Could not create LASZip handle (error code %1%)") % ec)
+        .str()
     };
   });
 
   switch (file_open_mode) {
     case OpenMode::Read: {
       laszip_BOOL is_compressed;
-      las::ctry(laszip_open_reader(_laszip_handle, path.c_str(), &is_compressed))
+      las::ctry(
+        laszip_open_reader(_laszip_handle, path.c_str(), &is_compressed))
         .or_else([this, &path](auto ec) {
           laszip_destroy(_laszip_handle);
 
-          throw std::runtime_error{ (boost::format(
-                                       "Could not open LAS reader for file %1% (error code %2%)") %
-                                     path.string() % ec)
-                                      .str() };
+          throw std::runtime_error{
+            (boost::format(
+               "Could not open LAS reader for file %1% (error code %2%)") %
+             path.string() % ec)
+              .str()
+          };
         });
       _state = State::OpenRead;
     } break;
     case OpenMode::Write: {
-      las::ctry(laszip_open_writer(_laszip_handle, path.c_str(), las::is_compressed_las_file(path)))
+      las::ctry(laszip_open_writer(_laszip_handle,
+                                   path.c_str(),
+                                   las::is_compressed_las_file(path)))
         .or_else([this, &path](auto ec) {
           laszip_destroy(_laszip_handle);
 
-          throw std::runtime_error{ (boost::format(
-                                       "Could not open LAS writer for file %1% (error code %2%)") %
-                                     path.string() % ec)
-                                      .str() };
+          throw std::runtime_error{
+            (boost::format(
+               "Could not open LAS writer for file %1% (error code %2%)") %
+             path.string() % ec)
+              .str()
+          };
         });
       _state = State::OpenWrite;
     } break;
@@ -343,14 +374,16 @@ LASFile::close()
     case State::OpenRead:
       las::ctry(laszip_close_reader(_laszip_handle)).or_else([](auto ec) {
         throw std::runtime_error{
-          (boost::format("Could not close LAS reader (error code %1%)") % ec).str()
+          (boost::format("Could not close LAS reader (error code %1%)") % ec)
+            .str()
         };
       });
       break;
     case State::OpenWrite:
       las::ctry(laszip_close_writer(_laszip_handle)).or_else([](auto ec) {
         throw std::runtime_error{
-          (boost::format("Could not close LAS writer (error code %1%)") % ec).str()
+          (boost::format("Could not close LAS writer (error code %1%)") % ec)
+            .str()
         };
       });
       break;
@@ -360,7 +393,8 @@ LASFile::close()
 
   las::ctry(laszip_destroy(_laszip_handle)).or_else([](auto ec) {
     throw std::runtime_error{
-      (boost::format("Could not release LASzip handle (error code %1%)") % ec).str()
+      (boost::format("Could not release LASzip handle (error code %1%)") % ec)
+        .str()
     };
   });
 
@@ -397,7 +431,8 @@ get_offset_from_las_header(laszip_header const& header)
 }
 
 bool
-las_file_has_attribute(laszip_header const& header, PointAttribute const& attribute)
+las_file_has_attribute(laszip_header const& header,
+                       PointAttribute const& attribute)
 {
   switch (attribute) {
     case PointAttribute::Position:
@@ -408,9 +443,7 @@ las_file_has_attribute(laszip_header const& header, PointAttribute const& attrib
     case PointAttribute::RGBFromIntensity:
       return true;
     case PointAttribute::Normal:
-      return false; // TODO We could look in the additional data fields, but
-                    // only from the header we can't tell, so this requires an
-                    // API change
+      return false; // LAS does not support normals with regular fields
     case PointAttribute::Classification:
     case PointAttribute::EdgeOfFlightLine:
     case PointAttribute::NumberOfReturns:
@@ -450,31 +483,33 @@ las_read_points(LASInputIterator begin,
   std::vector<uint8_t> scan_direction_flags;
   std::vector<uint8_t> user_data;
 
-  const auto has_color_from_intensity = has_attribute(attributes, PointAttribute::RGBFromIntensity);
+  const auto has_color_from_intensity =
+    has_attribute(attributes, PointAttribute::RGBFromIntensity);
   const auto has_colors = has_attribute(attributes, PointAttribute::RGB);
-  // const auto has_normals = has_attribute(attributes, attributes::NORMAL) ||
-  //                         has_attribute(attributes, attributes::NORMAL_OCT16)
-  //                         || has_attribute(attributes,
-  //                         attributes::NORMAL_SPHEREMAPPED);
-  const auto has_intensities = has_attribute(attributes, PointAttribute::Intensity);
-  const auto has_classifications = has_attribute(attributes, PointAttribute::Classification);
+  const auto has_intensities =
+    has_attribute(attributes, PointAttribute::Intensity);
+  const auto has_classifications =
+    has_attribute(attributes, PointAttribute::Classification);
   const auto has_gps_times = has_attribute(attributes, PointAttribute::GPSTime);
-  const auto has_edge_of_flight_lines = has_attribute(attributes, PointAttribute::EdgeOfFlightLine);
-  const auto has_number_of_returns = has_attribute(attributes, PointAttribute::NumberOfReturns);
-  const auto has_return_numbers = has_attribute(attributes, PointAttribute::ReturnNumber);
-  const auto has_point_source_ids = has_attribute(attributes, PointAttribute::PointSourceID);
-  const auto has_scan_angle_ranks = has_attribute(attributes, PointAttribute::ScanAngleRank);
+  const auto has_edge_of_flight_lines =
+    has_attribute(attributes, PointAttribute::EdgeOfFlightLine);
+  const auto has_number_of_returns =
+    has_attribute(attributes, PointAttribute::NumberOfReturns);
+  const auto has_return_numbers =
+    has_attribute(attributes, PointAttribute::ReturnNumber);
+  const auto has_point_source_ids =
+    has_attribute(attributes, PointAttribute::PointSourceID);
+  const auto has_scan_angle_ranks =
+    has_attribute(attributes, PointAttribute::ScanAngleRank);
   const auto has_scan_direction_flags =
     has_attribute(attributes, PointAttribute::ScanDirectionFlag);
-  const auto has_user_data = has_attribute(attributes, PointAttribute::UserData);
+  const auto has_user_data =
+    has_attribute(attributes, PointAttribute::UserData);
 
   positions.reserve(to_read_count);
   if (has_colors || has_color_from_intensity) {
     colors.reserve(to_read_count);
   }
-  //   if (has_normals) {
-  //     normals.reserve(to_read_count);
-  //   }
   if (has_intensities) {
     intensities.reserve(to_read_count);
   }
@@ -510,7 +545,7 @@ las_read_points(LASInputIterator begin,
     auto& point = *begin;
     positions.push_back(position_from_las_point(point, header));
     if (has_colors) {
-      // TODO Implement correct color scaling
+      // FEATURE Implement correct color scaling
       colors.emplace_back(static_cast<uint8_t>(point.rgb[0] >> 8),
                           static_cast<uint8_t>(point.rgb[1] >> 8),
                           static_cast<uint8_t>(point.rgb[2] >> 8));
@@ -518,9 +553,6 @@ las_read_points(LASInputIterator begin,
     if (has_color_from_intensity) {
       colors.push_back(intensityToRGB_Log(point.intensity));
     }
-    // TODO Support normals
-    // if(has_normals) {
-    //}
     if (has_intensities) {
       intensities.push_back(point.intensity);
     }
@@ -553,7 +585,7 @@ las_read_points(LASInputIterator begin,
     }
   }
 
-  // TODO Use builder pattern for PointBuffer
+  // TECH_DEBT Use builder pattern for PointBuffer
 
   points = { to_read_count,
              std::move(positions),

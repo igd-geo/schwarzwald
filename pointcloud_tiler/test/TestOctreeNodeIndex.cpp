@@ -48,7 +48,9 @@ SCENARIO("OctreeNodeIndex - Constructors", "[OctreeNodeIndex]")
 
   WHEN("An OctreeNodeIndex is constructed from a range of octants")
   {
-    OctreeNodeIndex64 list_initialized{ uint8_t{ 2 }, uint8_t{ 3 }, uint8_t{ 7 }, uint8_t{ 5 } };
+    OctreeNodeIndex64 list_initialized{
+      uint8_t{ 2 }, uint8_t{ 3 }, uint8_t{ 7 }, uint8_t{ 5 }
+    };
     uint64_t expected_index = (2 << 9) | (3 << 6) | (7 << 3) | 5;
     THEN("Index and levels are set accordingly")
     {
@@ -84,10 +86,13 @@ SCENARIO("OctreeNodeIndex - Constructors", "[OctreeNodeIndex]")
     WHEN("By using the first N levels")
     {
       const uint32_t levels = 5;
-      OctreeNodeIndex64 from_static_morton_index_with_levels{ static_morton_index, levels };
+      OctreeNodeIndex64 from_static_morton_index_with_levels{
+        static_morton_index, levels
+      };
       THEN("Index and levels are truncated accordingly")
       {
-        uint64_t expected_index = (static_morton_index.get() >> (3 * (21 - levels)));
+        uint64_t expected_index =
+          (static_morton_index.get() >> (3 * (21 - levels)));
         REQUIRE(from_static_morton_index_with_levels.index() == expected_index);
         REQUIRE(from_static_morton_index_with_levels.levels() == levels);
 
@@ -102,7 +107,9 @@ SCENARIO("OctreeNodeIndex - Constructors", "[OctreeNodeIndex]")
 
   WHEN("An OctreeNodeIndex is copy-constructed")
   {
-    OctreeNodeIndex64 original{ uint8_t{ 2 }, uint8_t{ 3 }, uint8_t{ 7 }, uint8_t{ 5 } };
+    OctreeNodeIndex64 original{
+      uint8_t{ 2 }, uint8_t{ 3 }, uint8_t{ 7 }, uint8_t{ 5 }
+    };
     OctreeNodeIndex64 copy{ original };
 
     THEN("Index and levels match")
@@ -119,7 +126,8 @@ SCENARIO("OctreeNodeIndex - Comparisons", "[OctreeNodeIndex]")
   {
     WHEN("They have the exact same octants")
     {
-      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
       OctreeNodeIndex64 b = a;
 
       THEN("Comparisons hold")
@@ -141,8 +149,10 @@ SCENARIO("OctreeNodeIndex - Comparisons", "[OctreeNodeIndex]")
 
     WHEN("They they differ only in the last octant")
     {
-      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
-      OctreeNodeIndex64 b{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 3 };
+      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+      OctreeNodeIndex64 b{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 3 };
 
       THEN("Comparisons hold")
       {
@@ -163,8 +173,10 @@ SCENARIO("OctreeNodeIndex - Comparisons", "[OctreeNodeIndex]")
 
     WHEN("They differ in multiple octants")
     {
-      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
-      OctreeNodeIndex64 b{ 3, 2, 2, 4, 7, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+      OctreeNodeIndex64 b{ 3, 2, 2, 4, 7, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
 
       THEN("Comparisons hold")
       {
@@ -188,12 +200,14 @@ SCENARIO("OctreeNodeIndex - Comparisons", "[OctreeNodeIndex]")
   {
     WHEN("One OctreeNodeIndex is a child of the other")
     {
-      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
       OctreeNodeIndex64 b{ 1, 2, 3, 4, 5 };
 
       THEN("Comparisons hold")
       {
-        // a is a subnode of b. This means that 'a!=b', but also !(a<b) and !(b<a)
+        // a is a subnode of b. This means that 'a!=b', but also !(a<b) and
+        // !(b<a)
         REQUIRE(a != b);
 
         REQUIRE(a <= b);
@@ -210,7 +224,8 @@ SCENARIO("OctreeNodeIndex - Comparisons", "[OctreeNodeIndex]")
 
     WHEN("The two indices are unrelated")
     {
-      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+      OctreeNodeIndex64 a{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                           2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
       OctreeNodeIndex64 b{ 6, 3, 0, 2, 7 };
 
       THEN("Comparisons hold")
@@ -236,7 +251,8 @@ SCENARIO("OctreeNodeIndex - Parent index", "[OctreeNodeIndex]")
 {
   GIVEN("An OctreeNodeIndex with many levels")
   {
-    OctreeNodeIndex64 index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+    OctreeNodeIndex64 index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                             2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
 
     WHEN("parent() is called")
     {
@@ -294,7 +310,10 @@ SCENARIO("OctreeNodeIndex - Siblings", "[OctreeNodeIndex")
 
     WHEN("sibling() is called")
     {
-      THEN("An error is thrown") { REQUIRE_THROWS_AS(root.sibling(0), std::exception); }
+      THEN("An error is thrown")
+      {
+        REQUIRE_THROWS_AS(root.sibling(0), std::exception);
+      }
     }
   }
 }
@@ -325,7 +344,10 @@ SCENARIO("OctreeNodeIndex - Children", "[OctreeNodeIndex]")
 
     WHEN("child() is called for any child octant")
     {
-      THEN("An exception is thrown") { REQUIRE_THROWS_AS(index.child(0), std::exception); }
+      THEN("An exception is thrown")
+      {
+        REQUIRE_THROWS_AS(index.child(0), std::exception);
+      }
     }
   }
 }
@@ -351,11 +373,15 @@ SCENARIO("OctreeNodeIndex - String conversions", "[OctreeNodeIndex]")
 
   WHEN("An OctreeNodeIndex with multiple levels is converted to a string")
   {
-    OctreeNodeIndex64 index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
+    OctreeNodeIndex64 index{ 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1,
+                             2, 3, 4, 5, 1, 2, 3, 4, 5, 6 };
     const auto as_str = OctreeNodeIndex64::to_string(index);
     std::string expected_str{ "123451234512345123456" };
 
-    THEN("The string is in little-endian order") { REQUIRE(as_str == expected_str); }
+    THEN("The string is in little-endian order")
+    {
+      REQUIRE(as_str == expected_str);
+    }
   }
 
   WHEN("An empty string is converted to an OctreeNodeIndex")
@@ -397,9 +423,35 @@ SCENARIO("OctreeNodeIndex - String conversions", "[OctreeNodeIndex]")
 
   WHEN("A valid, but too large string is converted to an OctreeNodeIndex")
   {
-    // Trying to convert string with 21 levels into index that can only store 10 levels
+    // Trying to convert string with 21 levels into index that can only store 10
+    // levels
     std::string index_str{ "123451234512345123456" };
     const auto index = OctreeNodeIndex32::from_string(index_str);
+
+    THEN("The conversion fails") { REQUIRE(!index.has_value()); }
+  }
+
+  WHEN("A valid string in Entwine format is converted to an OctreeNodeIndex")
+  {
+    std::string index_str{ "13-410-7041-4059" };
+    const auto index = OctreeNodeIndex64::from_string(
+      index_str, MortonIndexNamingConvention::Entwine);
+
+    THEN("The conversion was successful") { REQUIRE(index.has_value()); }
+
+    THEN("The index is correct")
+    {
+      OctreeNodeIndex64 expected_index{ 2, 3, 1, 3, 7, 7, 1, 0, 5, 5, 0, 5, 3 };
+      REQUIRE((*index) == expected_index);
+    }
+  }
+
+  WHEN("A valid string in Entwine format that is too large is converted to an "
+       "OctreeNodeIndex")
+  {
+    std::string index_str{ "22-0-0-0" };
+    const auto index = OctreeNodeIndex64::from_string(
+      index_str, MortonIndexNamingConvention::Entwine);
 
     THEN("The conversion fails") { REQUIRE(!index.has_value()); }
   }

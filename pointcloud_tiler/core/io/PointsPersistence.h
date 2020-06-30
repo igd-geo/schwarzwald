@@ -4,6 +4,7 @@
 
 #include "BinaryPersistence.h"
 #include "Cesium3DTilesPersistence.h"
+#include "EntwinePersistence.h"
 #include "LASPersistence.h"
 #include "MemoryPersistence.h"
 
@@ -26,24 +27,36 @@ struct PointsPersistence
                       const std::string& node_name)
   {
     std::visit(
-      [&](auto& impl) { impl.persist_points(points_begin, points_end, bounds, node_name); }, _impl);
+      [&](auto& impl) {
+        impl.persist_points(points_begin, points_end, bounds, node_name);
+      },
+      _impl);
   }
 
   inline void persist_points(PointBuffer const& points,
                              const AABB& bounds,
                              const std::string& node_name)
   {
-    std::visit([&](auto& impl) { impl.persist_points(points, bounds, node_name); }, _impl);
+    std::visit(
+      [&](auto& impl) { impl.persist_points(points, bounds, node_name); },
+      _impl);
   }
 
   inline void retrieve_points(const std::string& node_name, PointBuffer& points)
   {
-    std::visit([&](auto& impl) { impl.retrieve_points(node_name, points); }, _impl);
+    std::visit([&](auto& impl) { impl.retrieve_points(node_name, points); },
+               _impl);
   }
 
   inline bool node_exists(const std::string& node_name) const
   {
-    return std::visit([&](auto& impl) { return impl.node_exists(node_name); }, _impl);
+    return std::visit([&](auto& impl) { return impl.node_exists(node_name); },
+                      _impl);
+  }
+
+  inline bool is_lossless() const
+  {
+    return std::visit([&](auto& impl) { return impl.is_lossless(); }, _impl);
   }
 
   template<typename T>
@@ -53,6 +66,10 @@ struct PointsPersistence
   }
 
 private:
-  std::variant<BinaryPersistence, Cesium3DTilesPersistence, LASPersistence, MemoryPersistence>
+  std::variant<BinaryPersistence,
+               Cesium3DTilesPersistence,
+               LASPersistence,
+               MemoryPersistence,
+               EntwinePersistence>
     _impl;
 };

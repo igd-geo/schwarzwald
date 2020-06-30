@@ -41,7 +41,7 @@ struct BoundingBox
   double yx, yy, yz;
   double zx, zy, zz;
 };
-// TODO Other bounding regions (box, sphere)
+// FEATURE Other bounding regions (box, sphere)
 
 using BoundingVolume_t = std::variant<BoundingRegion, BoundingBox>;
 
@@ -52,7 +52,8 @@ using BoundingVolume_t = std::variant<BoundingRegion, BoundingBox>;
 /// https://github.com/AnalyticalGraphicsInc/3d-tiles/tree/master/specification#bounding-volumes
 /// </summary>
 BoundingVolume_t
-boundingVolumeFromAABB(const AABB& aabb, const SRSTransformHelper& transformHelper);
+boundingVolumeFromAABB(const AABB& aabb,
+                       const SRSTransformHelper& transformHelper);
 
 BoundingVolume_t
 boundingVolumeFromAABB(const AABB& aabb);
@@ -79,7 +80,8 @@ public:
   double height_max = 0;
 
   // geometricError - required
-  double geometricError = 500; // This should be set up and be less or eq in the child tilesets
+  double geometricError =
+    500; // This should be set up and be less or eq in the child tilesets
 
   // root - required
   BoundingVolume_t boundingVolume;
@@ -110,7 +112,8 @@ public:
   bool requestVolumeIsSet() const { return _requestVolumeSet; }
 
 private:
-  BoundingVolume_t _viewerRequestVolume; // Viewer must be inside of it before the tiles
-                                         // content will be refined based on geometric error
+  BoundingVolume_t
+    _viewerRequestVolume; // Viewer must be inside of it before the tiles
+                          // content will be refined based on geometric error
   bool _requestVolumeSet = false;
 };

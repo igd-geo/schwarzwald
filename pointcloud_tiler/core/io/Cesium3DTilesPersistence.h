@@ -36,22 +36,29 @@ struct Cesium3DTilesPersistence
       throw std::runtime_error{ "persist_points requires a non-empty range" };
     }
 
-    PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"), _point_attributes };
-    // TODO This is not optimal, writer should be able to take iterator pair
+    PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"),
+                       _point_attributes };
+    // OPTIMIZATION This is not optimal, writer should be able to take iterator
+    // pair
     PointBuffer tmp_points;
-    std::for_each(points_begin, points_end, [&tmp_points](const auto& point_ref) {
-      tmp_points.push_point(point_ref);
-    });
+    std::for_each(
+      points_begin, points_end, [&tmp_points](const auto& point_ref) {
+        tmp_points.push_point(point_ref);
+      });
     writer.write_points(tmp_points);
     writer.flush(_global_offset);
 
     on_write_node(node_name, bounds);
   }
-  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
+  void persist_points(PointBuffer const& points,
+                      const AABB& bounds,
+                      const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
   bool node_exists(const std::string& node_name) const;
+
+  inline bool is_lossless() const { return true; }
 
 private:
   void on_write_node(const std::string& node_name, const AABB& node_bounds);
