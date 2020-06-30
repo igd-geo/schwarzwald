@@ -7,8 +7,8 @@
 #include <optional>
 #include <vector>
 
-// TODO Make attributes more dynamic (map<AttributeType, GenericAttribute*> or
-// something like that)
+// TECH_DEBT Make attributes more dynamic (map<AttributeType, GenericAttribute*>
+// or something like that)
 
 /// <summary>
 /// Buffer structure that stores point attributes (position, color etc.) for

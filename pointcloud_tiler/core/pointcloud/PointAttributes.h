@@ -15,8 +15,8 @@
 enum class PointAttribute
 {
   Position,
-  RGB, // TODO This should maybe be named COLOR, but this would be a breaking
-       // change for the command line arguments
+  RGB, // TECH_DEBT This should maybe be named COLOR, but this would be a
+       // breaking change for the command line arguments
   RGBFromIntensity,
   Intensity,
   Classification,

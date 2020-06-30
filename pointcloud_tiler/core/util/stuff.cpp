@@ -14,6 +14,11 @@
 #include "math/AABB.h"
 #include "math/Vector3.h"
 #include "pointcloud/Point.h"
+#include "util/Error.h"
+
+#include <rapidjson/error/en.h>
+#include <rapidjson/filewritestream.h>
+#include <rapidjson/writer.h>
 
 /**
  *   y
@@ -29,7 +34,9 @@
  * 0----4
  *
  */
-AABB childAABB(const AABB &aabb, const int &index) {
+AABB
+childAABB(const AABB& aabb, const int& index)
+{
   Vector3<double> min = aabb.min;
   Vector3<double> max = aabb.max;
 
@@ -70,7 +77,9 @@ AABB childAABB(const AABB &aabb, const int &index) {
  * 0----4
  *
  */
-int nodeIndex(const AABB &aabb, const Vector3<double> &pointPosition) {
+int
+nodeIndex(const AABB& aabb, const Vector3<double>& pointPosition)
+{
   const auto bounds_extent = aabb.extent();
   int mx = (int)(2.0 * (pointPosition.x - aabb.min.x) / bounds_extent.x);
   int my = (int)(2.0 * (pointPosition.y - aabb.min.y) / bounds_extent.y);
@@ -87,7 +96,9 @@ int nodeIndex(const AABB &aabb, const Vector3<double> &pointPosition) {
  * from
  * http://stackoverflow.com/questions/5840148/how-can-i-get-a-files-size-in-c
  */
-long filesize(std::string filename) {
+long
+filesize(std::string filename)
+{
   struct stat stat_buf;
   int rc = stat(filename.c_str(), &stat_buf);
   return rc == 0 ? stat_buf.st_size : -1;
@@ -111,7 +122,9 @@ long filesize(std::string filename) {
  * see
  * http://stackoverflow.com/questions/735204/convert-a-string-in-c-to-upper-case
  */
-std::string toUpper(std::string str) {
+std::string
+toUpper(std::string str)
+{
   auto tmp = str;
   std::transform(tmp.begin(), tmp.end(), tmp.begin(), ::toupper);
 
@@ -119,7 +132,9 @@ std::string toUpper(std::string str) {
 }
 
 // http://stackoverflow.com/questions/8593608/how-can-i-copy-a-directory-using-boost-filesystem
-bool copyDir(fs::path source, fs::path destination) {
+bool
+copyDir(fs::path source, fs::path destination)
+{
   try {
     // Check whether the function call is valid
     if (!fs::exists(source) || !fs::is_directory(source)) {
@@ -140,7 +155,7 @@ bool copyDir(fs::path source, fs::path destination) {
         return false;
       }
     }
-  } catch (fs::filesystem_error const &e) {
+  } catch (fs::filesystem_error const& e) {
     std::cerr << e.what() << '\n';
     return false;
   }
@@ -156,17 +171,20 @@ bool copyDir(fs::path source, fs::path destination) {
         }
       } else {
         // Found file: Copy
-        fs::copy_file(current, destination / current.filename(),
+        fs::copy_file(current,
+                      destination / current.filename(),
                       fs::copy_options::overwrite_existing);
       }
-    } catch (fs::filesystem_error const &e) {
+    } catch (fs::filesystem_error const& e) {
       std::cerr << e.what() << '\n';
     }
   }
   return true;
 }
 
-float psign(float value) {
+float
+psign(float value)
+{
   if (value == 0.0) {
     return 0.0;
   } else if (value < 0.0) {
@@ -178,13 +196,17 @@ float psign(float value) {
 
 // see
 // https://stackoverflow.com/questions/23943728/case-insensitive-standard-string-comparison-in-c
-bool icompare_pred(unsigned char a, unsigned char b) {
+bool
+icompare_pred(unsigned char a, unsigned char b)
+{
   return std::tolower(a) == std::tolower(b);
 }
 
 // see
 // https://stackoverflow.com/questions/23943728/case-insensitive-standard-string-comparison-in-c
-bool icompare(std::string const &a, std::string const &b) {
+bool
+icompare(std::string const& a, std::string const& b)
+{
   if (a.length() == b.length()) {
     return std::equal(b.begin(), b.end(), a.begin(), icompare_pred);
   } else {
@@ -197,7 +219,9 @@ bool icompare(std::string const &a, std::string const &b) {
 // suffix.size(), suffix.size(), suffix) == 0;
 //}
 
-bool endsWith(const std::string &str, const std::string &suffix) {
+bool
+endsWith(const std::string& str, const std::string& suffix)
+{
   if (str.size() < suffix.size()) {
     return false;
   }
@@ -207,7 +231,9 @@ bool endsWith(const std::string &str, const std::string &suffix) {
   return tstr.compare(suffix) == 0;
 }
 
-bool iEndsWith(const std::string &str, const std::string &suffix) {
+bool
+iEndsWith(const std::string& str, const std::string& suffix)
+{
   if (str.size() < suffix.size()) {
     return false;
   }
@@ -219,7 +245,9 @@ bool iEndsWith(const std::string &str, const std::string &suffix) {
 
 // see
 // https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
-std::string ltrim(std::string s) {
+std::string
+ltrim(std::string s)
+{
   s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](unsigned char ch) {
             return !std::isspace(ch);
           }));
@@ -229,10 +257,13 @@ std::string ltrim(std::string s) {
 
 // see
 // https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
-std::string rtrim(std::string s) {
-  s.erase(std::find_if(s.rbegin(), s.rend(),
+std::string
+rtrim(std::string s)
+{
+  s.erase(std::find_if(s.rbegin(),
+                       s.rend(),
                        [](unsigned char ch) { return !std::isspace(ch); })
-              .base(),
+            .base(),
           s.end());
 
   return s;
@@ -240,34 +271,68 @@ std::string rtrim(std::string s) {
 
 // see
 // https://stackoverflow.com/questions/216823/whats-the-best-way-to-trim-stdstring
-std::string trim(std::string s) {
+std::string
+trim(std::string s)
+{
   s = ltrim(s);
   s = rtrim(s);
 
   return s;
 }
 
-Vector3<uint8_t> intensityToRGB_Log(uint16_t intensity) {
+Vector3<uint8_t>
+intensityToRGB_Log(uint16_t intensity)
+{
   const auto correctedIntensity = std::log(intensity + 1) / std::log(0xffff);
   const auto grey = static_cast<uint8_t>(255 * correctedIntensity);
-  return {grey, grey, grey};
+  return { grey, grey, grey };
 }
 
-std::vector<fs::path> get_all_files_in_directory(const std::string &dir_path,
-                                                 Recursive recursive) {
+std::vector<fs::path>
+get_all_files_in_directory(const std::string& dir_path, Recursive recursive)
+{
   std::vector<fs::path> files;
   if (recursive == Recursive::Yes) {
-    for (auto &f : fs::recursive_directory_iterator{dir_path}) {
+    for (auto& f : fs::recursive_directory_iterator{ dir_path }) {
       if (!fs::is_regular_file(f))
         continue;
       files.push_back(f);
     }
   } else {
-    for (auto &f : fs::directory_iterator{dir_path}) {
+    for (auto& f : fs::directory_iterator{ dir_path }) {
       if (!fs::is_regular_file(f))
         continue;
       files.push_back(f);
     }
   }
   return files;
+}
+
+void
+write_json_to_file(const rapidjson::Document& doc, const fs::path& file_path)
+{
+  struct Stream
+  {
+    std::ofstream of;
+
+    explicit Stream(const std::string& filepath)
+      : of{ filepath, std::ios::binary }
+    {}
+
+    typedef char Ch;
+    void Put(Ch ch) { of.put(ch); }
+    void Flush() {}
+  };
+
+  Stream fs{ file_path };
+  if (!fs.of.is_open()) {
+    throw util::chain_error({ concat("Can't open file ", file_path.string()) });
+  }
+
+  rapidjson::Writer<Stream> writer(fs);
+  if (!doc.Accept(writer)) {
+    throw util::chain_error(
+      { concat("Unknown error while writing JSON document to file ",
+               file_path.string()) });
+  }
 }

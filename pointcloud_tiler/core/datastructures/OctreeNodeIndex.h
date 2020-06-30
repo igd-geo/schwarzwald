@@ -1,6 +1,7 @@
 #pragma once
 
 #include "MortonIndex.h"
+#include "util/stuff.h"
 
 #include <algorithms/Bitmanip.h>
 #include <containers/Range.h>
@@ -10,6 +11,8 @@
 #include <functional>
 #include <sstream>
 
+#include <boost/algorithm/string.hpp>
+#include <boost/format.hpp>
 #include <boost/functional/hash.hpp>
 
 /**
@@ -322,7 +325,58 @@ struct OctreeNodeIndex
    * Tries to parse the given string into an OctreeNodeIndex. Returns the parsed index on success
    * and the reason for failure otherwise.
    */
-  static tl::expected<OctreeNodeIndex, std::string> from_string(std::string_view str)
+  static tl::expected<OctreeNodeIndex, std::string> from_string(
+    std::string_view str,
+    MortonIndexNamingConvention naming_convention = MortonIndexNamingConvention::Simple)
+  {
+    switch (naming_convention) {
+      case MortonIndexNamingConvention::Simple:
+        return from_string_simple(str);
+      case MortonIndexNamingConvention::Potree:
+        return from_string_potree(str);
+      case MortonIndexNamingConvention::Entwine:
+        return from_string_entwine(str);
+      default:
+        throw std::runtime_error{ concat("Unrecognized MortonIndexNamingConvention: ",
+                                         static_cast<uint32_t>(naming_convention)) };
+    }
+  }
+
+  /**
+   * Converts the given OctreeNodeIndex into a string
+   */
+  static std::string to_string(
+    const OctreeNodeIndex& index,
+    MortonIndexNamingConvention naming_convention = MortonIndexNamingConvention::Simple)
+  {
+    switch (naming_convention) {
+      case MortonIndexNamingConvention::Simple:
+        return to_string_simple(index);
+      case MortonIndexNamingConvention::Potree:
+        return to_string_potree(index);
+      case MortonIndexNamingConvention::Entwine:
+        return to_string_entwine(index);
+      default:
+        throw std::runtime_error{ concat("Unrecognized MortonIndexNamingConvention: ",
+                                         static_cast<uint32_t>(naming_convention)) };
+    }
+  }
+
+private:
+  /**
+   * Creates an OctreeNodeIndex with the given index and levels. This constructor does no validity
+   * checks and no bit-shifting, it expected that 'index' and 'levels' match! Because this is easy
+   * to get wrong, this constructor is private and instead the 'unchecked_from_index_and_levels'
+   * method is exposed to make the intent clear.
+   */
+  constexpr OctreeNodeIndex(UnsignedBits<MaxLevels * 3> index, uint32_t levels)
+    : _index(index)
+    , _levels(levels)
+  {
+    assert(levels <= MaxLevels);
+  }
+
+  static tl::expected<OctreeNodeIndex, std::string> from_string_simple(std::string_view str)
   {
     if (str.size() > MaxLevels) {
       return tl::make_unexpected("String size exceeds MaxLevels");
@@ -342,10 +396,70 @@ struct OctreeNodeIndex
     return { OctreeNodeIndex{ std::begin(octants), std::end(octants) } };
   }
 
-  /**
-   * Converts the given OctreeNodeIndex into a string
-   */
-  static std::string to_string(const OctreeNodeIndex& index)
+  static tl::expected<OctreeNodeIndex, std::string> from_string_potree(std::string_view str)
+  {
+    if (str.size() > MaxLevels) {
+      return tl::make_unexpected("String size exceeds MaxLevels");
+    }
+
+    std::vector<uint8_t> octants;
+    octants.reserve(str.size());
+    for (auto iter = std::next(std::begin(str)); iter != std::end(str); ++iter) {
+      auto octant = static_cast<uint8_t>((*iter) - '0');
+      if (octant > 7) {
+        return tl::make_unexpected(
+          "Unexpected character in string. String must contain only ['0';'7']");
+      }
+      octants.push_back(octant);
+    }
+
+    return { OctreeNodeIndex{ std::begin(octants), std::end(octants) } };
+  }
+
+  static tl::expected<OctreeNodeIndex, std::string> from_string_entwine(std::string_view str)
+  {
+    std::vector<std::string> splits;
+    boost::split(splits, str, boost::is_any_of("-"));
+
+    if (splits.size() != 4) {
+      return tl::make_unexpected(
+        "Malformed node index in Entwine format, expected \"D-X-Y-Z\" with D,X,Y,Z as numbers");
+    }
+
+    uint32_t depth;
+    uint64_t x, y, z;
+
+    try {
+      depth = std::stoul(splits[0]);
+      x = std::stoull(splits[1]);
+      y = std::stoull(splits[2]);
+      z = std::stoull(splits[3]);
+    } catch (const std::exception& parse_error) {
+      const auto error_msg = boost::format("Can't parse node index in Entwine "
+                                           "format from string \"%1%\": %2%") %
+                             str % parse_error.what();
+      return tl::make_unexpected(error_msg.str());
+    }
+
+    if (depth > MaxLevels) {
+      return tl::make_unexpected(
+        concat("Node index levels (", depth, ") exceeds maximum levels (", MaxLevels, ")"));
+    }
+
+    OctreeNodeIndex index;
+    for (uint32_t level = 0; level < depth; ++level) {
+      const auto shift = (depth - level - 1);
+      const auto x_bit = (x >> shift) & 1;
+      const auto y_bit = (y >> shift) & 1;
+      const auto z_bit = (z >> shift) & 1;
+
+      const auto octant = static_cast<uint8_t>(z_bit | (y_bit << 1) | (x_bit << 2));
+      index = index.child(octant);
+    }
+    return index;
+  }
+
+  static std::string to_string_simple(const OctreeNodeIndex& index)
   {
     std::stringstream ss;
     for (uint32_t level = 1; level <= index._levels; ++level) {
@@ -356,18 +470,35 @@ struct OctreeNodeIndex
     return ss.str();
   }
 
-private:
-  /**
-   * Creates an OctreeNodeIndex with the given index and levels. This constructor does no validity
-   * checks and no bit-shifting, it expected that 'index' and 'levels' match! Because this is easy
-   * to get wrong, this constructor is private and instead the 'unchecked_from_index_and_levels'
-   * method is exposed to make the intent clear.
-   */
-  constexpr OctreeNodeIndex(UnsignedBits<MaxLevels * 3> index, uint32_t levels)
-    : _index(index)
-    , _levels(levels)
+  static std::string to_string_potree(const OctreeNodeIndex& index)
   {
-    assert(levels <= MaxLevels);
+    std::stringstream ss;
+    ss << "r";
+    for (uint32_t level = 1; level <= index._levels; ++level) {
+      const auto cur_char =
+        static_cast<char>('0' + static_cast<char>(index.octant_at_level(level)));
+      ss << cur_char;
+    }
+    return ss.str();
+  }
+
+  static std::string to_string_entwine(const OctreeNodeIndex& index)
+  {
+    uint64_t x = 0, y = 0, z = 0;
+    for (uint32_t level = 0; level < index.levels(); ++level) {
+      const auto octant = index.octant_at_level(level + 1);
+      x <<= 1;
+      y <<= 1;
+      z <<= 1;
+
+      x |= ((octant >> 2) & 1);
+      y |= ((octant >> 1) & 1);
+      z |= (octant & 1);
+    }
+
+    std::stringstream ss;
+    ss << index.levels() << '-' << x << '-' << y << '-' << z;
+    return ss.str();
   }
 
   using StorageType = UnsignedBits<MaxLevels * 3>;

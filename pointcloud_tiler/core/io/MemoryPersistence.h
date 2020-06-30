@@ -27,15 +27,20 @@ struct MemoryPersistence
   {
     std::lock_guard<std::mutex> lock{ *_lock };
     auto& buffer = _points_cache[node_name];
-    std::for_each(
-      points_begin, points_end, [&buffer](const auto& point_ref) { buffer.push_point(point_ref); });
+    std::for_each(points_begin, points_end, [&buffer](const auto& point_ref) {
+      buffer.push_point(point_ref);
+    });
   }
 
-  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
+  void persist_points(PointBuffer const& points,
+                      const AABB& bounds,
+                      const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
   bool node_exists(const std::string& node_name) const;
+
+  inline bool is_lossless() const { return true; }
 
   const auto& get_points() const { return _points_cache; }
 

@@ -352,7 +352,12 @@ parseArguments(int argc, char** argv)
 
     tiler_args.output_format = [&]() {
       const std::unordered_map<std::string, OutputFormat> supported_output_formats = {
-        { "3DTILES", OutputFormat::CZM_3DTILES }, { "BIN", OutputFormat::BIN }
+        { "3DTILES", OutputFormat::CZM_3DTILES },
+        { "BIN", OutputFormat::BIN },
+        { "LAS", OutputFormat::LAS },
+        { "LAZ", OutputFormat::LAZ },
+        { "ENTWINE_LAS", OutputFormat::ENTWINE_LAS },
+        { "ENTWINE_LAZ", OutputFormat::ENTWINE_LAZ }
       };
       const auto& output_format_arg = tiler_variables["output-format"].as<std::string>();
       const auto matching_output_format = supported_output_formats.find(output_format_arg);

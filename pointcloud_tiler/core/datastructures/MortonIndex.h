@@ -30,6 +30,24 @@ all_set_bits()
 }
 } // namespace detail
 
+// Naming convention for parsing and printing Morton indices
+enum class MortonIndexNamingConvention
+{
+  // Concatenation of the octant indices, starting with the node that is closest to the root (e.g.
+  // 0475263). The root node itself is ignored, as it has no octant index. An empty Morton index
+  // thus corresponds to the empty string.
+  Simple,
+  // Like the 'Simple' convention, but the resulting string is prefixed with 'r' for the root node.
+  // An empty Morton index thus corresponds to the string 'r'. This is the naming convention that
+  // Potree uses.
+  Potree,
+  // A concatenation of the depth of the Morton index with the X, Y and Z components of the Morton
+  // index. The spatial components correspond to the X, Y and Z indices of the octree node within a
+  // regular grid with 2^depth subdivisions. Strings then take the form of 'depth-X-Y-Z', e.g.
+  // 2-7-3-1. This is the naming convention that Entwine uses.
+  Entwine
+};
+
 /**
  * A key that stores the coordinates (indices) of a specific node in an octree
  * inside a bitmask. Each level in the octree is represented as an index from

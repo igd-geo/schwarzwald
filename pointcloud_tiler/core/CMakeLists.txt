@@ -21,6 +21,8 @@ set(SOURCE_FILES
     io/LASFile.h
     io/LASPersistence.cpp
     io/LASPersistence.h
+    io/EntwinePersistence.cpp
+    io/EntwinePersistence.h
     io/MemoryPersistence.cpp
     io/MemoryPersistence.h
     io/PNTSReader.cpp
