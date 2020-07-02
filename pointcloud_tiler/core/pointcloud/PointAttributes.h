@@ -17,7 +17,6 @@ enum class PointAttribute
   Position,
   RGB, // TECH_DEBT This should maybe be named COLOR, but this would be a
        // breaking change for the command line arguments
-  RGBFromIntensity,
   Intensity,
   Classification,
   Normal,
@@ -31,14 +30,25 @@ enum class PointAttribute
   UserData
 };
 
+/**
+ * Optional mappings from other point attributes to RGB colors
+ */
+enum class RGBMapping
+{
+  // No mapping (i.e. either use the RGB values inside the source files, or skip RGB)
+  None,
+  // Convert the intensity values to RGB colors (greyscale). Applies a linear conversion
+  FromIntensityLinear,
+  // Convert the intensity values to RGB colors (greyscale). Applies a logarithmic conversion
+  FromIntensityLogarithmic
+};
+
 namespace util {
 namespace {
-static const std::unordered_set<std::pair<PointAttribute, std::string>,
-                                util::PairHash>
+static const std::unordered_set<std::pair<PointAttribute, std::string>, util::PairHash>
   POINT_ATTRIBUTE_STRING_MAPPING = {
     { PointAttribute::Position, "POSITION" },
     { PointAttribute::RGB, "RGB" },
-    { PointAttribute::RGBFromIntensity, "RGB_FROM_INTENSITY" },
     { PointAttribute::Intensity, "INTENSITY" },
     { PointAttribute::Classification, "CLASSIFICATION" },
     { PointAttribute::Normal, "NORMAL" },
@@ -57,14 +67,12 @@ template<>
 inline tl::expected<PointAttribute, std::string>
 try_parse(const std::string& token)
 {
-  const auto iter =
-    std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
-                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
-                 [&token](const auto& pair) { return pair.second == token; });
+  const auto iter = std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 [&token](const auto& pair) { return pair.second == token; });
   if (iter == std::end(POINT_ATTRIBUTE_STRING_MAPPING)) {
     return tl::make_unexpected(
-      (boost::format("Could not parse token \"%1%\" as PointAttribute") % token)
-        .str());
+      (boost::format("Could not parse token \"%1%\" as PointAttribute") % token).str());
   }
 
   return { iter->first };
@@ -74,14 +82,13 @@ template<>
 inline const std::string&
 to_string(PointAttribute attribute)
 {
-  const auto iter = std::find_if(
-    std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
-    std::end(POINT_ATTRIBUTE_STRING_MAPPING),
-    [attribute](const auto& pair) { return pair.first == attribute; });
+  const auto iter = std::find_if(std::begin(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 std::end(POINT_ATTRIBUTE_STRING_MAPPING),
+                                 [attribute](const auto& pair) { return pair.first == attribute; });
   if (iter == std::end(POINT_ATTRIBUTE_STRING_MAPPING)) {
-    throw std::invalid_argument{ (boost::format("Invalid PointAttribute %1%") %
-                                  static_cast<int>(attribute))
-                                   .str() };
+    throw std::invalid_argument{
+      (boost::format("Invalid PointAttribute %1%") % static_cast<int>(attribute)).str()
+    };
   }
 
   return iter->second;
@@ -91,16 +98,27 @@ to_string(PointAttribute attribute)
 using PointAttributes = std::unordered_set<PointAttribute>;
 
 void
-validate(boost::any& v,
-         const std::vector<std::string>& values,
-         PointAttributes*,
-         int);
+validate(boost::any& v, const std::vector<std::string>& values, PointAttributes*, int);
 
 bool
-has_attribute(PointAttributes const& attributes,
-              PointAttribute attribute_to_find);
+has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_find);
 std::string
 print_attributes(PointAttributes const& attributes);
 
 tl::expected<PointAttributes, std::string>
 point_attributes_from_strings(const std::vector<std::string>& attribute_names);
+
+/**
+ * Returns a PointAttributes object with all possible point attributes in it
+ */
+inline PointAttributes
+point_attributes_all()
+{
+  PointAttributes all;
+  all.reserve(util::POINT_ATTRIBUTE_STRING_MAPPING.size());
+  std::transform(std::begin(util::POINT_ATTRIBUTE_STRING_MAPPING),
+                 std::end(util::POINT_ATTRIBUTE_STRING_MAPPING),
+                 std::inserter(all, all.end()),
+                 [](const auto& kv) { return kv.first; });
+  return all;
+}

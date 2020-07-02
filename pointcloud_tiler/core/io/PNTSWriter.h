@@ -77,8 +77,7 @@ struct PointAttributeBase
 
   virtual ~PointAttributeBase() {}
   virtual void extractFromPoints(const PointBuffer& points) = 0;
-  virtual void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) = 0;
+  virtual void extractFromPoints(gsl::span<PointBuffer::PointReference> points) = 0;
   /// <summary>
   /// Gets the name of this attribute for the JSON header of the feature table
   /// </summary>
@@ -114,8 +113,7 @@ struct GlobalAttributeBase
 struct PositionAttribute : PointAttributeBase
 {
   void extractFromPoints(const PointBuffer& points) override;
-  void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
@@ -128,8 +126,7 @@ private:
 struct PositionQuantizedAttribute : PointAttributeBase
 {
   void extractFromPoints(const PointBuffer& points) override;
-  void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
@@ -142,8 +139,7 @@ private:
 struct RGBAAttribute : PointAttributeBase
 {
   void extractFromPoints(const PointBuffer& points) override;
-  void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
@@ -156,8 +152,7 @@ private:
 struct RGBAttribute : PointAttributeBase
 {
   void extractFromPoints(const PointBuffer& points) override;
-  void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
@@ -167,11 +162,35 @@ private:
   std::vector<RGB> _rgbColors;
 };
 
+/**
+ * RGB values created from intensity values
+ */
+struct RGBFromIntensityAttribute : PointAttributeBase
+{
+  enum class MappingType
+  {
+    Linear,
+    Log
+  };
+
+  explicit RGBFromIntensityAttribute(MappingType mapping_type);
+
+  void extractFromPoints(const PointBuffer& points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
+  std::string getAttributeNameForJSON() const override;
+  gsl::span<const std::byte> getBinaryDataRange() const override;
+  uint32_t getAlignmentRequirement() const override;
+  size_t getNumEntries() const override { return _rgb_colors.size(); }
+
+private:
+  std::vector<RGB> _rgb_colors;
+  std::function<RGB(uint16_t)> _mapping_func;
+};
+
 struct IntensityAttribute : PointAttributeBase
 {
   void extractFromPoints(const PointBuffer& points) override;
-  void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
@@ -184,8 +203,7 @@ private:
 struct ClassificationAttribute : PointAttributeBase
 {
   void extractFromPoints(const PointBuffer& points) override;
-  void extractFromPoints(
-    gsl::span<PointBuffer::PointReference> points) override;
+  void extractFromPoints(gsl::span<PointBuffer::PointReference> points) override;
   std::string getAttributeNameForJSON() const override;
   gsl::span<const std::byte> getBinaryDataRange() const override;
   uint32_t getAlignmentRequirement() const override;
@@ -218,7 +236,8 @@ class PNTSWriter
 {
 public:
   PNTSWriter(const std::string& filePath,
-             const PointAttributes& pointAttributes);
+             const PointAttributes& pointAttributes,
+             RGBMapping rgb_mapping);
   ~PNTSWriter();
 
   void write_points(const PointBuffer& points);
@@ -238,15 +257,13 @@ private:
 
   const char magic[4] = { 'p', 'n', 't', 's' };
   const uint32_t version = 1;
-  uint32_t t_byteLength = 0; // length of the entire tile including header
-  uint32_t ftJSON_byteLength =
-    0; // if this equals zero the tile does not need to be rendered
+  uint32_t t_byteLength = 0;      // length of the entire tile including header
+  uint32_t ftJSON_byteLength = 0; // if this equals zero the tile does not need to be rendered
   uint32_t ft_byteLength = 0;
   uint32_t btJSON_byteLength = 0;
   uint32_t bt_byteLength = 0;
 
-  int position_byteLength =
-    0; // This is necessary for byte offset in feature table
+  int position_byteLength = 0; // This is necessary for byte offset in feature table
   int position_quantized_byteLength = 0;
   int rgba_byteLength = 0;
   int rgb_byteLength = 0;

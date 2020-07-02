@@ -27,6 +27,18 @@ compute_las_scale_from_bounds(const AABB& bounds)
   return 0.0001;
 }
 
+PointAttributes
+LASPersistence::supported_output_attributes()
+{
+  return { PointAttribute::Classification, PointAttribute::EdgeOfFlightLine,
+           PointAttribute::GPSTime,        PointAttribute::Intensity,
+           PointAttribute::Normal,         PointAttribute::NumberOfReturns,
+           PointAttribute::PointSourceID,  PointAttribute::Position,
+           PointAttribute::ReturnNumber,   PointAttribute::RGB,
+           PointAttribute::ScanAngleRank,  PointAttribute::ScanDirectionFlag,
+           PointAttribute::UserData };
+}
+
 LASPersistence::LASPersistence(const std::string& work_dir,
                                const PointAttributes& point_attributes,
                                Compressed compressed)

@@ -62,8 +62,7 @@ validate_points(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& points,
     const auto& p = points[idx];
     const auto& pos = p.point_reference.position();
     if (!bounds.isInside(pos)) {
-      std::cerr << "validate_points failed @ node " << node_name << "("
-                << bounds << ")!\n"
+      std::cerr << "validate_points failed @ node " << node_name << "(" << bounds << ")!\n"
                 << "\tPoint " << pos << " is outside of bounding box!\n";
       std::exit(EXIT_FAILURE);
     }
@@ -92,15 +91,13 @@ morton_check(Iter begin,
 {
   for (auto next = begin + 1; next < end; ++next) {
     const auto next_morton_idx = next->morton_index.truncate_to_level(level);
-    const auto cur_morton_idx =
-      (next - 1)->morton_index.truncate_to_level(level);
+    const auto cur_morton_idx = (next - 1)->morton_index.truncate_to_level(level);
     if (cur_morton_idx.get() != next_morton_idx.get()) {
-      std::cerr << "morton_check failed @ node " << node_name << "("
-                << node_bounds << ")!\n"
-                << "\tPoint A: " << (next - 1)->point_reference.position()
-                << " with Morton index " << to_string(cur_morton_idx) << "\n"
-                << "\tPoint B: " << next->point_reference.position()
-                << " with Morton index " << to_string(next_morton_idx) << "\n";
+      std::cerr << "morton_check failed @ node " << node_name << "(" << node_bounds << ")!\n"
+                << "\tPoint A: " << (next - 1)->point_reference.position() << " with Morton index "
+                << to_string(cur_morton_idx) << "\n"
+                << "\tPoint B: " << next->point_reference.position() << " with Morton index "
+                << to_string(next_morton_idx) << "\n";
       std::exit(EXIT_FAILURE);
     }
   }
@@ -108,16 +105,12 @@ morton_check(Iter begin,
 
 template<typename Iter>
 static void
-inside_check(Iter begin,
-             Iter end,
-             const std::string& node_name,
-             const AABB& bounds)
+inside_check(Iter begin, Iter end, const std::string& node_name, const AABB& bounds)
 {
   std::for_each(begin, end, [&](const auto& indexed_point) {
     const auto& pos = indexed_point.point_reference.position();
     if (!bounds.isInside(pos)) {
-      std::cerr << "validate_points failed @ node " << node_name << "("
-                << bounds << ")!\n"
+      std::cerr << "validate_points failed @ node " << node_name << "(" << bounds << ")!\n"
                 << "\tPoint " << pos << " is outside of bounding box!\n";
       std::exit(EXIT_FAILURE);
     }
@@ -136,25 +129,20 @@ find_start_nodes_of_batch(PointBuffer::PointIterator points_begin,
                           size_t desired_concurrency,
                           uint32_t max_tree_scan_depth)
 {
-  index_points<MAX_OCTREE_LEVELS>(points_begin,
-                                  points_end,
-                                  indices_begin,
-                                  root_bounds,
-                                  OutlierPointsBehaviour::ClampToBounds);
+  index_points<MAX_OCTREE_LEVELS>(
+    points_begin, points_end, indices_begin, root_bounds, OutlierPointsBehaviour::ClampToBounds);
 
   // Count # of points for each morton index for the first 2/3 levels or so
   const auto num_points = std::distance(points_begin, points_end);
   PointsPerNode histogram;
-  std::for_each(
-    indices_begin,
-    indices_begin + num_points,
-    [&histogram, max_tree_scan_depth](const IndexedPoint64& indexed_point) {
-      for (uint32_t level = 0; level < max_tree_scan_depth; ++level) {
-        const DynamicMortonIndex dynamic_index = { indexed_point.morton_index,
-                                                   level };
-        ++histogram[dynamic_index];
-      }
-    });
+  std::for_each(indices_begin,
+                indices_begin + num_points,
+                [&histogram, max_tree_scan_depth](const IndexedPoint64& indexed_point) {
+                  for (uint32_t level = 0; level < max_tree_scan_depth; ++level) {
+                    const DynamicMortonIndex dynamic_index = { indexed_point.morton_index, level };
+                    ++histogram[dynamic_index];
+                  }
+                });
 
   return histogram;
 }
@@ -170,8 +158,7 @@ select_start_nodes(const PointsPerNode& nodes_tree, size_t desired_nodes_count)
   // number of points is used.
   PointsPerNode selected_nodes;
 
-  const auto node_has_children = [](const NodeWithPointCount& node,
-                                    const PointsPerNode& nodes) {
+  const auto node_has_children = [](const NodeWithPointCount& node, const PointsPerNode& nodes) {
     for (uint8_t octant = 0; octant < 8; ++octant) {
       if (nodes.find(node.first.child(octant)) != std::end(nodes))
         return true;
@@ -180,8 +167,7 @@ select_start_nodes(const PointsPerNode& nodes_tree, size_t desired_nodes_count)
   };
 
   const auto find_max_node =
-    [node_has_children](
-      const PointsPerNode& nodes) -> std::optional<NodeWithPointCount> {
+    [node_has_children](const PointsPerNode& nodes) -> std::optional<NodeWithPointCount> {
     std::optional<NodeWithPointCount> max_node;
 
     for (auto& node_with_count : nodes) {
@@ -234,10 +220,9 @@ using IndexedPointIter = std::vector<IndexedPoint64>::iterator;
 using IndexedPointRange = util::Range<IndexedPointIter>;
 
 [[maybe_unused]] static std::vector<IndexedPointRange>
-filter_and_sort_indexed_points(
-  std::vector<IndexedPoint64>::iterator indexed_points_begin,
-  std::vector<IndexedPoint64>::iterator indexed_points_end,
-  const std::vector<std::pair<DynamicMortonIndex, size_t>>& nodes)
+filter_and_sort_indexed_points(std::vector<IndexedPoint64>::iterator indexed_points_begin,
+                               std::vector<IndexedPoint64>::iterator indexed_points_end,
+                               const std::vector<std::pair<DynamicMortonIndex, size_t>>& nodes)
 {
   // Sort the indexed points...
   std::sort(indexed_points_begin, indexed_points_end);
@@ -248,8 +233,8 @@ filter_and_sort_indexed_points(
   std::vector<IndexedPointRange> indexed_ranges;
   indexed_ranges.reserve(nodes.size());
 
-  const auto find_start_index = [indexed_points_begin, indexed_points_end](
-                                  const DynamicMortonIndex& morton_index) {
+  const auto find_start_index = [indexed_points_begin,
+                                 indexed_points_end](const DynamicMortonIndex& morton_index) {
     return std::lower_bound(
       indexed_points_begin,
       indexed_points_end,
@@ -260,8 +245,8 @@ filter_and_sort_indexed_points(
       });
   };
 
-  const auto find_end_index = [indexed_points_begin, indexed_points_end](
-                                const DynamicMortonIndex& morton_index) {
+  const auto find_end_index = [indexed_points_begin,
+                               indexed_points_end](const DynamicMortonIndex& morton_index) {
     return std::upper_bound(
       indexed_points_begin,
       indexed_points_end,
@@ -282,14 +267,10 @@ filter_and_sort_indexed_points(
     std::accumulate(std::begin(indexed_ranges),
                     std::end(indexed_ranges),
                     size_t{ 0 },
-                    [](size_t accum, const auto& range) -> size_t {
-                      return accum + range.size();
-                    });
-  if (selected_points != static_cast<size_t>(std::distance(
-                           indexed_points_begin, indexed_points_end))) {
-    throw std::runtime_error{
-      "Node partitioning does not span the full range of points!"
-    };
+                    [](size_t accum, const auto& range) -> size_t { return accum + range.size(); });
+  if (selected_points !=
+      static_cast<size_t>(std::distance(indexed_points_begin, indexed_points_end))) {
+    throw std::runtime_error{ "Node partitioning does not span the full range of points!" };
   }
 
   return indexed_ranges;
@@ -297,19 +278,17 @@ filter_and_sort_indexed_points(
 
 template<typename Func, typename Taskflow>
 static void
-merge_and_process_points(
-  const std::vector<IndexedPointRange>& sorted_ranges_for_node,
-  const DynamicMortonIndex& morton_index_of_node,
-  const octree::NodeStructure& root_node,
-  const TilerMetaParameters& meta_parameters,
-  Func process_call,
-  Taskflow& taskflow)
+merge_and_process_points(const std::vector<IndexedPointRange>& sorted_ranges_for_node,
+                         const DynamicMortonIndex& morton_index_of_node,
+                         const octree::NodeStructure& root_node,
+                         const TilerMetaParameters& meta_parameters,
+                         Func process_call,
+                         Taskflow& taskflow)
 {
-  const auto num_points =
-    util::range(sorted_ranges_for_node)
-      .accumulate([](size_t accum, const IndexedPointRange& range) {
-        return accum + range.size();
-      });
+  const auto num_points = util::range(sorted_ranges_for_node)
+                            .accumulate([](size_t accum, const IndexedPointRange& range) {
+                              return accum + range.size();
+                            });
 
   octree::NodeData node_data;
   node_data.reserve(num_points);
@@ -333,39 +312,28 @@ merge_and_process_points(
   };
 
   for (size_t idx = 0; idx < num_points; ++idx) {
-    const auto index_of_next_range =
-      get_index_of_range_containing_lowest_point();
+    const auto index_of_next_range = get_index_of_range_containing_lowest_point();
     auto& next_range = point_ranges[index_of_next_range];
     node_data.push_back(*next_range.begin++);
   }
 
   octree::NodeStructure node_structure;
-  node_structure.bounds =
-    get_bounds_from_morton_index(morton_index_of_node, root_node.bounds);
-  node_structure.level = static_cast<int32_t>(morton_index_of_node.depth()) -
-                         1; // TODO Definitiely fix this hacky
-                            // 'root-level-is-negative-one' stuff...
+  node_structure.bounds = get_bounds_from_morton_index(morton_index_of_node, root_node.bounds);
+  node_structure.level =
+    static_cast<int32_t>(morton_index_of_node.depth()) - 1; // TODO Definitiely fix this hacky
+                                                            // 'root-level-is-negative-one' stuff...
   node_structure.max_depth = root_node.max_depth;
-  node_structure.max_spacing =
-    root_node.max_spacing / (1 << morton_index_of_node.depth());
-  node_structure.morton_index =
-    morton_index_of_node.to_static_morton_index<MAX_OCTREE_LEVELS>();
-  node_structure.name =
-    to_string(morton_index_of_node, MortonIndexNamingConvention::Potree);
+  node_structure.max_spacing = root_node.max_spacing / (1 << morton_index_of_node.depth());
+  node_structure.morton_index = morton_index_of_node.to_static_morton_index<MAX_OCTREE_LEVELS>();
+  node_structure.name = to_string(morton_index_of_node, MortonIndexNamingConvention::Potree);
 
   const auto task_name =
     (boost::format("%1% [%2%]") % node_structure.name % node_data.size()).str();
 
   taskflow
-    .emplace([_node_data = std::move(node_data),
-              node_structure,
-              root_node,
-              process_call](auto& subflow) mutable {
-      process_node(std::move(_node_data),
-                   node_structure,
-                   root_node,
-                   process_call,
-                   subflow);
+    .emplace([_node_data = std::move(node_data), node_structure, root_node, process_call](
+               auto& subflow) mutable {
+      process_node(std::move(_node_data), node_structure, root_node, process_call, subflow);
     })
     .name(task_name);
 }
@@ -389,30 +357,28 @@ Tiler::Tiler(const AABB& aabb,
   const auto root_spacing_to_bounds_ratio =
     std::log2f(aabb.extent().x / meta_parameters.spacing_at_root);
   if (root_spacing_to_bounds_ratio >= MAX_OCTREE_LEVELS) {
-    throw std::runtime_error{
-      "spacing at root node is too small compared to bounds of data!"
-    };
+    throw std::runtime_error{ "spacing at root node is too small compared to bounds of data!" };
   }
 
   _indexing_thread = std::thread([this]() { run_worker(); });
 
   switch (meta_parameters.tiling_strategy) {
     case TilingStrategy::Accurate:
-      _tiling_algorithm = std::make_unique<TilingAlgorithmV1>(
-        _sampling_strategy,
-        _progress_reporter,
-        _persistence,
-        _meta_parameters,
-        std::max(1u, std::thread::hardware_concurrency() - 1));
+      _tiling_algorithm =
+        std::make_unique<TilingAlgorithmV1>(_sampling_strategy,
+                                            _progress_reporter,
+                                            _persistence,
+                                            _meta_parameters,
+                                            std::max(1u, std::thread::hardware_concurrency() - 1));
       break;
     case TilingStrategy::Fast:
-      _tiling_algorithm = std::make_unique<TilingAlgorithmV3>(
-        _sampling_strategy,
-        _progress_reporter,
-        _persistence,
-        _meta_parameters,
-        _output_directory,
-        std::max(1u, std::thread::hardware_concurrency() - 1));
+      _tiling_algorithm =
+        std::make_unique<TilingAlgorithmV3>(_sampling_strategy,
+                                            _progress_reporter,
+                                            _persistence,
+                                            _meta_parameters,
+                                            _output_directory,
+                                            std::max(1u, std::thread::hardware_concurrency() - 1));
       break;
   }
 }
@@ -453,8 +419,7 @@ Tiler::cache(const PointBuffer& points)
 {
   _store.append_buffer(points);
   if (_progress_reporter)
-    _progress_reporter->increment_progress<size_t>(progress::LOADING,
-                                                   points.count());
+    _progress_reporter->increment_progress<size_t>(progress::LOADING, points.count());
 }
 
 void
@@ -473,8 +438,7 @@ void
 Tiler::run_worker()
 {
   // Use max_threads - 1 because one thread is reserved for reading points
-  const auto concurrency =
-    std::max(1u, std::thread::hardware_concurrency() - 1);
+  const auto concurrency = std::max(1u, std::thread::hardware_concurrency() - 1);
   // const auto concurrency = 1u;
 
   tf::Executor executor{ concurrency };
@@ -494,8 +458,7 @@ Tiler::run_worker()
 
     tf::Taskflow taskflow;
 
-    _tiling_algorithm->build_execution_graph(
-      _indexing_point_cache, _aabb, taskflow);
+    _tiling_algorithm->build_execution_graph(_indexing_point_cache, _aabb, taskflow);
 
     executor.run(taskflow).wait();
 
@@ -504,11 +467,9 @@ Tiler::run_worker()
 
     if (debug::Journal::instance().is_enabled()) {
       const auto delta_t_seconds = static_cast<double>(delta_t.count()) / 1e9;
-      const auto points_per_second =
-        _indexing_point_cache.count() / delta_t_seconds;
+      const auto points_per_second = _indexing_point_cache.count() / delta_t_seconds;
       debug::Journal::instance().add_entry(
-        (boost::format("Indexing (batch %1%): %2% s | %3% pts/s") %
-         batch_idx++ % delta_t_seconds %
+        (boost::format("Indexing (batch %1%): %2% s | %3% pts/s") % batch_idx++ % delta_t_seconds %
          unit::format_with_metric_prefix(points_per_second))
           .str());
     }

@@ -34,6 +34,8 @@ struct BinaryPersistence
   constexpr static uint32_t SCAN_ANGLE_RANK_BIT = (1 << 10);
   constexpr static uint32_t USER_DATA_BIT = (1 << 11);
 
+  static PointAttributes supported_output_attributes();
+
   BinaryPersistence(const std::string& work_dir,
                     const PointAttributes& point_attributes,
                     Compressed compressed = Compressed::Yes);
@@ -51,8 +53,7 @@ struct BinaryPersistence
 
     const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
 
-    boost::iostreams::file_sink fs{ file_path,
-                                    std::ios::out | std::ios::binary };
+    boost::iostreams::file_sink fs{ file_path, std::ios::out | std::ios::binary };
     if (!fs.is_open()) {
       std::cerr << "Could not write points file " << file_path << std::endl;
       return;
@@ -70,27 +71,20 @@ struct BinaryPersistence
     const auto has_normals = points_begin->normal() != nullptr;
     const auto has_intensities = points_begin->intensity() != nullptr;
     const auto has_classifications = points_begin->classification() != nullptr;
-    const auto has_edge_of_flight_lines =
-      points_begin->edge_of_flight_line() != nullptr;
+    const auto has_edge_of_flight_lines = points_begin->edge_of_flight_line() != nullptr;
     const auto has_gps_times = points_begin->gps_time() != nullptr;
-    const auto has_number_of_returns =
-      points_begin->number_of_returns() != nullptr;
+    const auto has_number_of_returns = points_begin->number_of_returns() != nullptr;
     const auto has_return_numbers = points_begin->return_number() != nullptr;
-    const auto has_point_source_ids =
-      points_begin->point_source_id() != nullptr;
-    const auto has_scan_angle_ranks =
-      points_begin->scan_angle_rank() != nullptr;
-    const auto has_scan_direction_flags =
-      points_begin->scan_direction_flag() != nullptr;
+    const auto has_point_source_ids = points_begin->point_source_id() != nullptr;
+    const auto has_scan_angle_ranks = points_begin->scan_angle_rank() != nullptr;
+    const auto has_scan_direction_flags = points_begin->scan_direction_flag() != nullptr;
     const auto has_user_data = points_begin->user_data() != nullptr;
 
     const uint32_t properties_bitmask =
       (has_colors ? COLOR_BIT : 0u) | (has_normals ? NORMAL_BIT : 0u) |
-      (has_intensities ? INTENSITY_BIT : 0u) |
-      (has_classifications ? CLASSIFICATION_BIT : 0u) |
+      (has_intensities ? INTENSITY_BIT : 0u) | (has_classifications ? CLASSIFICATION_BIT : 0u) |
       (has_edge_of_flight_lines ? EDGE_OF_FLIGHT_LINE_BIT : 0u) |
-      (has_gps_times ? GPS_TIME_BIT : 0u) |
-      (has_number_of_returns ? NUMBER_OF_RETURN_BIT : 0u) |
+      (has_gps_times ? GPS_TIME_BIT : 0u) | (has_number_of_returns ? NUMBER_OF_RETURN_BIT : 0u) |
       (has_return_numbers ? RETURN_NUMBER_BIT : 0u) |
       (has_point_source_ids ? POINT_SOURCE_ID_BIT : 0u) |
       (has_scan_angle_ranks ? SCAN_ANGLE_RANK_BIT : 0u) |
@@ -100,9 +94,8 @@ struct BinaryPersistence
     write_binary(properties_bitmask, stream);
     write_binary(static_cast<uint64_t>(points_count), stream);
 
-    std::for_each(points_begin, points_end, [&stream](auto& point) {
-      write_binary(point.position(), stream);
-    });
+    std::for_each(
+      points_begin, points_end, [&stream](auto& point) { write_binary(point.position(), stream); });
 
     if (has_colors) {
       std::for_each(points_begin, points_end, [&stream](auto& point) {
@@ -179,9 +172,7 @@ struct BinaryPersistence
     stream.pop();
   }
 
-  void persist_points(PointBuffer const& points,
-                      const AABB& bounds,
-                      const std::string& node_name);
+  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
