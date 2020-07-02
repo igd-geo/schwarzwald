@@ -41,25 +41,6 @@ enum class Mode
   Converter
 };
 
-static void
-verify_output_attributes(PointAttributes& outputAttributes)
-{
-  const auto hasAttribute = [](const auto& attributes, const PointAttribute& attribute) {
-    return std::find(attributes.begin(), attributes.end(), attribute) != attributes.end();
-  };
-
-  if (!hasAttribute(outputAttributes, PointAttribute::Position)) {
-    std::cout << "POSITION point attribute not set but it is mandatory, adding POSITION to the "
-                 "output attributes!\n";
-    outputAttributes.insert(PointAttribute::Position);
-  }
-
-  if (hasAttribute(outputAttributes, PointAttribute::RGB) &&
-      hasAttribute(outputAttributes, PointAttribute::RGBFromIntensity)) {
-    throw std::runtime_error{ "Can't define both RGB and RGB_FROM_INTENSITY attributes!" };
-  }
-}
-
 static tl::expected<unit::byte, std::string>
 parse_memory_size(std::string const& memory_size_string)
 {
@@ -153,6 +134,7 @@ parseArguments(int argc, char** argv)
   std::string output_folder;
   std::vector<std::string> source_files;
   std::string cache_size_string;
+  std::string rgb_mapping_string;
   bool create_journal;
 
   bpo::options_description options("Options");
@@ -182,37 +164,33 @@ parseArguments(int argc, char** argv)
     bpo::value<int>(&tiler_args.diagonal_fraction)->default_value(0),
     "Maximum number of points on the diagonal in the first level (sets "
     "spacing). spacing = "
-    "diagonal / value")("levels,l",
-                        bpo::value<int>(&tiler_args.levels)->default_value(-1),
-                        "Number of levels that will be generated. -1: No level limit, 0: only "
-                        "root, 1: root and its children etc.")(
-    "max-points-per-node",
-    bpo::value<size_t>(&tiler_args.max_points_per_node)->default_value(20'000),
-    "Maximum number of points in a leaf node.")(
+    "diagonal / value")("max-points-per-node",
+                        bpo::value<size_t>(&tiler_args.max_points_per_node)->default_value(20'000),
+                        "Maximum number of points in a leaf node.")(
     "internal-cache-size",
     bpo::value<size_t>(&tiler_args.internal_cache_size)->default_value(10'000'000),
     "Number of points to cache before indexer has to run")(
     "batch-read-size",
     bpo::value<size_t>(&tiler_args.max_batch_read_size)->default_value(1'000'000),
     "Maximum number of points to read in a single batch from each file")(
-    "output-attributes,a",
-    bpo::value<PointAttributes>(&tiler_args.output_attributes)->required(),
-    "Point attributes to store in the output pointcloud. Can be a "
-    "combination of RGB, INTENSITY, "
-    "RGB_FROM_INTENSITY, CLASSIFICATION, NORMAL. RGB_FROM_INTENSITY "
-    "generates greyscale colors "
-    "from intensity values in the original pointcloud and is mutually "
-    "exclusive with the RGB "
-    "attribute")("output-format",
-                 bpo::value<std::string>()->default_value("BIN"),
-                 "Output format for the conversion. Can be one of BIN or "
-                 "3DTILES. Default is BIN")(
+    "output-format",
+    bpo::value<std::string>()->default_value("3DTILES"),
+    "Output format for the conversion. Accepted values are: 3DTILES (Cesium 3D Tiles format), "
+    "ENTWINE_LAS (Entwine format using LAS files, compatible with Potree), ENTWINE_LAZ (Entwine "
+    "format using LAZ files, compatible with Potree), BIN (custom binary format)")(
     "sampling",
     bpo::value<std::string>(&tiler_args.sampling_strategy)->default_value("MIN_DISTANCE"),
     "Sampling strategy to use. Possible values are RANDOM_GRID, GRID_CENTER, "
     "MIN_DISTANCE. The quality of the resulting point cloud can be adjusted "
     "with this parameter, with RANDOM_GRID corresponding to the lowest "
     "quality and MIN_DISTANCE to the highest quality.")(
+    "calculate-rgb-from",
+    bpo::value<std::string>(&rgb_mapping_string),
+    "Calculate RGB values from one of the other point attributes. Accepted values are: "
+    "INTENSITY_LINEAR (convert intensity values to RGB using a linear mapping), INTENSITY_LOG "
+    "(convert intensity values to RGB using a logarithmic mapping), NONE (do not calculate RGB "
+    "values, same as not specifying this option). This feature is only supported when "
+    "output-format is 3DTILES")(
     "cache-size",
     bpo::value<std::string>(&cache_size_string),
     "Size of a local cache in memory used during conversion for storing "
@@ -264,17 +242,9 @@ parseArguments(int argc, char** argv)
              bpo::value<std::string>()->default_value("3DTILES"),
              "Output format for the conversion. Can be one of LAS, LAZ or "
              "3DTILES. Default is 3DTILES")(
-    "output-attributes,a",
-    bpo::value<PointAttributes>(&converter_args.output_attributes)->required(),
-    "Point attributes to store in the output pointcloud. Can be a "
-    "combination of RGB, INTENSITY, "
-    "RGB_FROM_INTENSITY, CLASSIFICATION, NORMAL. RGB_FROM_INTENSITY "
-    "generates greyscale colors "
-    "from intensity values in the original pointcloud and is mutually "
-    "exclusive with the RGB "
-    "attribute")("source-projection",
-                 bpo::value<std::string>(),
-                 "Source spatial reference system that the points are in")(
+    "source-projection",
+    bpo::value<std::string>(),
+    "Source spatial reference system that the points are in")(
     "max-depth",
     bpo::value<int32_t>(),
     "Maximum tree depth to convert. 0: only root node, "
@@ -329,8 +299,6 @@ parseArguments(int argc, char** argv)
       std::exit(1);
     }
 
-    verify_output_attributes(tiler_args.output_attributes);
-
     tiler_args.sources.reserve(source_files.size());
     std::transform(std::begin(source_files),
                    std::end(source_files),
@@ -367,6 +335,23 @@ parseArguments(int argc, char** argv)
       }
       return matching_output_format->second;
     }();
+
+    if (tiler_variables.count("calculate-rgb-from")) {
+      tiler_args.rgb_mapping = [&]() {
+        const std::unordered_map<std::string, RGBMapping> supported_rgb_mappings = {
+          { "NONE", RGBMapping::None },
+          { "INTENSITY_LINEAR", RGBMapping::FromIntensityLinear },
+          { "INTENSITY_LOG", RGBMapping::FromIntensityLogarithmic }
+        };
+        const auto matching_rgb_mapping_iter = supported_rgb_mappings.find(rgb_mapping_string);
+        if (matching_rgb_mapping_iter == std::end(supported_rgb_mappings)) {
+          std::cout << "Parameter \"" << rgb_mapping_string
+                    << "\" for option --calculate-rgb-from not recognized!" << std::endl;
+          std::exit(1);
+        }
+        return matching_rgb_mapping_iter->second;
+      }();
+    }
 
     if (tiler_variables.count("cache-size")) {
       parse_memory_size(cache_size_string)
@@ -430,8 +415,6 @@ parseArguments(int argc, char** argv)
       return matching_output_format->second;
     }();
 
-    verify_output_attributes(converter_args.output_attributes);
-
     converter_args.source_projection =
       (converter_variables.count("source-projection"))
         ? (std::make_optional(converter_variables["source-projection"].as<std::string>()))
@@ -445,6 +428,8 @@ parseArguments(int argc, char** argv)
     }
 
     converter_args.delete_source_files = converter_variables["delete-source"].as<bool>();
+
+    // TODO Deal with converter output attributes
 
     return { converter_args };
 

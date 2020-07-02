@@ -19,6 +19,18 @@ static_assert(sizeof(uint64_t) == 8,
               "uint64_t is not 64-bit wide on this machine. This breaks "
               "BinaryPersistence encoding!");
 
+PointAttributes
+BinaryPersistence::supported_output_attributes()
+{
+  return { PointAttribute::Classification, PointAttribute::EdgeOfFlightLine,
+           PointAttribute::GPSTime,        PointAttribute::Intensity,
+           PointAttribute::Normal,         PointAttribute::NumberOfReturns,
+           PointAttribute::PointSourceID,  PointAttribute::Position,
+           PointAttribute::ReturnNumber,   PointAttribute::RGB,
+           PointAttribute::ScanAngleRank,  PointAttribute::ScanDirectionFlag,
+           PointAttribute::UserData };
+}
+
 BinaryPersistence::BinaryPersistence(const std::string& work_dir,
                                      const PointAttributes& point_attributes,
                                      Compressed compressed)
@@ -55,8 +67,7 @@ BinaryPersistence::persist_points(PointBuffer const& points,
   stream.push(fs);
 
   const uint32_t properties_bitmask =
-    (points.hasColors() ? COLOR_BIT : 0u) |
-    (points.hasNormals() ? NORMAL_BIT : 0u) |
+    (points.hasColors() ? COLOR_BIT : 0u) | (points.hasNormals() ? NORMAL_BIT : 0u) |
     (points.hasIntensities() ? INTENSITY_BIT : 0u) |
     (points.hasClassifications() ? CLASSIFICATION_BIT : 0u) |
     (points.has_edge_of_flight_lines() ? EDGE_OF_FLIGHT_LINE_BIT : 0u) |
@@ -155,8 +166,7 @@ BinaryPersistence::persist_points(PointBuffer const& points,
 }
 
 void
-BinaryPersistence::retrieve_points(const std::string& node_name,
-                                   PointBuffer& points)
+BinaryPersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
 {
   const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
   if (!std::experimental::filesystem::exists(file_path))
@@ -183,20 +193,14 @@ BinaryPersistence::retrieve_points(const std::string& node_name,
   const auto has_colors = (properties_bitmask & COLOR_BIT) != 0;
   const auto has_normals = (properties_bitmask & NORMAL_BIT) != 0;
   const auto has_intensities = (properties_bitmask & INTENSITY_BIT) != 0;
-  const auto has_classifications =
-    (properties_bitmask & CLASSIFICATION_BIT) != 0;
-  const auto has_edge_of_flight_lines =
-    (properties_bitmask & EDGE_OF_FLIGHT_LINE_BIT) != 0;
+  const auto has_classifications = (properties_bitmask & CLASSIFICATION_BIT) != 0;
+  const auto has_edge_of_flight_lines = (properties_bitmask & EDGE_OF_FLIGHT_LINE_BIT) != 0;
   const auto has_gps_times = (properties_bitmask & GPS_TIME_BIT) != 0;
-  const auto has_number_of_returns =
-    (properties_bitmask & NUMBER_OF_RETURN_BIT) != 0;
+  const auto has_number_of_returns = (properties_bitmask & NUMBER_OF_RETURN_BIT) != 0;
   const auto has_return_numbers = (properties_bitmask & RETURN_NUMBER_BIT) != 0;
-  const auto has_point_source_ids =
-    (properties_bitmask & POINT_SOURCE_ID_BIT) != 0;
-  const auto has_scan_angle_ranks =
-    (properties_bitmask & SCAN_ANGLE_RANK_BIT) != 0;
-  const auto has_scan_direction_flags =
-    (properties_bitmask & SCAN_DIRECTION_FLAG_BIT) != 0;
+  const auto has_point_source_ids = (properties_bitmask & POINT_SOURCE_ID_BIT) != 0;
+  const auto has_scan_angle_ranks = (properties_bitmask & SCAN_ANGLE_RANK_BIT) != 0;
+  const auto has_scan_direction_flags = (properties_bitmask & SCAN_DIRECTION_FLAG_BIT) != 0;
   const auto has_user_data = (properties_bitmask & USER_DATA_BIT) != 0;
 
   std::vector<Vector3<double>> positions;

@@ -29,8 +29,8 @@ struct TilerProcess
     size_t max_points_per_node;
     size_t internal_cache_size;
     size_t max_batch_read_size;
-    PointAttributes output_attributes;
     OutputFormat output_format;
+    RGBMapping rgb_mapping;
     std::string sampling_strategy;
     std::string executable_path;
     std::optional<std::string> source_projection;
@@ -49,6 +49,11 @@ private:
   Arguments _args;
   AABB _bounds;
 
+  // Attributes read from the source files
+  PointAttributes _input_attributes;
+  // Attributes written to the output files
+  PointAttributes _output_attributes;
+
   UIState _ui_state;
   TerminalUI _ui;
 
@@ -57,4 +62,5 @@ private:
   AABB calculateAABB(SRSTransformHelper const* transform);
   size_t get_total_points_count() const;
   void check_for_missing_point_attributes(const PointAttributes& required_attributes) const;
+  void determine_input_and_output_attributes();
 };

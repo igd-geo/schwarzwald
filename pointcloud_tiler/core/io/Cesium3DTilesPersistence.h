@@ -19,8 +19,11 @@ struct SRSTransformHelper;
  */
 struct Cesium3DTilesPersistence
 {
+  static PointAttributes supported_output_attributes();
+
   Cesium3DTilesPersistence(const std::string& work_dir,
                            const PointAttributes& point_attributes,
+                           RGBMapping rgb_mapping,
                            float spacing_at_root,
                            const Vector3<double>& global_offset);
   Cesium3DTilesPersistence(Cesium3DTilesPersistence&&) = default;
@@ -37,22 +40,20 @@ struct Cesium3DTilesPersistence
     }
 
     PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"),
-                       _point_attributes };
+                       _point_attributes,
+                       _rgb_mapping };
     // OPTIMIZATION This is not optimal, writer should be able to take iterator
     // pair
     PointBuffer tmp_points;
-    std::for_each(
-      points_begin, points_end, [&tmp_points](const auto& point_ref) {
-        tmp_points.push_point(point_ref);
-      });
+    std::for_each(points_begin, points_end, [&tmp_points](const auto& point_ref) {
+      tmp_points.push_point(point_ref);
+    });
     writer.write_points(tmp_points);
     writer.flush(_global_offset);
 
     on_write_node(node_name, bounds);
   }
-  void persist_points(PointBuffer const& points,
-                      const AABB& bounds,
-                      const std::string& node_name);
+  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
@@ -66,6 +67,7 @@ private:
 
   std::string _work_dir;
   const PointAttributes& _point_attributes;
+  RGBMapping _rgb_mapping;
   float _spacing_at_root;
   Vector3<double> _global_offset;
 

@@ -33,8 +33,7 @@ create_ept_folder_structure(const fs::path& root_dir)
 {
   if (!fs::exists(root_dir)) {
     if (!fs::create_directories(root_dir)) {
-      throw std::runtime_error{ concat("Could not create source directory: ",
-                                       root_dir.string()) };
+      throw std::runtime_error{ concat("Could not create source directory: ", root_dir.string()) };
     }
   }
 
@@ -77,8 +76,8 @@ create_hierarchy_files(const fs::path& root_dir,
     document.SetObject();
 
     for (auto& kv : hierarchy) {
-      const auto entry_name = OctreeNodeIndex64::to_string(
-        kv.first, MortonIndexNamingConvention::Entwine);
+      const auto entry_name =
+        OctreeNodeIndex64::to_string(kv.first, MortonIndexNamingConvention::Entwine);
       rj::Value entry_name_value{ entry_name.c_str(),
                                   static_cast<rj::SizeType>(entry_name.size()),
                                   allocator };
@@ -88,8 +87,7 @@ create_hierarchy_files(const fs::path& root_dir,
     const auto file_path =
       concat(root_dir.string(),
              "/ept-hierarchy/",
-             OctreeNodeIndex64::to_string(parent,
-                                          MortonIndexNamingConvention::Entwine),
+             OctreeNodeIndex64::to_string(parent, MortonIndexNamingConvention::Entwine),
              ".json");
 
     try {
@@ -100,9 +98,8 @@ create_hierarchy_files(const fs::path& root_dir,
   };
 
   for (auto& kv : hierarchy) {
-    const auto node_index = OctreeNodeIndex64::from_string(
-                              kv.first, MortonIndexNamingConvention::Entwine)
-                              .value();
+    const auto node_index =
+      OctreeNodeIndex64::from_string(kv.first, MortonIndexNamingConvention::Entwine).value();
     const auto parent = get_parent_index_in_hierarchy(node_index);
 
     auto hierarchy_iter = split_hierarchies.find(parent);
@@ -111,8 +108,7 @@ create_hierarchy_files(const fs::path& root_dir,
       // subtree
       auto parent_of_parent = parent;
       while (parent_of_parent.levels() > 0) {
-        const auto new_parent_of_parent =
-          get_parent_index_in_hierarchy(parent_of_parent.parent());
+        const auto new_parent_of_parent = get_parent_index_in_hierarchy(parent_of_parent.parent());
         split_hierarchies[new_parent_of_parent][parent_of_parent] = -1;
         parent_of_parent = new_parent_of_parent;
       }
@@ -134,19 +130,16 @@ point_attributes_to_ept_schema(const PointAttributes& point_attributes)
   for (auto& attribute : point_attributes) {
     switch (attribute) {
       case PointAttribute::Classification:
-        schema.push_back(
-          { "Classification", std::nullopt, std::nullopt, 1, "unsigned" });
+        schema.push_back({ "Classification", std::nullopt, std::nullopt, 1, "unsigned" });
         break;
       case PointAttribute::EdgeOfFlightLine:
-        schema.push_back(
-          { "EdgeOfFlightLine", std::nullopt, std::nullopt, 1, "unsigned" });
+        schema.push_back({ "EdgeOfFlightLine", std::nullopt, std::nullopt, 1, "unsigned" });
         break;
       case PointAttribute::GPSTime:
         schema.push_back({ "GpsTime", std::nullopt, std::nullopt, 8, "float" });
         break;
       case PointAttribute::Intensity:
-        schema.push_back(
-          { "Intensity", std::nullopt, std::nullopt, 2, "unsigned" });
+        schema.push_back({ "Intensity", std::nullopt, std::nullopt, 2, "unsigned" });
         break;
       case PointAttribute::Normal:
         schema.push_back({ "NX", std::nullopt, std::nullopt, 4, "float" });
@@ -154,12 +147,10 @@ point_attributes_to_ept_schema(const PointAttributes& point_attributes)
         schema.push_back({ "NZ", std::nullopt, std::nullopt, 4, "float" });
         break;
       case PointAttribute::NumberOfReturns:
-        schema.push_back(
-          { "NumberOfReturns", std::nullopt, std::nullopt, 1, "unsigned" });
+        schema.push_back({ "NumberOfReturns", std::nullopt, std::nullopt, 1, "unsigned" });
         break;
       case PointAttribute::PointSourceID:
-        schema.push_back(
-          { "PointSourceID", std::nullopt, std::nullopt, 2, "unsigned" });
+        schema.push_back({ "PointSourceID", std::nullopt, std::nullopt, 2, "unsigned" });
         break;
       case PointAttribute::Position:
         // TODO Offset and scale, where do they come from if we have multiple
@@ -169,34 +160,26 @@ point_attributes_to_ept_schema(const PointAttributes& point_attributes)
         schema.push_back({ "Z", 0, 1, 4, "signed" });
         break;
       case PointAttribute::ReturnNumber:
-        schema.push_back(
-          { "ReturnNumber", std::nullopt, std::nullopt, 1, "unsigned" });
+        schema.push_back({ "ReturnNumber", std::nullopt, std::nullopt, 1, "unsigned" });
         break;
       case PointAttribute::RGB:
-      case PointAttribute::RGBFromIntensity:
         schema.push_back({ "Red", std::nullopt, std::nullopt, 2, "unsigned" });
-        schema.push_back(
-          { "Green", std::nullopt, std::nullopt, 2, "unsigned" });
+        schema.push_back({ "Green", std::nullopt, std::nullopt, 2, "unsigned" });
         schema.push_back({ "Blue", std::nullopt, std::nullopt, 2, "unsigned" });
         break;
       case PointAttribute::ScanAngleRank:
         // TODO Entwine classifies ScanAngleRank as 4-byte float, in LAS spec it
         // is 1 byte char...
-        schema.push_back(
-          { "ScanAngleRank", std::nullopt, std::nullopt, 1, "signed" });
+        schema.push_back({ "ScanAngleRank", std::nullopt, std::nullopt, 1, "signed" });
         break;
       case PointAttribute::ScanDirectionFlag:
-        schema.push_back(
-          { "ScanDirectionFlag", std::nullopt, std::nullopt, 1, "unsigned" });
+        schema.push_back({ "ScanDirectionFlag", std::nullopt, std::nullopt, 1, "unsigned" });
         break;
       case PointAttribute::UserData:
-        schema.push_back(
-          { "UserData", std::nullopt, std::nullopt, 1, "unsigned" });
+        schema.push_back({ "UserData", std::nullopt, std::nullopt, 1, "unsigned" });
         break;
       default:
-        throw std::runtime_error{
-          "Unhandled PointAttribute in switch statement"
-        };
+        throw std::runtime_error{ "Unhandled PointAttribute in switch statement" };
     }
   }
 
@@ -222,18 +205,12 @@ write_ept_json(const fs::path& file_path, const EptJson& ept_json)
 
   // TODO What are conforming bounds? The bounds prior to being a cube?
   rj::Value conforming_bounds_member{ rj::kArrayType };
-  conforming_bounds_member.PushBack(ept_json.conforming_bounds.min.x,
-                                    allocator);
-  conforming_bounds_member.PushBack(ept_json.conforming_bounds.min.y,
-                                    allocator);
-  conforming_bounds_member.PushBack(ept_json.conforming_bounds.min.z,
-                                    allocator);
-  conforming_bounds_member.PushBack(ept_json.conforming_bounds.max.x,
-                                    allocator);
-  conforming_bounds_member.PushBack(ept_json.conforming_bounds.max.y,
-                                    allocator);
-  conforming_bounds_member.PushBack(ept_json.conforming_bounds.max.z,
-                                    allocator);
+  conforming_bounds_member.PushBack(ept_json.conforming_bounds.min.x, allocator);
+  conforming_bounds_member.PushBack(ept_json.conforming_bounds.min.y, allocator);
+  conforming_bounds_member.PushBack(ept_json.conforming_bounds.min.z, allocator);
+  conforming_bounds_member.PushBack(ept_json.conforming_bounds.max.x, allocator);
+  conforming_bounds_member.PushBack(ept_json.conforming_bounds.max.y, allocator);
+  conforming_bounds_member.PushBack(ept_json.conforming_bounds.max.z, allocator);
   document.AddMember("boundsConforming", conforming_bounds_member, allocator);
 
   switch (ept_json.data_type) {
@@ -244,9 +221,7 @@ write_ept_json(const fs::path& file_path, const EptJson& ept_json)
       document.AddMember("dataType", "laszip", allocator);
       break;
     default:
-      throw std::runtime_error{
-        "Unhandled enum constant for enum EntwineFormat"
-      };
+      throw std::runtime_error{ "Unhandled enum constant for enum EntwineFormat" };
   }
 
   document.AddMember("hierarchyType", "json", allocator);
@@ -255,11 +230,9 @@ write_ept_json(const fs::path& file_path, const EptJson& ept_json)
   rj::Value schema_member{ rj::kArrayType };
   for (const auto& schema_entry : ept_json.schema) {
     rj::Value schema_member_entry{ rj::kObjectType };
-    schema_member_entry.AddMember(
-      "name", rj_string(schema_entry.name, allocator), allocator);
+    schema_member_entry.AddMember("name", rj_string(schema_entry.name, allocator), allocator);
     schema_member_entry.AddMember("size", schema_entry.size, allocator);
-    schema_member_entry.AddMember(
-      "type", rj_string(schema_entry.type, allocator), allocator);
+    schema_member_entry.AddMember("type", rj_string(schema_entry.type, allocator), allocator);
     if (schema_entry.offset) {
       schema_member_entry.AddMember("offset", *schema_entry.offset, allocator);
     }
@@ -274,16 +247,12 @@ write_ept_json(const fs::path& file_path, const EptJson& ept_json)
   document.AddMember("span", ept_json.span, allocator);
 
   rj::Value srs_member{ rj::kObjectType };
-  srs_member.AddMember(
-    "authority", rj_string(ept_json.srs.authority, allocator), allocator);
-  srs_member.AddMember(
-    "horizontal", rj_string(ept_json.srs.horizontal, allocator), allocator);
-  srs_member.AddMember(
-    "wkt", rj_string(ept_json.srs.wkt, allocator), allocator);
+  srs_member.AddMember("authority", rj_string(ept_json.srs.authority, allocator), allocator);
+  srs_member.AddMember("horizontal", rj_string(ept_json.srs.horizontal, allocator), allocator);
+  srs_member.AddMember("wkt", rj_string(ept_json.srs.wkt, allocator), allocator);
   document.AddMember("srs", srs_member, allocator);
 
-  document.AddMember(
-    "version", rj_string(ept_json.version, allocator), allocator);
+  document.AddMember("version", rj_string(ept_json.version, allocator), allocator);
 
   try {
     write_json_to_file(document, file_path);
@@ -301,8 +270,7 @@ EntwinePersistence::EntwinePersistence(const std::string& work_dir,
   , _file_extension(extension_from_entwine_format(format))
   , _las_persistence(concat(work_dir, "/ept-data"),
                      point_attributes,
-                     format == EntwineFormat::LAZ ? Compressed::Yes
-                                                  : Compressed::No)
+                     format == EntwineFormat::LAZ ? Compressed::Yes : Compressed::No)
   , _hierarchy_lock(std::make_unique<std::mutex>())
 {
   create_ept_folder_structure(work_dir);
@@ -330,8 +298,7 @@ EntwinePersistence::persist_points(PointBuffer const& points,
 }
 
 void
-EntwinePersistence::retrieve_points(const std::string& node_name,
-                                    PointBuffer& points)
+EntwinePersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
 {
   const auto entwine_name = potree_name_to_entwine_name(node_name);
 
@@ -343,16 +310,14 @@ EntwinePersistence::node_exists(const std::string& node_name) const
 {
   const auto entwine_name = potree_name_to_entwine_name(node_name);
 
-  const auto file_path =
-    concat(_work_dir.string(), "/ept-data/", entwine_name, _file_extension);
+  const auto file_path = concat(_work_dir.string(), "/ept-data/", entwine_name, _file_extension);
   return fs::exists(file_path);
 }
 
 std::string
 EntwinePersistence::potree_name_to_entwine_name(const std::string& potree_name)
 {
-  return DynamicMortonIndex::parse_string(potree_name,
-                                          MortonIndexNamingConvention::Potree)
+  return DynamicMortonIndex::parse_string(potree_name, MortonIndexNamingConvention::Potree)
     .map([](const DynamicMortonIndex& idx) {
       return to_string(idx, MortonIndexNamingConvention::Entwine);
     })

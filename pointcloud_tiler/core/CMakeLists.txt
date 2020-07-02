@@ -33,6 +33,7 @@ set(SOURCE_FILES
     io/PointcloudFactory.h
     io/PointcloudFile.h
     io/PointReader.h
+    io/PointsPersistence.cpp
     io/PointsPersistence.h
     io/TileSetWriter.cpp
     io/TileSetWriter.h
