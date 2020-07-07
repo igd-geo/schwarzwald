@@ -250,6 +250,64 @@ PointBuffer::PointBuffer(gsl::span<PointConstReference> points)
   }
 }
 
+PointBuffer::PointBuffer(size_t count, const PointAttributes& attributes)
+  : _count(count)
+{
+  if (!has_attribute(attributes, PointAttribute::Position)) {
+    throw std::invalid_argument{ "PointAttribute::Position is mandatory for PointBuffer" };
+  }
+
+  _positions.resize(count);
+
+  if (has_attribute(attributes, PointAttribute::Classification)) {
+    _classifications.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::EdgeOfFlightLine)) {
+    _edge_of_flight_lines.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::GPSTime)) {
+    _gps_times.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::Intensity)) {
+    _intensities.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::Normal)) {
+    _normals.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::NumberOfReturns)) {
+    _number_of_returns.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::PointSourceID)) {
+    _point_source_ids.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::ReturnNumber)) {
+    _return_numbers.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::RGB)) {
+    _rgbColors.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::ScanAngleRank)) {
+    _scan_angle_ranks.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::ScanDirectionFlag)) {
+    _scan_direction_flags.resize(count);
+  }
+
+  if (has_attribute(attributes, PointAttribute::UserData)) {
+    _user_data.resize(count);
+  }
+}
+
 void
 PointBuffer::push_point(PointConstReference point)
 {
@@ -370,15 +428,94 @@ PointBuffer::clear()
 {
   _count = 0;
   _positions.clear();
-  _positions.shrink_to_fit();
   _rgbColors.clear();
-  _rgbColors.shrink_to_fit();
   _normals.clear();
-  _normals.shrink_to_fit();
   _intensities.clear();
-  _intensities.shrink_to_fit();
   _classifications.clear();
+  _edge_of_flight_lines.clear();
+  _gps_times.clear();
+  _number_of_returns.clear();
+  _return_numbers.clear();
+  _point_source_ids.clear();
+  _scan_angle_ranks.clear();
+  _scan_direction_flags.clear();
+  _user_data.clear();
+}
+
+void
+PointBuffer::shrink_to_fit()
+{
+  _positions.shrink_to_fit();
+  _rgbColors.shrink_to_fit();
+  _normals.shrink_to_fit();
+  _intensities.shrink_to_fit();
   _classifications.shrink_to_fit();
+  _edge_of_flight_lines.shrink_to_fit();
+  _gps_times.shrink_to_fit();
+  _number_of_returns.shrink_to_fit();
+  _return_numbers.shrink_to_fit();
+  _point_source_ids.shrink_to_fit();
+  _scan_angle_ranks.shrink_to_fit();
+  _scan_direction_flags.shrink_to_fit();
+  _user_data.shrink_to_fit();
+}
+
+void
+PointBuffer::resize(size_t new_size)
+{
+
+  _positions.resize(new_size);
+
+  // If this PointBuffer is empty, we don't know the schema, so we only resize the positions since
+  // those are mandatory
+  // TODO HACK We should tie the schema to the PointBuffer through e.g. a bitmask
+  if (!_count) {
+    return;
+  }
+
+  _count = new_size;
+
+#define RESIZE_IF_NOT_EMPTY(vec)                                                                   \
+  if (!vec.empty()) {                                                                              \
+    vec.resize(new_size);                                                                          \
+  }
+
+  RESIZE_IF_NOT_EMPTY(_classifications)
+  RESIZE_IF_NOT_EMPTY(_edge_of_flight_lines)
+  RESIZE_IF_NOT_EMPTY(_gps_times)
+  RESIZE_IF_NOT_EMPTY(_intensities)
+  RESIZE_IF_NOT_EMPTY(_normals)
+  RESIZE_IF_NOT_EMPTY(_number_of_returns)
+  RESIZE_IF_NOT_EMPTY(_point_source_ids)
+  RESIZE_IF_NOT_EMPTY(_return_numbers)
+  RESIZE_IF_NOT_EMPTY(_rgbColors)
+  RESIZE_IF_NOT_EMPTY(_scan_angle_ranks)
+  RESIZE_IF_NOT_EMPTY(_scan_direction_flags)
+  RESIZE_IF_NOT_EMPTY(_user_data)
+}
+
+void
+PointBuffer::apply_schema(const PointAttributes& new_schema)
+{
+  if (!has_attribute(new_schema, PointAttribute::Position)) {
+    throw std::invalid_argument{ "PointAttribute::Position is mandatory for PointBuffer schema!" };
+  }
+
+#define RESIZE_ATTRIBUTE(attribute, member)                                                        \
+  member.resize(has_attribute(new_schema, attribute) ? _count : 0)
+
+  RESIZE_ATTRIBUTE(PointAttribute::Classification, _classifications);
+  RESIZE_ATTRIBUTE(PointAttribute::EdgeOfFlightLine, _edge_of_flight_lines);
+  RESIZE_ATTRIBUTE(PointAttribute::GPSTime, _gps_times);
+  RESIZE_ATTRIBUTE(PointAttribute::Intensity, _intensities);
+  RESIZE_ATTRIBUTE(PointAttribute::Normal, _normals);
+  RESIZE_ATTRIBUTE(PointAttribute::NumberOfReturns, _number_of_returns);
+  RESIZE_ATTRIBUTE(PointAttribute::PointSourceID, _point_source_ids);
+  RESIZE_ATTRIBUTE(PointAttribute::ReturnNumber, _return_numbers);
+  RESIZE_ATTRIBUTE(PointAttribute::RGB, _rgbColors);
+  RESIZE_ATTRIBUTE(PointAttribute::ScanAngleRank, _scan_angle_ranks);
+  RESIZE_ATTRIBUTE(PointAttribute::ScanDirectionFlag, _scan_direction_flags);
+  RESIZE_ATTRIBUTE(PointAttribute::UserData, _user_data);
 }
 
 bool

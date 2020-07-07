@@ -68,6 +68,19 @@ private:
 };
 
 /**
+ * Factory function for creating a PointsPersistence for the given format and
+ * parameters
+ */
+PointsPersistence
+make_persistence(OutputFormat format,
+                 const fs::path& output_directory,
+                 const PointAttributes& input_attributes,
+                 const PointAttributes& output_attributes,
+                 RGBMapping rgb_mapping,
+                 float spacing,
+                 const AABB& bounds);
+
+/**
  * Returns the set of point attributes supported by the given output format
  */
 PointAttributes

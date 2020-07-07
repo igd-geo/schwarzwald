@@ -233,7 +233,7 @@ SCENARIO("LASFile in read-mode")
   attributes.insert(PointAttribute::UserData);
 
   fs::path file_path = "./tmp_testlasfile.las";
-  LASPersistence las_persistence{ ".", attributes };
+  LASPersistence las_persistence{ ".", attributes, attributes };
   las_persistence.persist_points(expected_points, bounds, "tmp_testlasfile");
 
   BOOST_SCOPE_EXIT(&file_path) { fs::remove(file_path); }
@@ -367,6 +367,20 @@ SCENARIO("LASFile in write-mode")
           PointBuffer actual_points;
           pc::read_points(begin, count, pc::metadata(file), attributes, actual_points);
           compare_points(expected_points, actual_points);
+        }
+
+        THEN("Reading points manually using LASInputIterator also works")
+        {
+          const auto& const_file = file;
+          auto expected_point_iter = std::begin(expected_points);
+          for (auto point : const_file) {
+            auto expected_point = *expected_point_iter++;
+            const auto pos = position_from_las_point(point, meta);
+            const auto distance = pos.distanceTo(expected_point.position());
+            REQUIRE(distance <= 0.001);
+          }
+
+          REQUIRE(expected_point_iter == std::end(expected_points));
         }
       }
     }

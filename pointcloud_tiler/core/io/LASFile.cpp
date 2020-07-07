@@ -275,6 +275,12 @@ LASFile::size() const
   return las_header.number_of_point_records;
 }
 
+std::string
+LASFile::source() const
+{
+  return _file_path.string();
+}
+
 LASOutputIterator
 LASFile::begin()
 {
@@ -562,6 +568,62 @@ las_read_points(LASInputIterator begin,
              std::move(scan_angle_ranks),
              std::move(user_data) };
   return begin;
+}
+
+std::pair<LASInputIterator, PointBuffer::PointIterator>
+las_read_points_into(LASInputIterator file_begin,
+                     LASInputIterator file_end,
+                     laszip_header const& header,
+                     PointAttributes const& attributes,
+                     util::Range<PointBuffer::PointIterator> point_range)
+{
+
+  auto in_iter = file_begin;
+  auto out_iter = std::begin(point_range);
+  for (; in_iter != file_end && out_iter != std::end(point_range); ++in_iter, ++out_iter) {
+    auto& las_point = *in_iter;
+    auto buffered_point = *out_iter;
+
+    buffered_point.position() = position_from_las_point(las_point, header);
+    if (buffered_point.rgbColor()) {
+      // FEATURE Implement correct color scaling
+      buffered_point.rgbColor()->x = static_cast<uint8_t>(las_point.rgb[0] >> 8);
+      buffered_point.rgbColor()->y = static_cast<uint8_t>(las_point.rgb[1] >> 8);
+      buffered_point.rgbColor()->z = static_cast<uint8_t>(las_point.rgb[2] >> 8);
+    }
+    if (buffered_point.intensity()) {
+      *buffered_point.intensity() = las_point.intensity;
+    }
+    if (buffered_point.classification()) {
+      *buffered_point.classification() = las_point.classification;
+    }
+    if (buffered_point.gps_time()) {
+      *buffered_point.gps_time() = las_point.gps_time;
+    }
+    if (buffered_point.edge_of_flight_line()) {
+      *buffered_point.edge_of_flight_line() = las_point.edge_of_flight_line;
+    }
+    if (buffered_point.number_of_returns()) {
+      *buffered_point.number_of_returns() = las_point.number_of_returns;
+    }
+    if (buffered_point.return_number()) {
+      *buffered_point.return_number() = las_point.return_number;
+    }
+    if (buffered_point.point_source_id()) {
+      *buffered_point.point_source_id() = las_point.point_source_ID;
+    }
+    if (buffered_point.scan_angle_rank()) {
+      *buffered_point.scan_angle_rank() = las_point.scan_angle_rank;
+    }
+    if (buffered_point.scan_direction_flag()) {
+      *buffered_point.scan_direction_flag() = las_point.scan_direction_flag;
+    }
+    if (buffered_point.user_data()) {
+      *buffered_point.user_data() = las_point.user_data;
+    }
+  }
+
+  return { in_iter, out_iter };
 }
 
 #pragma endregion

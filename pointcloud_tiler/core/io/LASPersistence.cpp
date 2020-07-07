@@ -40,13 +40,29 @@ LASPersistence::supported_output_attributes()
 }
 
 LASPersistence::LASPersistence(const std::string& work_dir,
-                               const PointAttributes& point_attributes,
+                               const PointAttributes& input_attributes,
+                               const PointAttributes& output_attributes,
                                Compressed compressed)
   : _work_dir(work_dir)
-  , _point_attributes(point_attributes)
+  , _input_attributes(input_attributes)
+  , _output_attributes(output_attributes)
   , _compressed(compressed)
   , _file_extension(compressed == Compressed::Yes ? ".laz" : ".las")
-{}
+{
+  if (input_attributes != output_attributes) {
+    throw std::invalid_argument{
+      "LASPersistence requires that input and output attributes are equal"
+    };
+  }
+  if (!attributes_are_subset(input_attributes, supported_output_attributes())) {
+    throw std::invalid_argument{ "Input attributes must be a subset of the supported attributes "
+                                 "(LASPersistence::supported_output_attributes)" };
+  }
+  if (!attributes_are_subset(output_attributes, supported_output_attributes())) {
+    throw std::invalid_argument{ "Output attributes must be a subset of the supported attributes "
+                                 "(LASPersistence::supported_output_attributes)" };
+  }
+}
 
 LASPersistence::~LASPersistence() {}
 
@@ -124,6 +140,35 @@ LASPersistence::persist_points(PointBuffer const& points,
     return;
   }
 
+  const auto has_colors =
+    (points.hasColors() && has_attribute(_output_attributes, PointAttribute::RGB));
+  const auto has_intensities =
+    (points.hasIntensities() && has_attribute(_output_attributes, PointAttribute::Intensity));
+  const auto has_classifications =
+    (points.hasClassifications() &&
+     has_attribute(_output_attributes, PointAttribute::Classification));
+  const auto has_edge_of_flight_lines =
+    (points.has_edge_of_flight_lines() &&
+     has_attribute(_output_attributes, PointAttribute::EdgeOfFlightLine));
+  const auto has_gps_times =
+    (points.has_gps_times() && has_attribute(_output_attributes, PointAttribute::GPSTime));
+  const auto has_number_of_returns =
+    (points.has_number_of_returns() &&
+     has_attribute(_output_attributes, PointAttribute::NumberOfReturns));
+  const auto has_return_numbers = (points.has_return_numbers() &&
+                                   has_attribute(_output_attributes, PointAttribute::ReturnNumber));
+  const auto has_point_source_ids =
+    (points.has_point_source_ids() &&
+     has_attribute(_output_attributes, PointAttribute::PointSourceID));
+  const auto has_scan_angle_ranks =
+    (points.has_scan_angle_ranks() &&
+     has_attribute(_output_attributes, PointAttribute::ScanAngleRank));
+  const auto has_scan_direction_flags =
+    (points.has_scan_direction_flags() &&
+     has_attribute(_output_attributes, PointAttribute::ScanDirectionFlag));
+  const auto has_user_data =
+    (points.has_user_data() && has_attribute(_output_attributes, PointAttribute::UserData));
+
   for (const auto point_ref : points) {
     const auto pos = point_ref.position();
     laszip_F64 coordinates[3] = { pos.x, pos.y, pos.z };
@@ -132,8 +177,8 @@ LASPersistence::persist_points(PointBuffer const& points,
       return;
     }
 
-    const auto rgb = point_ref.rgbColor();
-    if (rgb) {
+    if (has_colors) {
+      const auto rgb = point_ref.rgbColor();
       // See comment in templated version of persist_points in LASPersistence.h for
       // an explanation of the bit-shift
       laspoint->rgb[0] = rgb->x << 8;
@@ -141,54 +186,44 @@ LASPersistence::persist_points(PointBuffer const& points,
       laspoint->rgb[2] = rgb->z << 8;
     }
 
-    const auto intensity = point_ref.intensity();
-    if (intensity) {
-      laspoint->intensity = *intensity;
+    if (has_intensities) {
+      laspoint->intensity = *point_ref.intensity();
     }
 
-    const auto classification = point_ref.classification();
-    if (classification) {
-      laspoint->classification = *classification;
+    if (has_classifications) {
+      laspoint->classification = *point_ref.classification();
     }
 
-    const auto eof_line = point_ref.edge_of_flight_line();
-    if (eof_line) {
-      laspoint->edge_of_flight_line = *eof_line;
+    if (has_edge_of_flight_lines) {
+      laspoint->edge_of_flight_line = *point_ref.edge_of_flight_line();
     }
 
-    const auto gps_time = point_ref.gps_time();
-    if (gps_time) {
-      laspoint->gps_time = *gps_time;
+    if (has_gps_times) {
+      laspoint->gps_time = *point_ref.gps_time();
     }
 
-    const auto number_of_returns = point_ref.number_of_returns();
-    if (number_of_returns) {
-      laspoint->number_of_returns = *number_of_returns;
+    if (has_number_of_returns) {
+      laspoint->number_of_returns = *point_ref.number_of_returns();
     }
 
-    const auto return_number = point_ref.return_number();
-    if (return_number) {
-      laspoint->return_number = *return_number;
+    if (has_return_numbers) {
+      laspoint->return_number = *point_ref.return_number();
     }
 
-    const auto point_source_id = point_ref.point_source_id();
-    if (point_source_id) {
-      laspoint->point_source_ID = *point_source_id;
+    if (has_point_source_ids) {
+      laspoint->point_source_ID = *point_ref.point_source_id();
     }
 
-    const auto scan_angle_rank = point_ref.scan_angle_rank();
-    if (scan_angle_rank) {
-      laspoint->scan_angle_rank = *scan_angle_rank;
+    if (has_scan_angle_ranks) {
+      laspoint->scan_angle_rank = *point_ref.scan_angle_rank();
     }
 
-    const auto scan_direction_flag = point_ref.scan_direction_flag();
-    if (scan_direction_flag) {
-      laspoint->scan_direction_flag = *scan_direction_flag;
+    if (has_scan_direction_flags) {
+      laspoint->scan_direction_flag = *point_ref.scan_direction_flag();
     }
 
-    const auto user_data = point_ref.user_data();
-    if (user_data) {
-      laspoint->user_data = *user_data;
+    if (has_user_data) {
+      laspoint->user_data = *point_ref.user_data();
     }
 
     if (laszip_write_point(laswriter)) {
@@ -206,7 +241,7 @@ LASPersistence::retrieve_points(const std::string& node_name, PointBuffer& point
     return;
   LASFile las_file{ file_path, LASFile::OpenMode::Read };
   pc::read_points(
-    std::cbegin(las_file), las_file.size(), las_file.get_metadata(), _point_attributes, points);
+    std::cbegin(las_file), las_file.size(), las_file.get_metadata(), _input_attributes, points);
 }
 
 bool

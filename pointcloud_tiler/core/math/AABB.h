@@ -56,6 +56,13 @@ struct AABB
     max = { center.x + half_length, center.y + half_length, center.z + half_length };
   }
 
+  AABB cubic() const
+  {
+    auto bounds = *this;
+    bounds.makeCubic();
+    return bounds;
+  }
+
   Vector3<double> getCenter() const { return min + extent() / 2; }
 
   AABB translate(const Vector3<double>& translation) const
@@ -76,7 +83,7 @@ namespace concepts {
 
 template<>
 inline unit::byte
-size_in_memory(AABB const& aabb)
+size_in_memory(AABB const&)
 {
   return 2 * sizeof(Vector3<double>) * boost::units::information::byte;
 }

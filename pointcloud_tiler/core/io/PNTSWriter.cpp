@@ -270,7 +270,7 @@ transform_pnts_file_coordinates(const std::string& file_path,
                                 const PointAttributes& points_attributes)
 {
 
-  auto pnts_file = readPNTSFile(file_path);
+  auto pnts_file = readPNTSFile(file_path, points_attributes);
   if (!pnts_file) {
     std::cerr << "Could not read file " << file_path << std::endl;
     return;

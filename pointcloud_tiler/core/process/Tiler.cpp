@@ -15,6 +15,8 @@
 #include <containers/DestructuringIterator.h>
 #include <debug/Journal.h>
 #include <debug/ProgressReporter.h>
+#include <debug/ThroughputCounter.h>
+#include <debug/Timing.h>
 #include <terminal/stdout_helper.h>
 #include <threading/Parallel.h>
 
@@ -36,323 +38,25 @@
 
 constexpr uint32_t MAX_OCTREE_LEVELS = 21;
 
-struct NodeProcessingResult
-{
-  NodeProcessingResult() {}
-  NodeProcessingResult(octree::NodeData data,
-                       octree::NodeStructure node,
-                       octree::NodeStructure root_node)
-    : data(std::move(data))
-    , node(node)
-    , root_node(root_node)
-  {}
-
-  octree::NodeData data;
-  octree::NodeStructure node;
-  octree::NodeStructure root_node;
-};
-
-#ifdef PRECISE_VERIFICATION_MODE
-static void
-validate_points(const std::vector<IndexedPoint<MAX_OCTREE_LEVELS>>& points,
-                const std::string& node_name,
-                const AABB& bounds)
-{
-  for (size_t idx = 0; idx < points.size(); ++idx) {
-    const auto& p = points[idx];
-    const auto& pos = p.point_reference.position();
-    if (!bounds.isInside(pos)) {
-      std::cerr << "validate_points failed @ node " << node_name << "(" << bounds << ")!\n"
-                << "\tPoint " << pos << " is outside of bounding box!\n";
-      std::exit(EXIT_FAILURE);
-    }
-  }
-}
-
-template<typename Iter>
-static void
-sorted_check(Iter begin, Iter end, const std::string& node_name)
-{
-  if (!std::is_sorted(begin, end, [](const auto& l, const auto& r) {
-        return l.morton_index.get() < r.morton_index.get();
-      })) {
-    std::cerr << "sorted_check failed @ node " << node_name << "!\n";
-    std::exit(EXIT_FAILURE);
-  }
-}
-
-template<typename Iter>
-static void
-morton_check(Iter begin,
-             Iter end,
-             uint32_t level,
-             const std::string& node_name,
-             const AABB& node_bounds)
-{
-  for (auto next = begin + 1; next < end; ++next) {
-    const auto next_morton_idx = next->morton_index.truncate_to_level(level);
-    const auto cur_morton_idx = (next - 1)->morton_index.truncate_to_level(level);
-    if (cur_morton_idx.get() != next_morton_idx.get()) {
-      std::cerr << "morton_check failed @ node " << node_name << "(" << node_bounds << ")!\n"
-                << "\tPoint A: " << (next - 1)->point_reference.position() << " with Morton index "
-                << to_string(cur_morton_idx) << "\n"
-                << "\tPoint B: " << next->point_reference.position() << " with Morton index "
-                << to_string(next_morton_idx) << "\n";
-      std::exit(EXIT_FAILURE);
-    }
-  }
-}
-
-template<typename Iter>
-static void
-inside_check(Iter begin, Iter end, const std::string& node_name, const AABB& bounds)
-{
-  std::for_each(begin, end, [&](const auto& indexed_point) {
-    const auto& pos = indexed_point.point_reference.position();
-    if (!bounds.isInside(pos)) {
-      std::cerr << "validate_points failed @ node " << node_name << "(" << bounds << ")!\n"
-                << "\tPoint " << pos << " is outside of bounding box!\n";
-      std::exit(EXIT_FAILURE);
-    }
-  });
-}
-#endif
-
-using PointsPerNode = std::unordered_map<DynamicMortonIndex, size_t>;
-using NodeWithPointCount = std::pair<DynamicMortonIndex, size_t>;
-
-[[maybe_unused]] static PointsPerNode
-find_start_nodes_of_batch(PointBuffer::PointIterator points_begin,
-                          PointBuffer::PointIterator points_end,
-                          std::vector<IndexedPoint64>::iterator indices_begin,
-                          const AABB& root_bounds,
-                          size_t desired_concurrency,
-                          uint32_t max_tree_scan_depth)
-{
-  index_points<MAX_OCTREE_LEVELS>(
-    points_begin, points_end, indices_begin, root_bounds, OutlierPointsBehaviour::ClampToBounds);
-
-  // Count # of points for each morton index for the first 2/3 levels or so
-  const auto num_points = std::distance(points_begin, points_end);
-  PointsPerNode histogram;
-  std::for_each(indices_begin,
-                indices_begin + num_points,
-                [&histogram, max_tree_scan_depth](const IndexedPoint64& indexed_point) {
-                  for (uint32_t level = 0; level < max_tree_scan_depth; ++level) {
-                    const DynamicMortonIndex dynamic_index = { indexed_point.morton_index, level };
-                    ++histogram[dynamic_index];
-                  }
-                });
-
-  return histogram;
-}
-
-[[maybe_unused]] static std::vector<NodeWithPointCount>
-select_start_nodes(const PointsPerNode& nodes_tree, size_t desired_nodes_count)
-{
-  // Let 'nodes_tree' be an octree where each node contains the number of points
-  // that belong to this node. This function then selects as close to
-  // 'desired_nodes_count' nodes as possible from this tree, starting from the
-  // root node. Nodes are recursively split as long as the total node count is
-  // less than 'desired_nodes_count'. For splitting, the node with the largest
-  // number of points is used.
-  PointsPerNode selected_nodes;
-
-  const auto node_has_children = [](const NodeWithPointCount& node, const PointsPerNode& nodes) {
-    for (uint8_t octant = 0; octant < 8; ++octant) {
-      if (nodes.find(node.first.child(octant)) != std::end(nodes))
-        return true;
-    }
-    return false;
-  };
-
-  const auto find_max_node =
-    [node_has_children](const PointsPerNode& nodes) -> std::optional<NodeWithPointCount> {
-    std::optional<NodeWithPointCount> max_node;
-
-    for (auto& node_with_count : nodes) {
-      if (!node_has_children(node_with_count, nodes))
-        continue;
-
-      if (!max_node || max_node->second < node_with_count.second) {
-        max_node = node_with_count;
-      }
-    }
-
-    return max_node;
-  };
-
-  const auto split_node_with_largest_count =
-    [&selected_nodes, &nodes_tree, find_max_node]() -> bool {
-    // Find node with largest count THAT HAS CHILDREN! If no node has children,
-    // we are done
-    const auto max_node = find_max_node(selected_nodes);
-    if (!max_node)
-      return false;
-
-    selected_nodes.erase(selected_nodes.find(max_node->first));
-
-    for (uint8_t octant = 0; octant < 8; ++octant) {
-      const auto child_node = max_node->first.child(octant);
-
-      const auto iter = nodes_tree.find(child_node);
-      if (iter == std::end(nodes_tree) || iter->second == 0)
-        continue;
-
-      selected_nodes.insert(*iter);
-    }
-
-    return true;
-  };
-
-  const DynamicMortonIndex root_index;
-  selected_nodes[root_index] = nodes_tree.at(root_index);
-
-  while (selected_nodes.size() < desired_nodes_count) {
-    if (!split_node_with_largest_count())
-      break;
-  }
-
-  return { selected_nodes.begin(), selected_nodes.end() };
-}
-
-using IndexedPointIter = std::vector<IndexedPoint64>::iterator;
-using IndexedPointRange = util::Range<IndexedPointIter>;
-
-[[maybe_unused]] static std::vector<IndexedPointRange>
-filter_and_sort_indexed_points(std::vector<IndexedPoint64>::iterator indexed_points_begin,
-                               std::vector<IndexedPoint64>::iterator indexed_points_end,
-                               const std::vector<std::pair<DynamicMortonIndex, size_t>>& nodes)
-{
-  // Sort the indexed points...
-  std::sort(indexed_points_begin, indexed_points_end);
-
-  //...then split the whole range up into N ranges where each range encompasses
-  // all points that
-  // belong to a single node in 'nodes'
-  std::vector<IndexedPointRange> indexed_ranges;
-  indexed_ranges.reserve(nodes.size());
-
-  const auto find_start_index = [indexed_points_begin,
-                                 indexed_points_end](const DynamicMortonIndex& morton_index) {
-    return std::lower_bound(
-      indexed_points_begin,
-      indexed_points_end,
-      morton_index,
-      [](const IndexedPoint64& indexed_point, const DynamicMortonIndex& ref) {
-        return indexed_point.morton_index.truncate_to_level(ref.depth()).get() <
-               ref.to_static_morton_index<MAX_OCTREE_LEVELS>().get();
-      });
-  };
-
-  const auto find_end_index = [indexed_points_begin,
-                               indexed_points_end](const DynamicMortonIndex& morton_index) {
-    return std::upper_bound(
-      indexed_points_begin,
-      indexed_points_end,
-      morton_index,
-      [](const DynamicMortonIndex& ref, const IndexedPoint64& indexed_point) {
-        return ref.to_static_morton_index<MAX_OCTREE_LEVELS>().get() <
-               indexed_point.morton_index.truncate_to_level(ref.depth()).get();
-      });
-  };
-
-  for (auto& node_with_count : nodes) {
-    const auto start_index = find_start_index(node_with_count.first);
-    const auto end_index = find_end_index(node_with_count.first);
-    indexed_ranges.push_back({ start_index, end_index });
-  }
-
-  const auto selected_points =
-    std::accumulate(std::begin(indexed_ranges),
-                    std::end(indexed_ranges),
-                    size_t{ 0 },
-                    [](size_t accum, const auto& range) -> size_t { return accum + range.size(); });
-  if (selected_points !=
-      static_cast<size_t>(std::distance(indexed_points_begin, indexed_points_end))) {
-    throw std::runtime_error{ "Node partitioning does not span the full range of points!" };
-  }
-
-  return indexed_ranges;
-}
-
-template<typename Func, typename Taskflow>
-static void
-merge_and_process_points(const std::vector<IndexedPointRange>& sorted_ranges_for_node,
-                         const DynamicMortonIndex& morton_index_of_node,
-                         const octree::NodeStructure& root_node,
-                         const TilerMetaParameters& meta_parameters,
-                         Func process_call,
-                         Taskflow& taskflow)
-{
-  const auto num_points = util::range(sorted_ranges_for_node)
-                            .accumulate([](size_t accum, const IndexedPointRange& range) {
-                              return accum + range.size();
-                            });
-
-  octree::NodeData node_data;
-  node_data.reserve(num_points);
-
-  // Merge all ranges into node_data using an N-ary variant of std::merge
-  auto point_ranges = sorted_ranges_for_node;
-  const auto get_index_of_range_containing_lowest_point = [&point_ranges]() {
-    size_t lowest_index = 0;
-    MortonIndex64 lowest_morton_index = MortonIndex64::MAX;
-    for (size_t idx = 0; idx < point_ranges.size(); ++idx) {
-      const auto& cur_range = point_ranges[idx];
-      if (cur_range.size() == 0)
-        continue;
-      const auto& cur_morton_index = cur_range.begin()->morton_index;
-      if (cur_morton_index.get() < lowest_morton_index.get()) {
-        lowest_morton_index = cur_morton_index;
-        lowest_index = idx;
-      }
-    }
-    return lowest_index;
-  };
-
-  for (size_t idx = 0; idx < num_points; ++idx) {
-    const auto index_of_next_range = get_index_of_range_containing_lowest_point();
-    auto& next_range = point_ranges[index_of_next_range];
-    node_data.push_back(*next_range.begin++);
-  }
-
-  octree::NodeStructure node_structure;
-  node_structure.bounds = get_bounds_from_morton_index(morton_index_of_node, root_node.bounds);
-  node_structure.level =
-    static_cast<int32_t>(morton_index_of_node.depth()) - 1; // TODO Definitiely fix this hacky
-                                                            // 'root-level-is-negative-one' stuff...
-  node_structure.max_depth = root_node.max_depth;
-  node_structure.max_spacing = root_node.max_spacing / (1 << morton_index_of_node.depth());
-  node_structure.morton_index = morton_index_of_node.to_static_morton_index<MAX_OCTREE_LEVELS>();
-  node_structure.name = to_string(morton_index_of_node, MortonIndexNamingConvention::Potree);
-
-  const auto task_name =
-    (boost::format("%1% [%2%]") % node_structure.name % node_data.size()).str();
-
-  taskflow
-    .emplace([_node_data = std::move(node_data), node_structure, root_node, process_call](
-               auto& subflow) mutable {
-      process_node(std::move(_node_data), node_structure, root_node, process_call, subflow);
-    })
-    .name(task_name);
-}
-
 Tiler::Tiler(const AABB& aabb,
-             const TilerMetaParameters& meta_parameters,
+             TilerMetaParameters meta_parameters,
              SamplingStrategy sampling_strategy,
              ProgressReporter* progress_reporter,
+             MultiReaderPointSource point_source,
              PointsPersistence& persistence,
+             const PointAttributes& input_attributes,
              fs::path output_directory)
   : _aabb(aabb)
   , _meta_parameters(meta_parameters)
   , _sampling_strategy(std::move(sampling_strategy))
   , _progress_reporter(progress_reporter)
+  , _point_source(std::move(point_source))
   , _persistence(persistence)
+  , _input_attributes(input_attributes)
   , _output_directory(std::move(output_directory))
   , _producers(0)
   , _consumers(1)
-  , _run_indexing_thread(true)
+  , _indexing_thread_state(IndexingThreadState::Run)
 {
   const auto root_spacing_to_bounds_ratio =
     std::log2f(aabb.extent().x / meta_parameters.spacing_at_root);
@@ -385,53 +89,116 @@ Tiler::Tiler(const AABB& aabb,
 
 Tiler::~Tiler()
 {
-  if (!_run_indexing_thread)
-    return;
-  close();
-}
-
-void
-Tiler::index()
-{
-  if (!_store.count())
+  if (!_indexing_thread.joinable())
     return;
 
-  _consumers.wait();
-  _indexing_point_cache = std::move(_store);
-  _store = {};
-  _producers.notify();
+  join_worker(IndexingThreadState::TerminateImmediately);
 }
 
-void
-Tiler::wait_until_indexed()
+size_t
+Tiler::run()
 {
-  _consumers.wait();
-}
+  size_t points_read = 0;
 
-bool
-Tiler::needs_indexing() const
-{
-  return _store.count() >= _meta_parameters.internal_cache_size;
-}
+  ThroughputSampler points_throughput_sampler{ 64 };
 
-void
-Tiler::cache(const PointBuffer& points)
-{
-  _store.append_buffer(points);
-  if (_progress_reporter)
-    _progress_reporter->increment_progress<size_t>(progress::LOADING, points.count());
-}
+  // Allocate points cache for producer and consumer. This is done so that we can read from
+  // the PointSource directly into existing memory, which is efficient. Furthermore, it will
+  // allow true concurrent reading, as each reader can be assigned to a distinct, pre-allocated
+  // region in memory
+  _points_cache_for_consumers = { _meta_parameters.internal_cache_size, _input_attributes };
+  _points_cache_for_producers = { _meta_parameters.internal_cache_size, _input_attributes };
 
-void
-Tiler::close()
-{
-  _consumers.wait();
-  _run_indexing_thread = false;
-  _producers.notify();
+  // We keep track of the current write position in the producer cache here
+  auto start_index_in_producer_cache = std::begin(_points_cache_for_producers);
+  auto producer_cache_end = std::end(_points_cache_for_producers);
 
-  _indexing_thread.join();
+  while (true) {
+    auto next_file = _point_source.lock_source();
+    if (!next_file)
+      break;
+
+    auto [new_producer_cache_begin, read_time] = util::time([&]() {
+      return next_file->read_next_into({ start_index_in_producer_cache, producer_cache_end },
+                                       _input_attributes);
+    });
+
+    const auto num_points_read =
+      std::distance(start_index_in_producer_cache, new_producer_cache_begin);
+    points_read += num_points_read;
+    points_throughput_sampler.push_entry(num_points_read, read_time);
+    if (_progress_reporter) {
+      _progress_reporter->increment_progress<size_t>(progress::LOADING, num_points_read);
+    }
+
+    util::write_log(
+      (boost::format("Current I/O throughput: %1%pts/s\n") %
+       unit::format_with_metric_prefix(points_throughput_sampler.get_throughput_per_second()))
+        .str());
+
+    start_index_in_producer_cache = new_producer_cache_begin;
+
+    if (start_index_in_producer_cache == producer_cache_end) {
+      swap_point_buffers();
+
+      start_index_in_producer_cache = std::begin(_points_cache_for_producers);
+      producer_cache_end = std::end(_points_cache_for_producers);
+    }
+
+    _point_source.release_source(*next_file);
+  }
+
+  // The last batch can (and most often will) contain less than 'internal_cache_size' points,
+  // so we have to shrink the producer buffer to the actual number of points in the last batch
+  _points_cache_for_producers.resize(
+    std::distance(std::begin(_points_cache_for_producers), start_index_in_producer_cache));
+
+  swap_point_buffers();
+
+  join_worker(IndexingThreadState::ExitGracefully);
 
   _tiling_algorithm->finalize(_aabb);
+
+  return points_read;
+}
+
+void
+Tiler::do_indexing_for_current_batch(tf::Executor& executor)
+{
+  static uint32_t s_batch_idx = 0;
+
+  const auto t_start = std::chrono::high_resolution_clock::now();
+
+  tf::Taskflow taskflow;
+
+  _tiling_algorithm->build_execution_graph(_points_cache_for_consumers, _aabb, taskflow);
+
+  executor.run(taskflow).wait();
+
+  const auto t_end = std::chrono::high_resolution_clock::now();
+  const auto delta_t = t_end - t_start;
+
+  if (debug::Journal::instance().is_enabled()) {
+    const auto delta_t_seconds = static_cast<double>(delta_t.count()) / 1e9;
+    const auto points_per_second = _points_cache_for_consumers.count() / delta_t_seconds;
+    debug::Journal::instance().add_entry(
+      (boost::format("Indexing (batch %1%): %2% s | %3% pts/s") % s_batch_idx++ % delta_t_seconds %
+       unit::format_with_metric_prefix(points_per_second))
+        .str());
+
+    std::ofstream ofs{ concat(
+      _output_directory.string(), "/taskflow_structure_", s_batch_idx, ".gv") };
+    taskflow.dump(ofs);
+  }
+}
+
+void
+Tiler::swap_point_buffers()
+{
+  _consumers.wait();
+  std::swap(_points_cache_for_producers, _points_cache_for_consumers);
+  //_points_cache_for_producers.clear();
+  _producers.notify();
 }
 
 void
@@ -447,38 +214,31 @@ Tiler::run_worker()
     executor_observer = executor.make_observer<ExecutorObserver>();
   }
 
-  size_t batch_idx = 0;
-
-  while (_run_indexing_thread) {
+  while (true) {
     _producers.wait();
-    if (!_run_indexing_thread)
+    if (_indexing_thread_state != IndexingThreadState::Run)
       break;
 
-    const auto t_start = std::chrono::high_resolution_clock::now();
-
-    tf::Taskflow taskflow;
-
-    _tiling_algorithm->build_execution_graph(_indexing_point_cache, _aabb, taskflow);
-
-    executor.run(taskflow).wait();
-
-    const auto t_end = std::chrono::high_resolution_clock::now();
-    const auto delta_t = t_end - t_start;
-
-    if (debug::Journal::instance().is_enabled()) {
-      const auto delta_t_seconds = static_cast<double>(delta_t.count()) / 1e9;
-      const auto points_per_second = _indexing_point_cache.count() / delta_t_seconds;
-      debug::Journal::instance().add_entry(
-        (boost::format("Indexing (batch %1%): %2% s | %3% pts/s") % batch_idx++ % delta_t_seconds %
-         unit::format_with_metric_prefix(points_per_second))
-          .str());
-    }
+    do_indexing_for_current_batch(executor);
 
     _consumers.notify();
   }
+
+  if (_indexing_thread_state == IndexingThreadState::TerminateImmediately)
+    return;
 
   if (debug::Journal::instance().is_enabled()) {
     std::ofstream ofs{ concat(_output_directory.string(), "/taskflow.json") };
     executor_observer->dump(ofs);
   }
+}
+
+void
+Tiler::join_worker(IndexingThreadState state)
+{
+  _consumers.wait();
+  _indexing_thread_state = state;
+  _producers.notify();
+
+  _indexing_thread.join();
 }

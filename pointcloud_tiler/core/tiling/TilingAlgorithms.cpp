@@ -168,6 +168,8 @@ TilingAlgorithmBase::TilingAlgorithmBase(SamplingStrategy& sampling_strategy,
   , _concurrency(concurrency)
 {}
 
+TilingAlgorithmBase::~TilingAlgorithmBase() {}
+
 /**
  * Tile the given node as a terminal node, i.e. take up to 'max_points_per_node'
  * points and persist them without any sampling

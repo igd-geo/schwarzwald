@@ -30,6 +30,7 @@ set(files
 	debug/ProgressReporter.h
 	debug/ThroughputCounter.h
 	debug/ThroughputCounter.cpp
+	debug/Timing.h
 
 	io/io_util.h
 	io/io_util.cpp

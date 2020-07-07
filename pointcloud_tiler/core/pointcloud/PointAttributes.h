@@ -102,6 +102,11 @@ validate(boost::any& v, const std::vector<std::string>& values, PointAttributes*
 
 bool
 has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_find);
+/**
+ * Returns true if the first set of PointAttributes is a subset of the second set of PointAttributes
+ */
+bool
+attributes_are_subset(PointAttributes const& maybe_subset, PointAttributes const& maybe_superset);
 std::string
 print_attributes(PointAttributes const& attributes);
 

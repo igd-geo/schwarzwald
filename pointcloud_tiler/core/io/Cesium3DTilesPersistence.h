@@ -22,7 +22,8 @@ struct Cesium3DTilesPersistence
   static PointAttributes supported_output_attributes();
 
   Cesium3DTilesPersistence(const std::string& work_dir,
-                           const PointAttributes& point_attributes,
+                           const PointAttributes& input_attributes,
+                           const PointAttributes& output_attributes,
                            RGBMapping rgb_mapping,
                            float spacing_at_root,
                            const Vector3<double>& global_offset);
@@ -40,7 +41,7 @@ struct Cesium3DTilesPersistence
     }
 
     PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"),
-                       _point_attributes,
+                       _output_attributes,
                        _rgb_mapping };
     // OPTIMIZATION This is not optimal, writer should be able to take iterator
     // pair
@@ -66,7 +67,8 @@ private:
   void write_tilesets() const;
 
   std::string _work_dir;
-  const PointAttributes& _point_attributes;
+  PointAttributes _input_attributes;
+  PointAttributes _output_attributes;
   RGBMapping _rgb_mapping;
   float _spacing_at_root;
   Vector3<double> _global_offset;

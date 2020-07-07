@@ -32,19 +32,34 @@ BinaryPersistence::supported_output_attributes()
 }
 
 BinaryPersistence::BinaryPersistence(const std::string& work_dir,
-                                     const PointAttributes& point_attributes,
+                                     const PointAttributes& input_attributes,
+                                     const PointAttributes& output_attributes,
                                      Compressed compressed)
   : _work_dir(work_dir)
-  , _point_attributes(point_attributes)
+  , _input_attributes(input_attributes)
+  , _output_attributes(output_attributes)
   , _compressed(compressed)
   , _file_extension(compressed == Compressed::Yes ? ".binz" : ".bin")
-{}
+{
+  // Support for schema conversions (e.g. writing intensity values as RGB) is not currently
+  // implemented for BinaryPersistence
+  if (_input_attributes != _output_attributes) {
+    throw std::invalid_argument{
+      "BinaryPersistence requires that input and output attributes are equal"
+    };
+  }
+  // if (!attributes_are_subset(_input_attributes, _output_attributes)) {
+  //   throw std::invalid_argument{
+  //     "Input PointAttributes must be a subset of the output PointAttributes!"
+  //   };
+  // }
+}
 
 BinaryPersistence::~BinaryPersistence() {}
 
 void
 BinaryPersistence::persist_points(PointBuffer const& points,
-                                  const AABB& bounds,
+                                  const AABB&,
                                   const std::string& node_name)
 {
   if (!points.count())
@@ -66,18 +81,47 @@ BinaryPersistence::persist_points(PointBuffer const& points,
   }
   stream.push(fs);
 
+  const auto has_colors =
+    (points.hasColors() && has_attribute(_output_attributes, PointAttribute::RGB));
+  const auto has_normals =
+    (points.hasNormals() && has_attribute(_output_attributes, PointAttribute::Normal));
+  const auto has_intensities =
+    (points.hasIntensities() && has_attribute(_output_attributes, PointAttribute::Intensity));
+  const auto has_classifications =
+    (points.hasClassifications() &&
+     has_attribute(_output_attributes, PointAttribute::Classification));
+  const auto has_edge_of_flight_lines =
+    (points.has_edge_of_flight_lines() &&
+     has_attribute(_output_attributes, PointAttribute::EdgeOfFlightLine));
+  const auto has_gps_times =
+    (points.has_gps_times() && has_attribute(_output_attributes, PointAttribute::GPSTime));
+  const auto has_number_of_returns =
+    (points.has_number_of_returns() &&
+     has_attribute(_output_attributes, PointAttribute::NumberOfReturns));
+  const auto has_return_numbers = (points.has_return_numbers() &&
+                                   has_attribute(_output_attributes, PointAttribute::ReturnNumber));
+  const auto has_point_source_ids =
+    (points.has_point_source_ids() &&
+     has_attribute(_output_attributes, PointAttribute::PointSourceID));
+  const auto has_scan_angle_ranks =
+    (points.has_scan_angle_ranks() &&
+     has_attribute(_output_attributes, PointAttribute::ScanAngleRank));
+  const auto has_scan_direction_flags =
+    (points.has_scan_direction_flags() &&
+     has_attribute(_output_attributes, PointAttribute::ScanDirectionFlag));
+  const auto has_user_data =
+    (points.has_user_data() && has_attribute(_output_attributes, PointAttribute::UserData));
+
   const uint32_t properties_bitmask =
-    (points.hasColors() ? COLOR_BIT : 0u) | (points.hasNormals() ? NORMAL_BIT : 0u) |
-    (points.hasIntensities() ? INTENSITY_BIT : 0u) |
-    (points.hasClassifications() ? CLASSIFICATION_BIT : 0u) |
-    (points.has_edge_of_flight_lines() ? EDGE_OF_FLIGHT_LINE_BIT : 0u) |
-    (points.has_gps_times() ? GPS_TIME_BIT : 0u) |
-    (points.has_number_of_returns() ? NUMBER_OF_RETURN_BIT : 0u) |
-    (points.has_return_numbers() ? RETURN_NUMBER_BIT : 0u) |
-    (points.has_point_source_ids() ? POINT_SOURCE_ID_BIT : 0u) |
-    (points.has_scan_angle_ranks() ? SCAN_ANGLE_RANK_BIT : 0u) |
-    (points.has_scan_direction_flags() ? SCAN_DIRECTION_FLAG_BIT : 0u) |
-    (points.has_user_data() ? USER_DATA_BIT : 0u);
+    (has_colors ? COLOR_BIT : 0u) | (has_normals ? NORMAL_BIT : 0u) |
+    (has_intensities ? INTENSITY_BIT : 0u) | (has_classifications ? CLASSIFICATION_BIT : 0u) |
+    (has_edge_of_flight_lines ? EDGE_OF_FLIGHT_LINE_BIT : 0u) |
+    (has_gps_times ? GPS_TIME_BIT : 0u) | (has_number_of_returns ? NUMBER_OF_RETURN_BIT : 0u) |
+    (has_return_numbers ? RETURN_NUMBER_BIT : 0u) |
+    (has_point_source_ids ? POINT_SOURCE_ID_BIT : 0u) |
+    (has_scan_angle_ranks ? SCAN_ANGLE_RANK_BIT : 0u) |
+    (has_scan_direction_flags ? SCAN_DIRECTION_FLAG_BIT : 0u) |
+    (has_user_data ? USER_DATA_BIT : 0u);
 
   write_binary(properties_bitmask, stream);
   write_binary(static_cast<uint64_t>(points.count()), stream);
@@ -89,79 +133,78 @@ BinaryPersistence::persist_points(PointBuffer const& points,
     write_binary(point.position(), stream);
   }
 
-  if (points.hasColors()) {
+  if (has_colors) {
     for (auto point : points) {
       write_binary(*point.rgbColor(), stream);
     }
   }
 
-  if (points.hasNormals()) {
+  if (has_normals) {
     for (auto point : points) {
       write_binary(*point.normal(), stream);
     }
   }
 
-  if (points.hasIntensities()) {
+  if (has_intensities) {
     for (auto point : points) {
       write_binary(*point.intensity(), stream);
     }
   }
 
-  if (points.hasClassifications()) {
+  if (has_classifications) {
     for (auto point : points) {
       write_binary(*point.classification(), stream);
     }
   }
 
-  if (points.has_edge_of_flight_lines()) {
+  if (has_edge_of_flight_lines) {
     for (auto point : points) {
       write_binary(*point.edge_of_flight_line(), stream);
     }
   }
 
-  if (points.has_gps_times()) {
+  if (has_gps_times) {
     for (auto point : points) {
       write_binary(*point.gps_time(), stream);
     }
   }
 
-  if (points.has_number_of_returns()) {
+  if (has_number_of_returns) {
     for (auto point : points) {
       write_binary(*point.number_of_returns(), stream);
     }
   }
 
-  if (points.has_return_numbers()) {
+  if (has_return_numbers) {
     for (auto point : points) {
       write_binary(*point.return_number(), stream);
     }
   }
 
-  if (points.has_point_source_ids()) {
+  if (has_point_source_ids) {
     for (auto point : points) {
       write_binary(*point.point_source_id(), stream);
     }
   }
 
-  if (points.has_scan_angle_ranks()) {
+  if (has_scan_angle_ranks) {
     for (auto point : points) {
       write_binary(*point.scan_angle_rank(), stream);
     }
   }
 
-  if (points.has_scan_direction_flags()) {
+  if (has_scan_direction_flags) {
     for (auto point : points) {
       write_binary(*point.scan_direction_flag(), stream);
     }
   }
 
-  if (points.has_user_data()) {
+  if (has_user_data) {
     for (auto point : points) {
       write_binary(*point.user_data(), stream);
     }
   }
 
-  // stream << std::flush;
   stream.pop();
 }
 
@@ -189,6 +232,9 @@ BinaryPersistence::retrieve_points(const std::string& node_name, PointBuffer& po
 
   read_binary(properties_bitmask, stream);
   read_binary(points_count, stream);
+
+  // TODO BinaryPersistence does not yet support reading different attributes than it writes, but
+  // once it does, we potentially have to skip some data while reading
 
   const auto has_colors = (properties_bitmask & COLOR_BIT) != 0;
   const auto has_normals = (properties_bitmask & NORMAL_BIT) != 0;
