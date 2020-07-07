@@ -23,7 +23,8 @@ struct LASPersistence
   static PointAttributes supported_output_attributes();
 
   LASPersistence(const std::string& work_dir,
-                 const PointAttributes& point_attributes,
+                 const PointAttributes& input_attributes,
+                 const PointAttributes& output_attributes,
                  Compressed compressed = Compressed::No);
   ~LASPersistence();
 
@@ -54,13 +55,42 @@ struct LASPersistence
       return;
     }
 
-    const auto has_gps_time = (*points_begin).gps_time() != nullptr;
-    const auto has_colors = (*points_begin).rgbColor() != nullptr;
+    const auto first_point = *points_begin;
+
+    const auto has_colors = ((first_point.rgbColor() != nullptr) &&
+                             has_attribute(_output_attributes, PointAttribute::RGB));
+    const auto has_intensities = ((first_point.intensity() != nullptr) &&
+                                  has_attribute(_output_attributes, PointAttribute::Intensity));
+    const auto has_classifications =
+      ((first_point.classification() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::Classification));
+    const auto has_edge_of_flight_lines =
+      ((first_point.edge_of_flight_line() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::EdgeOfFlightLine));
+    const auto has_gps_times = ((first_point.gps_time() != nullptr) &&
+                                has_attribute(_output_attributes, PointAttribute::GPSTime));
+    const auto has_number_of_returns =
+      ((first_point.number_of_returns() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::NumberOfReturns));
+    const auto has_return_numbers =
+      ((first_point.return_number() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::ReturnNumber));
+    const auto has_point_source_ids =
+      ((first_point.point_source_id() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::PointSourceID));
+    const auto has_scan_angle_ranks =
+      ((first_point.scan_angle_rank() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::ScanAngleRank));
+    const auto has_scan_direction_flags =
+      ((first_point.scan_direction_flag() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::ScanDirectionFlag));
+    const auto has_user_data = ((first_point.user_data() != nullptr) &&
+                                has_attribute(_output_attributes, PointAttribute::UserData));
 
     const auto point_data_format =
-      static_cast<uint8_t>((has_gps_time ? 1 : 0) + (has_colors ? 2 : 0));
+      static_cast<uint8_t>((has_gps_times ? 1 : 0) + (has_colors ? 2 : 0));
     const auto point_record_length =
-      static_cast<uint16_t>(20 + (has_gps_time ? 8 : 0) + (has_colors ? 6 : 0));
+      static_cast<uint16_t>(20 + (has_gps_times ? 8 : 0) + (has_colors ? 6 : 0));
 
     // las_header->file_source_ID = 0;
     // las_header->global_encoding = 0;
@@ -117,8 +147,8 @@ struct LASPersistence
         return;
       }
 
-      const auto rgb = point_ref.rgbColor();
-      if (rgb) {
+      if (has_colors) {
+        const auto rgb = point_ref.rgbColor();
         // Shifting by 8 bits to get 16-bit color values. This is per the LAS
         // specification, which states: "The Red, Green, Blue values should
         // always be normalized to 16 bit values. For example, when encoding an
@@ -132,54 +162,44 @@ struct LASPersistence
         laspoint->rgb[2] = rgb->z << 8;
       }
 
-      const auto intensity = point_ref.intensity();
-      if (intensity) {
-        laspoint->intensity = *intensity;
+      if (has_intensities) {
+        laspoint->intensity = *point_ref.intensity();
       }
 
-      const auto classification = point_ref.classification();
-      if (classification) {
-        laspoint->classification = *classification;
+      if (has_classifications) {
+        laspoint->classification = *point_ref.classification();
       }
 
-      const auto eof_line = point_ref.edge_of_flight_line();
-      if (eof_line) {
-        laspoint->edge_of_flight_line = *eof_line;
+      if (has_edge_of_flight_lines) {
+        laspoint->edge_of_flight_line = *point_ref.edge_of_flight_line();
       }
 
-      const auto gps_time = point_ref.gps_time();
-      if (gps_time) {
-        laspoint->gps_time = *gps_time;
+      if (has_gps_times) {
+        laspoint->gps_time = *point_ref.gps_time();
       }
 
-      const auto number_of_returns = point_ref.number_of_returns();
-      if (number_of_returns) {
-        laspoint->number_of_returns = *number_of_returns;
+      if (has_number_of_returns) {
+        laspoint->number_of_returns = *point_ref.number_of_returns();
       }
 
-      const auto return_number = point_ref.return_number();
-      if (return_number) {
-        laspoint->return_number = *return_number;
+      if (has_return_numbers) {
+        laspoint->return_number = *point_ref.return_number();
       }
 
-      const auto point_source_id = point_ref.point_source_id();
-      if (point_source_id) {
-        laspoint->point_source_ID = *point_source_id;
+      if (has_point_source_ids) {
+        laspoint->point_source_ID = *point_ref.point_source_id();
       }
 
-      const auto scan_angle_rank = point_ref.scan_angle_rank();
-      if (scan_angle_rank) {
-        laspoint->scan_angle_rank = *scan_angle_rank;
+      if (has_scan_angle_ranks) {
+        laspoint->scan_angle_rank = *point_ref.scan_angle_rank();
       }
 
-      const auto scan_direction_flag = point_ref.scan_direction_flag();
-      if (scan_direction_flag) {
-        laspoint->scan_direction_flag = *scan_direction_flag;
+      if (has_scan_direction_flags) {
+        laspoint->scan_direction_flag = *point_ref.scan_direction_flag();
       }
 
-      const auto user_data = point_ref.user_data();
-      if (user_data) {
-        laspoint->user_data = *user_data;
+      if (has_user_data) {
+        laspoint->user_data = *point_ref.user_data();
       }
 
       if (laszip_write_point(laswriter)) {
@@ -199,7 +219,8 @@ struct LASPersistence
 
 private:
   std::string _work_dir;
-  const PointAttributes& _point_attributes;
+  PointAttributes _input_attributes;
+  PointAttributes _output_attributes;
   Compressed _compressed;
   std::string _file_extension;
 };

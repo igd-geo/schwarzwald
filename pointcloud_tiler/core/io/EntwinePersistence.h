@@ -61,7 +61,8 @@ write_ept_json(const fs::path& file_path, const EptJson& ept_json);
 struct EntwinePersistence
 {
   EntwinePersistence(const std::string& work_dir,
-                     const PointAttributes& point_attributes,
+                     const PointAttributes& input_attributes,
+                     const PointAttributes& output_attributes,
                      EntwineFormat format);
   EntwinePersistence(EntwinePersistence&&) = default;
   ~EntwinePersistence();
@@ -78,16 +79,13 @@ struct EntwinePersistence
 
     const auto entwine_name = potree_name_to_entwine_name(node_name);
 
-    _las_persistence.persist_points(
-      points_begin, points_end, bounds, entwine_name);
+    _las_persistence.persist_points(points_begin, points_end, bounds, entwine_name);
 
     std::lock_guard guard{ *_hierarchy_lock };
     _hierarchy[entwine_name] = num_points;
   }
 
-  void persist_points(PointBuffer const& points,
-                      const AABB& bounds,
-                      const std::string& node_name);
+  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
@@ -97,7 +95,6 @@ struct EntwinePersistence
 
 private:
   fs::path _work_dir;
-  const PointAttributes& _point_attributes;
   EntwineFormat _format;
   std::string _file_extension;
 
@@ -106,6 +103,5 @@ private:
   std::unique_ptr<std::mutex> _hierarchy_lock;
   std::unordered_map<std::string, size_t> _hierarchy;
 
-  static std::string potree_name_to_entwine_name(
-    const std::string& potree_name);
+  static std::string potree_name_to_entwine_name(const std::string& potree_name);
 };

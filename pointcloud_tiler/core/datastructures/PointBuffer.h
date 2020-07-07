@@ -2,6 +2,7 @@
 
 #include "concepts/MemoryIntrospection.h"
 #include "math/Vector3.h"
+#include "pointcloud/PointAttributes.h"
 
 #include <gsl/gsl>
 #include <optional>
@@ -119,6 +120,12 @@ struct PointBuffer
               std::vector<int8_t> scan_angle_ranks = {},
               std::vector<uint8_t> user_data = {});
 
+  /**
+   * Creates a new PointBuffer storing 'count' default-constructed points with the
+   * attributes given by 'attributes'
+   */
+  PointBuffer(size_t count, const PointAttributes& attributes);
+
   PointBuffer(const PointBuffer&) = default;
   PointBuffer(PointBuffer&&) = default;
 
@@ -151,9 +158,19 @@ struct PointBuffer
   /// </summary>
   void append_buffer(const PointBuffer& other);
 
+  /**
+   * Applies a new attribute schema to this PointBuffer. Clears all attributes that are not in the
+   * new schema and fills all attributes that are in the new schema but weren't in the PointBuffers
+   * old schema (i.e. the state of the PointBuffer prior to calling 'apply_schema') with default
+   * values
+   */
+  void apply_schema(const PointAttributes& schema);
+
   size_t count() const { return _count; }
   bool empty() const { return _count == 0; }
   void clear();
+  void shrink_to_fit();
+  void resize(size_t new_size);
 
   std::vector<Vector3<double>>& positions() { return _positions; }
   std::vector<Vector3<uint8_t>>& rgbColors() { return _rgbColors; }
@@ -174,10 +191,7 @@ struct PointBuffer
   const std::vector<Vector3<uint8_t>>& rgbColors() const { return _rgbColors; }
   const std::vector<Vector3<float>>& normals() const { return _normals; }
   const std::vector<uint16_t>& intensities() const { return _intensities; }
-  const std::vector<uint8_t>& classifications() const
-  {
-    return _classifications;
-  }
+  const std::vector<uint8_t>& classifications() const { return _classifications; }
 
   const auto& edge_of_flight_lines() const { return _edge_of_flight_lines; }
   const auto& gps_times() const { return _gps_times; }
@@ -224,8 +238,7 @@ struct PointBuffer
     PointIterator operator-(std::ptrdiff_t count) const;
     PointIterator& operator+=(std::ptrdiff_t count);
     PointIterator& operator-=(std::ptrdiff_t count);
-    friend std::ptrdiff_t operator-(const PointIterator& l,
-                                    const PointIterator& r);
+    friend std::ptrdiff_t operator-(const PointIterator& l, const PointIterator& r);
     PointReference operator[](std::ptrdiff_t idx) const;
 
     bool operator==(const PointIterator& other) const;
@@ -253,20 +266,15 @@ struct PointBuffer
     PointConstIterator operator-(std::ptrdiff_t count) const;
     PointConstIterator& operator+=(std::ptrdiff_t count);
     PointConstIterator& operator-=(std::ptrdiff_t count);
-    friend std::ptrdiff_t operator-(const PointConstIterator& l,
-                                    const PointConstIterator& r);
+    friend std::ptrdiff_t operator-(const PointConstIterator& l, const PointConstIterator& r);
     PointConstReference operator[](std::ptrdiff_t idx) const;
 
     bool operator==(const PointConstIterator& other) const;
     bool operator!=(const PointConstIterator& other) const;
-    friend bool operator<(const PointConstIterator& l,
-                          const PointConstIterator& r);
-    friend bool operator<=(const PointConstIterator& l,
-                           const PointConstIterator& r);
-    friend bool operator>(const PointConstIterator& l,
-                          const PointConstIterator& r);
-    friend bool operator>=(const PointConstIterator& l,
-                           const PointConstIterator& r);
+    friend bool operator<(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator<=(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator>(const PointConstIterator& l, const PointConstIterator& r);
+    friend bool operator>=(const PointConstIterator& l, const PointConstIterator& r);
 
   private:
     PointBuffer const* _pointBuffer;
@@ -286,7 +294,6 @@ private:
   std::vector<Vector3<float>> _normals;
   std::vector<uint16_t> _intensities;
   std::vector<uint8_t> _classifications;
-
   std::vector<uint8_t> _edge_of_flight_lines;
   std::vector<double> _gps_times;
   std::vector<uint8_t> _number_of_returns;
@@ -327,10 +334,8 @@ inline unit::byte
 size_in_memory(PointBuffer const& point_buffer)
 {
   return (sizeof(size_t) * boost::units::information::byte) +
-         size_in_memory(point_buffer.positions()) +
-         size_in_memory(point_buffer.rgbColors()) +
-         size_in_memory(point_buffer.normals()) +
-         size_in_memory(point_buffer.intensities()) +
+         size_in_memory(point_buffer.positions()) + size_in_memory(point_buffer.rgbColors()) +
+         size_in_memory(point_buffer.normals()) + size_in_memory(point_buffer.intensities()) +
          size_in_memory(point_buffer.classifications());
 }
 } // namespace concepts

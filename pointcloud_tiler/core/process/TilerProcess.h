@@ -46,6 +46,13 @@ struct TilerProcess
   void run();
 
 private:
+  struct CalculateBoundsResult
+  {
+    AABB tight_bounds;
+    AABB cubic_bounds;
+    AABB cubic_bounds_at_origin;
+  };
+
   Arguments _args;
   AABB _bounds;
 
@@ -59,8 +66,17 @@ private:
 
   void prepare();
   void cleanUp();
-  AABB calculateAABB(SRSTransformHelper const* transform);
+  CalculateBoundsResult calculate_bounds(SRSTransformHelper const* transform);
   size_t get_total_points_count() const;
   void check_for_missing_point_attributes(const PointAttributes& required_attributes) const;
   void determine_input_and_output_attributes();
+  SamplingStrategy make_sampling_strategy() const;
+  Tiler make_tiler(bool shift_points_to_center,
+                   uint32_t max_depth,
+                   SRSTransformHelper const* srs_transform,
+                   AABB const& cubic_bounds,
+                   AABB const& cubic_bounds_at_origin,
+                   SamplingStrategy sampling_strategy,
+                   ProgressReporter* progress_reporter,
+                   PointsPersistence& persistence) const;
 };

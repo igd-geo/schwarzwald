@@ -37,7 +37,8 @@ struct BinaryPersistence
   static PointAttributes supported_output_attributes();
 
   BinaryPersistence(const std::string& work_dir,
-                    const PointAttributes& point_attributes,
+                    const PointAttributes& input_attributes,
+                    const PointAttributes& output_attributes,
                     Compressed compressed = Compressed::Yes);
   ~BinaryPersistence();
 
@@ -67,18 +68,37 @@ struct BinaryPersistence
     }
     stream.push(fs);
 
-    const auto has_colors = points_begin->rgbColor() != nullptr;
-    const auto has_normals = points_begin->normal() != nullptr;
-    const auto has_intensities = points_begin->intensity() != nullptr;
-    const auto has_classifications = points_begin->classification() != nullptr;
-    const auto has_edge_of_flight_lines = points_begin->edge_of_flight_line() != nullptr;
-    const auto has_gps_times = points_begin->gps_time() != nullptr;
-    const auto has_number_of_returns = points_begin->number_of_returns() != nullptr;
-    const auto has_return_numbers = points_begin->return_number() != nullptr;
-    const auto has_point_source_ids = points_begin->point_source_id() != nullptr;
-    const auto has_scan_angle_ranks = points_begin->scan_angle_rank() != nullptr;
-    const auto has_scan_direction_flags = points_begin->scan_direction_flag() != nullptr;
-    const auto has_user_data = points_begin->user_data() != nullptr;
+    const auto has_colors = ((points_begin->rgbColor() != nullptr) &&
+                             has_attribute(_output_attributes, PointAttribute::RGB));
+    const auto has_normals = ((points_begin->normal() != nullptr) &&
+                              has_attribute(_output_attributes, PointAttribute::Normal));
+    const auto has_intensities = ((points_begin->intensity() != nullptr) &&
+                                  has_attribute(_output_attributes, PointAttribute::Intensity));
+    const auto has_classifications =
+      ((points_begin->classification() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::Classification));
+    const auto has_edge_of_flight_lines =
+      ((points_begin->edge_of_flight_line() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::EdgeOfFlightLine));
+    const auto has_gps_times = ((points_begin->gps_time() != nullptr) &&
+                                has_attribute(_output_attributes, PointAttribute::GPSTime));
+    const auto has_number_of_returns =
+      ((points_begin->number_of_returns() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::NumberOfReturns));
+    const auto has_return_numbers =
+      ((points_begin->return_number() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::ReturnNumber));
+    const auto has_point_source_ids =
+      ((points_begin->point_source_id() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::PointSourceID));
+    const auto has_scan_angle_ranks =
+      ((points_begin->scan_angle_rank() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::ScanAngleRank));
+    const auto has_scan_direction_flags =
+      ((points_begin->scan_direction_flag() != nullptr) &&
+       has_attribute(_output_attributes, PointAttribute::ScanDirectionFlag));
+    const auto has_user_data = ((points_begin->user_data() != nullptr) &&
+                                has_attribute(_output_attributes, PointAttribute::UserData));
 
     const uint32_t properties_bitmask =
       (has_colors ? COLOR_BIT : 0u) | (has_normals ? NORMAL_BIT : 0u) |
@@ -182,7 +202,8 @@ struct BinaryPersistence
 
 private:
   std::string _work_dir;
-  const PointAttributes& _point_attributes;
+  PointAttributes _input_attributes;
+  PointAttributes _output_attributes;
   Compressed _compressed;
   std::string _file_extension;
 };

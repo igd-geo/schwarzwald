@@ -13,7 +13,7 @@
  */
 struct MemoryPersistence
 {
-  MemoryPersistence();
+  explicit MemoryPersistence(const PointAttributes& input_attributes);
   MemoryPersistence(const MemoryPersistence&) = delete;
   MemoryPersistence(MemoryPersistence&&) = default;
   MemoryPersistence& operator=(const MemoryPersistence&) = delete;
@@ -27,14 +27,11 @@ struct MemoryPersistence
   {
     std::lock_guard<std::mutex> lock{ *_lock };
     auto& buffer = _points_cache[node_name];
-    std::for_each(points_begin, points_end, [&buffer](const auto& point_ref) {
-      buffer.push_point(point_ref);
-    });
+    std::for_each(
+      points_begin, points_end, [&buffer](const auto& point_ref) { buffer.push_point(point_ref); });
   }
 
-  void persist_points(PointBuffer const& points,
-                      const AABB& bounds,
-                      const std::string& node_name);
+  void persist_points(PointBuffer const& points, const AABB& bounds, const std::string& node_name);
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
@@ -45,6 +42,11 @@ struct MemoryPersistence
   const auto& get_points() const { return _points_cache; }
 
 private:
+  PointAttributes _input_attributes;
+  // No output attributes, the MemoryPersistence is mostly for unit testing, so it doesn't matter if
+  // we store more attributes than strictly necessary. Input attributes however are important, so
+  // that retrieve_points returns a PointBuffer with the correct schema
+
   std::unique_ptr<std::mutex> _lock;
   std::unordered_map<std::string, PointBuffer> _points_cache;
 };

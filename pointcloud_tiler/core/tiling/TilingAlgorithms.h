@@ -74,6 +74,7 @@ struct TilingAlgorithmBase
                       PointsPersistence& persistence,
                       TilerMetaParameters meta_parameters,
                       size_t concurrency);
+  virtual ~TilingAlgorithmBase();
   /**
    * Build an execution graph for tiling the given PointBuffer
    */

@@ -15,6 +15,15 @@ has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_fin
   return attributes.find(attribute_to_find) != std::end(attributes);
 }
 
+bool
+attributes_are_subset(PointAttributes const& maybe_subset, PointAttributes const& maybe_superset)
+{
+  return std::all_of(
+    std::begin(maybe_subset), std::end(maybe_subset), [&maybe_superset](PointAttribute attribute) {
+      return maybe_superset.find(attribute) != std::end(maybe_superset);
+    });
+}
+
 std::string
 print_attributes(PointAttributes const& attributes)
 {

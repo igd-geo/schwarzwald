@@ -22,17 +22,25 @@ Cesium3DTilesPersistence::supported_output_attributes()
 }
 
 Cesium3DTilesPersistence::Cesium3DTilesPersistence(const std::string& work_dir,
-                                                   const PointAttributes& point_attributes,
+                                                   const PointAttributes& input_attributes,
+                                                   const PointAttributes& output_attributes,
                                                    RGBMapping rgb_mapping,
                                                    float spacing_at_root,
                                                    Vector3<double> const& global_offset)
   : _work_dir(work_dir)
-  , _point_attributes(point_attributes)
+  , _input_attributes(input_attributes)
+  , _output_attributes(output_attributes)
   , _rgb_mapping(rgb_mapping)
   , _spacing_at_root(spacing_at_root)
   , _global_offset(global_offset)
   , _tilesets_lock(std::make_unique<std::mutex>())
-{}
+{
+  if (!attributes_are_subset(_input_attributes, _output_attributes)) {
+    throw std::invalid_argument{
+      "Cesium3DTilesPersistence requires that input_attributes are a subset of output_attributes!"
+    };
+  }
+}
 
 Cesium3DTilesPersistence::~Cesium3DTilesPersistence()
 {
@@ -51,7 +59,7 @@ Cesium3DTilesPersistence::persist_points(PointBuffer const& points,
     throw std::runtime_error{ "persist_points requires a non-empty range" };
   }
 
-  PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"), _point_attributes, _rgb_mapping };
+  PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"), _output_attributes, _rgb_mapping };
   writer.write_points(points);
   writer.flush(_global_offset);
 
@@ -65,7 +73,7 @@ Cesium3DTilesPersistence::retrieve_points(const std::string& node_name, PointBuf
   if (!std::experimental::filesystem::exists(file_path))
     return;
 
-  auto pnts_content = readPNTSFile(file_path);
+  auto pnts_content = readPNTSFile(file_path, _input_attributes);
   points = std::move(pnts_content->points);
 }
 

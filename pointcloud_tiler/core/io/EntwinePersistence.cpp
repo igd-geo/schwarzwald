@@ -262,14 +262,15 @@ write_ept_json(const fs::path& file_path, const EptJson& ept_json)
 }
 
 EntwinePersistence::EntwinePersistence(const std::string& work_dir,
-                                       const PointAttributes& point_attributes,
+                                       const PointAttributes& input_attributes,
+                                       const PointAttributes& output_attributes,
                                        EntwineFormat format)
   : _work_dir(work_dir)
-  , _point_attributes(point_attributes)
   , _format(format)
   , _file_extension(extension_from_entwine_format(format))
   , _las_persistence(concat(work_dir, "/ept-data"),
-                     point_attributes,
+                     input_attributes,
+                     output_attributes,
                      format == EntwineFormat::LAZ ? Compressed::Yes : Compressed::No)
   , _hierarchy_lock(std::make_unique<std::mutex>())
 {

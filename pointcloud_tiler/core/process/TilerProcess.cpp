@@ -239,7 +239,8 @@ TilerProcess::determine_input_and_output_attributes()
   for (const auto& source : _args.sources) {
     open_point_file(source)
       .map([&input_attributes](const PointFile& point_file) {
-        // Remove all attributes from 'attributes' that are NOT in the current point file
+        // Remove all attributes from 'attributes' that are NOT in the current
+        // point file
         for (auto it = std::begin(input_attributes); it != std::end(input_attributes); ++it) {
           if (pc::has_attribute(point_file, *it))
             continue;
@@ -248,11 +249,10 @@ TilerProcess::determine_input_and_output_attributes()
       })
       .or_else([this, source](const auto& err) {
         if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-          util::write_log(
-            (boost::format(
-               "warning: Ignoring file %1% while determining point attributes\ncaused by: %2%\n") %
-             source.string() % err.what())
-              .str());
+          util::write_log((boost::format("warning: Ignoring file %1% while determining point "
+                                         "attributes\ncaused by: %2%\n") %
+                           source.string() % err.what())
+                            .str());
           return;
         }
 
@@ -262,16 +262,20 @@ TilerProcess::determine_input_and_output_attributes()
 
   _input_attributes = std::move(input_attributes);
 
-  // Output attributes are dependent on the attributes that the desired output format supports, and
-  // on whether or not one of the input attributes should be converted to RGB
+  // Output attributes are dependent on the attributes that the desired output
+  // format supports, and on whether or not one of the input attributes should
+  // be converted to RGB
   auto output_attributes = _input_attributes;
-  switch (_args.rgb_mapping) {
-    case RGBMapping::FromIntensityLinear:
-    case RGBMapping::FromIntensityLogarithmic:
-      output_attributes.insert(PointAttribute::RGB);
-      break;
-    default:
-      break;
+  // TODO 3D Tiles is the only format supporting RGB remapping at the moment
+  if (_args.output_format == OutputFormat::CZM_3DTILES) {
+    switch (_args.rgb_mapping) {
+      case RGBMapping::FromIntensityLinear:
+      case RGBMapping::FromIntensityLogarithmic:
+        output_attributes.insert(PointAttribute::RGB);
+        break;
+      default:
+        break;
+    }
   }
 
   const auto supported_output_attributes =
@@ -292,14 +296,15 @@ TilerProcess::determine_input_and_output_attributes()
 
   if (!unsupported_attributes.empty()) {
     const auto format_name = util::to_string(_args.output_format);
-    util::write_log(
-      (boost::format(
-         "warning: Not all point attributes in the input files are supported when using output "
-         "format %1%. Input files have attributes %2%, %3% only supports attributes %4%, so "
-         "attributes %5% will be ignored!\n") %
-       format_name % print_attributes(_input_attributes) % format_name %
-       print_attributes(supported_output_attributes) % print_attributes(unsupported_attributes))
-        .str());
+    util::write_log((boost::format("warning: Not all point attributes in the input files are "
+                                   "supported when using output "
+                                   "format %1%. Input files have attributes %2%, %3% only "
+                                   "supports attributes %4%, so "
+                                   "attributes %5% will be ignored!\n") %
+                     format_name % print_attributes(_input_attributes) % format_name %
+                     print_attributes(supported_output_attributes) %
+                     print_attributes(unsupported_attributes))
+                      .str());
 
     // Remove unsupported attributes from _input_attributes
     for (auto unsupported_attribute : unsupported_attributes) {
@@ -307,11 +312,11 @@ TilerProcess::determine_input_and_output_attributes()
     }
   }
 
-  _output_attributes = std::move(supported_output_attributes);
+  _output_attributes = std::move(supported_attributes);
 }
 
-AABB
-TilerProcess::calculateAABB(SRSTransformHelper const* srs_transform)
+TilerProcess::CalculateBoundsResult
+TilerProcess::calculate_bounds(SRSTransformHelper const* srs_transform)
 {
   AABB aabb;
   for (const auto& source : _args.sources) {
@@ -339,7 +344,12 @@ TilerProcess::calculateAABB(SRSTransformHelper const* srs_transform)
       });
   }
 
-  return aabb;
+  const auto tight_bounds = aabb;
+  const auto cubic_bounds = aabb.cubic();
+  AABB cubic_bounds_at_origin = { cubic_bounds.min - cubic_bounds.getCenter(),
+                                  cubic_bounds.max - cubic_bounds.getCenter() };
+
+  return { tight_bounds, cubic_bounds, cubic_bounds_at_origin };
 }
 
 size_t
@@ -369,7 +379,8 @@ TilerProcess::get_total_points_count() const
 void
 TilerProcess::check_for_missing_point_attributes(const PointAttributes& required_attributes) const
 {
-  // TODO Rework this method once the attribute rework is done and we support custom schemas
+  // TODO Rework this method once the attribute rework is done and we support
+  // custom schemas
 
   for (auto& source : _args.sources) {
     open_point_file(source)
@@ -411,14 +422,83 @@ TilerProcess::check_for_missing_point_attributes(const PointAttributes& required
   }
 }
 
+SamplingStrategy
+TilerProcess::make_sampling_strategy() const
+{
+  if (_args.sampling_strategy == "RANDOM_GRID")
+    return RandomSortedGridSampling{ _args.max_points_per_node };
+  if (_args.sampling_strategy == "GRID_CENTER")
+    return GridCenterSampling{ _args.max_points_per_node };
+  if (_args.sampling_strategy == "MIN_DISTANCE")
+    return PoissonDiskSampling{ _args.max_points_per_node };
+  if (_args.sampling_strategy == "MIN_DISTANCE_FAST")
+    return AdaptivePoissonDiskSampling{ _args.max_points_per_node, [](int32_t node_level) -> float {
+                                         if (node_level < 0)
+                                           return 0.25f;
+                                         if (node_level < 1)
+                                           return 0.5f;
+                                         return 1.f;
+                                       } };
+  throw std::invalid_argument{
+    (boost::format("Unrecognized sampling strategy %1%") % _args.sampling_strategy).str()
+  };
+}
+
+Tiler
+TilerProcess::make_tiler(bool shift_points_to_center,
+                         uint32_t max_depth,
+                         SRSTransformHelper const* srs_transform,
+                         AABB const& cubic_bounds,
+                         AABB const& cubic_bounds_at_origin,
+                         SamplingStrategy sampling_strategy,
+                         ProgressReporter* progress_reporter,
+                         PointsPersistence& persistence) const
+{
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = _args.spacing;
+  tiler_meta_parameters.max_depth = max_depth;
+  tiler_meta_parameters.max_points_per_node = _args.max_points_per_node;
+  tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
+  tiler_meta_parameters.tiling_strategy = _args.tiling_strategy;
+  tiler_meta_parameters.batch_read_size = _args.max_batch_read_size;
+
+  MultiReaderPointSource point_source{ _args.sources, _args.errors_to_ignore };
+  point_source.add_transformation([this, srs_transform, &cubic_bounds, shift_points_to_center](
+                                    util::Range<PointBuffer::PointIterator> points) {
+    srs_transform->transformPointsTo(TargetSRS::CesiumWorld, points);
+
+    // 3D Tiles is not strictly lossless as it stores 32-bit floating point
+    // values instead of 64-bit. We shift all points to the center of the
+    // bounding box of the full point-cloud and truncate the values to
+    // 32-bit to get the maximum precision while at the same time
+    // guaranteeing lossless persistence
+    if (shift_points_to_center) {
+      for (auto point_ref : points) {
+        auto& position = point_ref.position();
+        position -= cubic_bounds.getCenter();
+        position.x = static_cast<float>(position.x);
+        position.y = static_cast<float>(position.y);
+        position.z = static_cast<float>(position.z);
+      }
+    }
+  });
+
+  return { shift_points_to_center ? cubic_bounds_at_origin : cubic_bounds,
+           tiler_meta_parameters,
+           sampling_strategy,
+           progress_reporter,
+           std::move(point_source),
+           persistence,
+           _input_attributes,
+           _args.output_directory };
+}
+
 void
 TilerProcess::run()
 {
   const auto prepare_start = std::chrono::high_resolution_clock::now();
 
   prepare();
-
-  // check_for_missing_point_attributes(_args.output_attributes);
 
   const auto total_points_count = get_total_points_count();
 
@@ -435,50 +515,29 @@ TilerProcess::run()
     srs_transform = std::make_unique<IdentityTransform>();
   }
 
-  AABB aabb = calculateAABB(srs_transform.get());
-  util::write_log(concat("Bounds:\n", aabb, "\n"));
-  aabb.makeCubic();
-  util::write_log(concat("Bounds (cubic):\n", aabb, "\n"));
+  const auto [tight_bounds, cubic_bounds, cubic_bounds_at_origin] =
+    calculate_bounds(srs_transform.get());
+  util::write_log(concat("Bounds:\n", tight_bounds, "\n"));
+  util::write_log(concat("Bounds (cubic):\n", cubic_bounds, "\n"));
 
   if (_args.diagonal_fraction != 0) {
-    _args.spacing = (float)(aabb.extent().length() / _args.diagonal_fraction);
+    _args.spacing = (float)(cubic_bounds.extent().length() / _args.diagonal_fraction);
     util::write_log(concat("Spacing calculated from diagonal: ", _args.spacing, "\n"));
   }
-
-  const auto local_bounds = AABB{ aabb.min - aabb.getCenter(), aabb.max - aabb.getCenter() };
 
   auto& progress_reporter = _ui_state.get_progress_reporter();
   progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
   progress_reporter.register_progress_counter<size_t>(progress::INDEXING, total_points_count);
 
-  auto persistence = [&]() -> PointsPersistence {
-    switch (_args.output_format) {
-      case OutputFormat::BIN:
-        return PointsPersistence{ BinaryPersistence{ _args.output_directory,
-                                                     _output_attributes,
-                                                     _args.use_compression ? Compressed::Yes
-                                                                           : Compressed::No } };
-      case OutputFormat::CZM_3DTILES:
-        return PointsPersistence{ Cesium3DTilesPersistence{ _args.output_directory,
-                                                            _output_attributes,
-                                                            _args.rgb_mapping,
-                                                            _args.spacing,
-                                                            aabb.getCenter() } };
-      case OutputFormat::LAS:
-        return PointsPersistence{ LASPersistence{ _args.output_directory, _output_attributes } };
-      case OutputFormat::LAZ:
-        return PointsPersistence{ LASPersistence{
-          _args.output_directory, _output_attributes, Compressed::Yes } };
-      case OutputFormat::ENTWINE_LAS:
-        return PointsPersistence{ EntwinePersistence{
-          _args.output_directory.string(), _output_attributes, EntwineFormat::LAS } };
-      case OutputFormat::ENTWINE_LAZ:
-        return PointsPersistence{ EntwinePersistence{
-          _args.output_directory.string(), _output_attributes, EntwineFormat::LAZ } };
-      default:
-        throw std::invalid_argument{ "Unrecognized output format!" };
-    }
-  }();
+  auto persistence = make_persistence(_args.output_format,
+                                      _args.output_directory,
+                                      _input_attributes,
+                                      _output_attributes,
+                                      _args.rgb_mapping,
+                                      _args.spacing,
+                                      cubic_bounds);
+
+  const auto shift_points_to_center = (_args.output_format == OutputFormat::CZM_3DTILES);
 
   const auto max_depth =
     (_args.max_depth <= 0)
@@ -487,46 +546,16 @@ TilerProcess::run()
                                                 // results in only root level being created...
 
   util::write_log(concat("Using ", _args.sampling_strategy, " sampling\n"));
-  auto sampling_strategy = [&]() -> SamplingStrategy {
-    if (_args.sampling_strategy == "RANDOM_GRID")
-      return RandomSortedGridSampling{ _args.max_points_per_node };
-    if (_args.sampling_strategy == "GRID_CENTER")
-      return GridCenterSampling{ _args.max_points_per_node };
-    if (_args.sampling_strategy == "MIN_DISTANCE")
-      return PoissonDiskSampling{ _args.max_points_per_node };
-    if (_args.sampling_strategy == "MIN_DISTANCE_FAST")
-      return AdaptivePoissonDiskSampling{ _args.max_points_per_node,
-                                          [](int32_t node_level) -> float {
-                                            if (node_level < 0)
-                                              return 0.25f;
-                                            if (node_level < 1)
-                                              return 0.5f;
-                                            return 1.f;
-                                          } };
-    throw std::invalid_argument{
-      (boost::format("Unrecognized sampling strategy %1%") % _args.sampling_strategy).str()
-    };
-  }();
+  auto sampling_strategy = make_sampling_strategy();
 
-  TilerMetaParameters tiler_meta_parameters;
-  tiler_meta_parameters.spacing_at_root = _args.spacing;
-  tiler_meta_parameters.max_depth = max_depth;
-  tiler_meta_parameters.max_points_per_node = _args.max_points_per_node;
-  tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
-  tiler_meta_parameters.tiling_strategy = _args.tiling_strategy;
-
-  const auto shift_points_to_center = (_args.output_format == OutputFormat::CZM_3DTILES);
-  /**
-  || (_args.output_format == OutputFormat::ENTWINE_LAS)
-  || (_args.output_format == OutputFormat::ENTWINE_LAZ);
-  */
-
-  Tiler tiler{ shift_points_to_center ? local_bounds : aabb,
-               tiler_meta_parameters,
-               sampling_strategy,
-               &progress_reporter,
-               persistence,
-               _args.output_directory };
+  auto tiler = make_tiler(shift_points_to_center,
+                          max_depth,
+                          srs_transform.get(),
+                          cubic_bounds,
+                          cubic_bounds_at_origin,
+                          std::move(sampling_strategy),
+                          &progress_reporter,
+                          persistence);
 
   TerminalUIAsyncRenderer ui_renderer{ _ui };
 
@@ -536,56 +565,7 @@ TilerProcess::run()
 
   const auto indexing_start = std::chrono::high_resolution_clock::now();
 
-  PointSource point_source{ _args.sources, _args.errors_to_ignore };
-  std::optional<PointBuffer> points;
-
-  point_source.add_transformation([this, &srs_transform, &aabb, shift_points_to_center](
-                                    PointBuffer& points) {
-    srs_transform->transformPositionsTo(TargetSRS::CesiumWorld, gsl::make_span(points.positions()));
-
-    // 3D Tiles is not strictly lossless as it stores 32-bit floating point
-    // values instead of 64-bit. We shift all points to the center of the
-    // bounding box of the full point-cloud and truncate the values to
-    // 32-bit to get the maximum precision while at the same time
-    // guaranteeing lossless persistence
-    if (shift_points_to_center) {
-      for (auto& position : points.positions()) {
-        position -= aabb.getCenter();
-        position.x = static_cast<float>(position.x);
-        position.y = static_cast<float>(position.y);
-        position.z = static_cast<float>(position.z);
-      }
-    }
-  });
-
-  auto t_start = std::chrono::high_resolution_clock::now();
-  size_t points_read = 0;
-  size_t batch_idx = 0;
-  while (points = point_source.read_next(_args.max_batch_read_size, _input_attributes)) {
-    points_read += points->count();
-    tiler.cache(*points);
-    if (tiler.needs_indexing()) {
-      auto t_end = std::chrono::high_resolution_clock::now();
-      auto delta_t = t_end - t_start;
-      t_start = t_end;
-
-      if (debug::Journal::instance().is_enabled()) {
-        const auto delta_t_seconds = static_cast<double>(delta_t.count()) / 1e9;
-        const auto points_per_second = points_read / delta_t_seconds;
-        debug::Journal::instance().add_entry(
-          (boost::format("Reading (batch %1%): %2% s | %3% pts/s") % batch_idx++ % delta_t_seconds %
-           unit::format_with_metric_prefix(points_per_second))
-            .str());
-      }
-
-      points_read = 0;
-
-      tiler.index();
-    }
-  }
-
-  tiler.index();
-  tiler.close();
+  const auto num_processed_points = tiler.run();
 
   const auto indexing_end = std::chrono::high_resolution_clock::now();
   const auto indexing_duration =
@@ -596,17 +576,17 @@ TilerProcess::run()
   stats.indexing_duration = indexing_duration;
   stats.points_processed = total_points_count;
 
-  write_properties_json(_args.output_directory, aabb, _args.spacing, stats);
+  write_properties_json(_args.output_directory, cubic_bounds, _args.spacing, stats);
 
   if (_args.output_format == OutputFormat::ENTWINE_LAS ||
       _args.output_format == OutputFormat::ENTWINE_LAZ) {
     EptJson ept_json;
-    ept_json.bounds = aabb;
-    ept_json.conforming_bounds = aabb;
+    ept_json.bounds = cubic_bounds;
+    ept_json.conforming_bounds = cubic_bounds;
     ept_json.data_type =
       (_args.output_format == OutputFormat::ENTWINE_LAZ) ? EntwineFormat::LAZ : EntwineFormat::LAS;
     ept_json.hierarchy_type = "json";
-    ept_json.points = points_read;
+    ept_json.points = num_processed_points;
     ept_json.schema = point_attributes_to_ept_schema(_output_attributes);
     ept_json.span = _args.spacing;
     // ept_json.srs = ...;

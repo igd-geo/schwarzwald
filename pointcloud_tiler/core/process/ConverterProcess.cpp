@@ -241,25 +241,27 @@ get_persistence_for_file(const fs::path& file_path,
 {
   const auto extension = file_path.extension();
 
+  // TODO Support for schema conversions in the ConverterProcess
+
   if (extension == ".bin") {
     return std::make_optional<PointsPersistence>(
-      BinaryPersistence{ source_folder, attributes, Compressed::No });
+      BinaryPersistence{ source_folder, attributes, attributes, Compressed::No });
   }
   if (extension == ".binz") {
     return std::make_optional<PointsPersistence>(
-      BinaryPersistence{ source_folder, attributes, Compressed::Yes });
+      BinaryPersistence{ source_folder, attributes, attributes, Compressed::Yes });
   }
   if (extension == ".las") {
     return std::make_optional<PointsPersistence>(
-      LASPersistence{ source_folder, attributes, Compressed::No });
+      LASPersistence{ source_folder, attributes, attributes, Compressed::No });
   }
   if (extension == ".laz") {
     return std::make_optional<PointsPersistence>(
-      LASPersistence{ source_folder, attributes, Compressed::Yes });
+      LASPersistence{ source_folder, attributes, attributes, Compressed::Yes });
   }
   if (extension == ".pnts") {
-    return std::make_optional<PointsPersistence>(
-      Cesium3DTilesPersistence{ source_folder, attributes, RGBMapping::None, spacing_at_root, {} });
+    return std::make_optional<PointsPersistence>(Cesium3DTilesPersistence{
+      source_folder, attributes, attributes, RGBMapping::None, spacing_at_root, {} });
   }
 
   return std::nullopt;
@@ -551,7 +553,7 @@ convert_to_las_file(const std::string& source_folder,
     return;
   }
 
-  LASPersistence las_persistence{ output_folder, attributes, compressed };
+  LASPersistence las_persistence{ output_folder, attributes, attributes, compressed };
 
   const auto node_name = input_file.filename().stem().string();
 

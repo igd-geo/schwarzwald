@@ -98,6 +98,7 @@ struct LASFile
   metadata const& get_metadata() const;
   void set_metadata(metadata const& metadata);
   size_t size() const;
+  std::string source() const;
 
   LASOutputIterator begin();
   LASOutputIterator end();
@@ -149,6 +150,13 @@ las_read_points(LASInputIterator begin,
                 PointAttributes const& attributes,
                 PointBuffer& points);
 
+std::pair<LASInputIterator, PointBuffer::PointIterator>
+las_read_points_into(LASInputIterator file_begin,
+                     LASInputIterator file_end,
+                     laszip_header const& metadata,
+                     PointAttributes const& attributes,
+                     util::Range<PointBuffer::PointIterator> point_range);
+
 namespace pc {
 template<>
 inline AABB
@@ -188,4 +196,16 @@ read_points(LASInputIterator begin,
 {
   return las_read_points(begin, count, header, attributes, points);
 }
+
+template<>
+inline std::pair<LASInputIterator, PointBuffer::PointIterator>
+read_points_into(LASInputIterator file_begin,
+                 LASInputIterator file_end,
+                 laszip_header const& header,
+                 PointAttributes const& attributes,
+                 util::Range<PointBuffer::PointIterator> point_range)
+{
+  return las_read_points_into(file_begin, file_end, header, attributes, point_range);
+}
+
 } // namespace pc
