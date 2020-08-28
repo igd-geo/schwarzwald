@@ -3,6 +3,8 @@
 #include <chrono>
 #include <string>
 
+#include <logging/Journal.h>
+
 struct PerformanceStats
 {
   std::chrono::milliseconds prepare_duration;
@@ -14,3 +16,6 @@ struct PerformanceStats
 
 void
 dump_perf_stats(const PerformanceStats& stats, const std::string& work_dir);
+
+void
+journal_string(std::string str);

@@ -79,12 +79,22 @@ LASPersistence::persist_points(PointBuffer const& points,
     return;
   }
 
-  BOOST_SCOPE_EXIT(&laswriter) { laszip_destroy(laswriter); }
+  BOOST_SCOPE_EXIT(&laswriter)
+  {
+    std::cout << "destroying las writer\n";
+    laszip_destroy(laswriter);
+  }
   BOOST_SCOPE_EXIT_END
 
   laszip_header* las_header;
   if (laszip_get_header_pointer(laswriter, &las_header)) {
-    std::cerr << "Could not write LAS header for node " << node_name << std::endl;
+    char* las_error;
+    if (!laszip_get_error(laswriter, &las_error)) {
+      std::cerr << "Could not write LAS header for node " << node_name << " (" << las_error
+                << ")\n";
+    } else {
+      std::cerr << "Could not write LAS header for node " << node_name << std::endl;
+    }
     return;
   }
 
@@ -127,16 +137,31 @@ LASPersistence::persist_points(PointBuffer const& points,
 
   const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
   if (laszip_open_writer(laswriter, file_path.c_str(), (_compressed == Compressed::Yes))) {
-    std::cerr << "Could not write LAS file for node " << node_name << std::endl;
+    char* las_error;
+    if (!laszip_get_error(laswriter, &las_error)) {
+      std::cerr << "Could not write LAS file for node " << node_name << " (" << las_error
+                << ") (errno " << errno << ": " << strerror(errno) << ")\n";
+    } else {
+      std::cerr << "Could not write LAS file for node " << node_name << std::endl;
+    }
     return;
   }
 
-  BOOST_SCOPE_EXIT(&laswriter) { laszip_close_writer(laswriter); }
+  BOOST_SCOPE_EXIT(&laswriter)
+  {
+    std::cout << "closing las writer\n";
+    laszip_close_writer(laswriter);
+  }
   BOOST_SCOPE_EXIT_END
 
   laszip_point* laspoint;
   if (laszip_get_point_pointer(laswriter, &laspoint)) {
-    std::cerr << "Could not write LAS points for node " << node_name << std::endl;
+    char* las_error;
+    if (!laszip_get_error(laswriter, &las_error)) {
+      std::cerr << "Could not write LAS point for node " << node_name << " (" << las_error << ")\n";
+    } else {
+      std::cerr << "Could not write LAS point for node " << node_name << std::endl;
+    }
     return;
   }
 
@@ -173,7 +198,13 @@ LASPersistence::persist_points(PointBuffer const& points,
     const auto pos = point_ref.position();
     laszip_F64 coordinates[3] = { pos.x, pos.y, pos.z };
     if (laszip_set_coordinates(laswriter, coordinates)) {
-      std::cerr << "Could not set coordinates for LAS point at node " << node_name << std::endl;
+      char* las_error;
+      if (!laszip_get_error(laswriter, &las_error)) {
+        std::cerr << "Could not set coordinates for LAS point at node " << node_name << " ("
+                  << las_error << ")\n";
+      } else {
+        std::cerr << "Could not set coordinates for LAS point at node " << node_name << std::endl;
+      }
       return;
     }
 
@@ -227,7 +258,13 @@ LASPersistence::persist_points(PointBuffer const& points,
     }
 
     if (laszip_write_point(laswriter)) {
-      std::cerr << "Could not write LAS point for node " << node_name << std::endl;
+      char* las_error;
+      if (!laszip_get_error(laswriter, &las_error)) {
+        std::cerr << "Could not write LAS point for node " << node_name << " (" << las_error
+                  << ")\n";
+      } else {
+        std::cerr << "Could not write LAS point for node " << node_name << std::endl;
+      }
       return;
     }
   }

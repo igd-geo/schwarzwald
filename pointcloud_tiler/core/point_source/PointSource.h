@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include "algorithms/Hash.h"
 #include "datastructures/PointBuffer.h"
 #include "io/PointcloudFactory.h"
 #include "pointcloud/PointAttributes.h"
@@ -73,11 +74,12 @@ struct MultiReaderPointSource
 
   struct PointFileEntry
   {
-    explicit PointFileEntry(PointFile point_file);
+    PointFileEntry(PointFile point_file, const fs::path& file_path);
 
     PointFile point_file;
     PointFileCursor cursor;
     bool available;
+    fs::path file_path;
   };
 
   /**
@@ -106,6 +108,7 @@ struct MultiReaderPointSource
   MultiReaderPointSource(MultiReaderPointSource&&) = default;
 
   std::optional<PointSourceHandle> lock_source();
+  std::optional<PointSourceHandle> lock_specific_source(const fs::path& file_name);
   void release_source(const PointSourceHandle& source_handle);
 
   size_t max_concurrent_reads();
@@ -113,14 +116,30 @@ struct MultiReaderPointSource
   void add_transformation(Transform transform);
 
 private:
+  /**
+   * Reasons why 'get_specific_open_file' might fail
+   */
+  enum class GetSpecificOpenFileFailure
+  {
+    // File requested was not yet opened
+    NotYetOpened,
+    // File requested is open, but has been locked already by a different thread
+    NotAvailable
+  };
+
   std::unique_ptr<PointFileEntry> try_open_next_file();
+  std::unique_ptr<PointFileEntry> try_open_specific_file(const fs::path& file);
+  std::unique_ptr<PointFileEntry> do_open_file(
+    std::unordered_set<fs::path, util::PathHash>::iterator file_iter);
+
   PointFileEntry* find_next_available_open_file();
+  tl::expected<PointFileEntry*, GetSpecificOpenFileFailure> get_specific_open_file(
+    const fs::path& file) const;
   bool point_file_entry_is_at_end(const PointFileEntry& point_file_entry) const;
 
   std::vector<fs::path> _files;
+  std::unordered_set<fs::path, util::PathHash> _next_files;
   util::IgnoreErrors _errors_to_ignore;
-
-  std::vector<fs::path>::const_iterator _next_file;
 
   std::vector<std::unique_ptr<PointFileEntry>> _open_files;
   std::unique_ptr<std::mutex> _open_files_lock;

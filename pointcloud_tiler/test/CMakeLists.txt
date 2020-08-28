@@ -7,6 +7,7 @@ set(SOURCE_FILES
     TestAlgorithm.cpp
     TestBinaryPersistence.cpp
     TestChunkRange.cpp
+    TestJournal.cpp
     TestLASFile.cpp
     TestLASPersistence.cpp
     TestLRUCache.cpp

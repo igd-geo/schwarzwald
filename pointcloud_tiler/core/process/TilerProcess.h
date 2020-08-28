@@ -2,6 +2,7 @@
 
 #include "io/PointReader.h"
 #include "math/AABB.h"
+#include "pointcloud/FileStats.h"
 #include "pointcloud/PointAttributes.h"
 #include "process/Tiler.h"
 #include "util/Definitions.h"
@@ -39,6 +40,7 @@ struct TilerProcess
     uint32_t max_memory_usage_MiB;
     util::IgnoreErrors errors_to_ignore;
     TilingStrategy tiling_strategy;
+    ThreadConfig thread_config;
   };
 
   explicit TilerProcess(Arguments const& args);
@@ -66,16 +68,18 @@ private:
 
   void prepare();
   void cleanUp();
-  CalculateBoundsResult calculate_bounds(SRSTransformHelper const* transform);
-  size_t get_total_points_count() const;
+  DatasetMetadata calculate_dataset_metadata(const SRSTransformHelper* transform);
+  std::variant<FixedThreadCount, AdaptiveThreadCount> calculate_actual_thread_counts(
+    const DatasetMetadata& dataset_metadata) const;
+
   void check_for_missing_point_attributes(const PointAttributes& required_attributes) const;
   void determine_input_and_output_attributes();
   SamplingStrategy make_sampling_strategy() const;
   Tiler make_tiler(bool shift_points_to_center,
                    uint32_t max_depth,
+                   std::variant<FixedThreadCount, AdaptiveThreadCount> thread_count,
                    SRSTransformHelper const* srs_transform,
-                   AABB const& cubic_bounds,
-                   AABB const& cubic_bounds_at_origin,
+                   DatasetMetadata dataset_metadata,
                    SamplingStrategy sampling_strategy,
                    ProgressReporter* progress_reporter,
                    PointsPersistence& persistence) const;

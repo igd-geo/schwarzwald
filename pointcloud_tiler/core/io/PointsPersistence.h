@@ -53,6 +53,12 @@ struct PointsPersistence
   }
 
   template<typename T>
+  T& get()
+  {
+    return std::get<T>(_impl);
+  }
+
+  template<typename T>
   const T& get() const
   {
     return std::get<T>(_impl);
