@@ -4,12 +4,17 @@
 #include <string>
 #include <vector>
 
+#include <experimental/filesystem>
+
 namespace debug {
 
-struct Journal {
-  static Journal &instance();
+struct Journal
+{
+  static Journal& instance();
 
-  void set_root_folder(std::string root_folder);
+  void set_root_folder(const std::experimental::filesystem::path& root_folder);
+  const std::experimental::filesystem::path& get_root_folder() const;
+
   void add_entry(std::string entry);
 
   void enable(bool enable);
@@ -23,7 +28,7 @@ private:
 
   std::vector<std::string> _entries;
   std::mutex _lock;
-  std::string _root_folder;
+  std::experimental::filesystem::path _root_folder;
   uint32_t _sub_journal_number;
   bool _enabled;
 };

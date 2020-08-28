@@ -51,6 +51,8 @@ set(SOURCE_FILES
     tiling/TilingAlgorithms.h
     tiling/TilingAlgorithms.cpp
 
+    pointcloud/FileStats.h
+    pointcloud/FileStats.cpp
     pointcloud/Point.h
     pointcloud/PointAttributes.cpp
     pointcloud/PointAttributes.h
@@ -66,11 +68,14 @@ set(SOURCE_FILES
     process/Tiler.h
     process/TilerProcess.cpp
     process/TilerProcess.h
-
+    
+    util/Config.h
+    util/Config.cpp
     util/Definitions.h
     util/Error.h
     util/Error.cpp
-    util/ExecutorObserver.h
+    util/Scheduler.h
+    util/Scheduler.cpp
     util/Stats.cpp
     util/Stats.h
     util/stuff.cpp

@@ -93,6 +93,8 @@ struct EntwinePersistence
 
   inline bool is_lossless() const { return false; }
 
+  auto& las_persistence() { return _las_persistence; }
+
 private:
   fs::path _work_dir;
   EntwineFormat _format;

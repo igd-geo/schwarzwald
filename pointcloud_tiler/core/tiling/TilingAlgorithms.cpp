@@ -4,8 +4,11 @@
 #include "containers/DestructuringIterator.h"
 #include "terminal/stdout_helper.h"
 #include "threading/Parallel.h"
+#include "util/Config.h"
+#include "util/Stats.h"
 
 #include <debug/Journal.h>
+#include <logging/Journal.h>
 
 #include <mutex>
 #include <set>
@@ -20,6 +23,24 @@ constexpr static uint32_t MAX_OCTREE_LEVELS = 21;
  * processed asynchronously
  */
 constexpr static size_t MIN_POINTS_FOR_ASYNC_PROCESSING = 100'000;
+
+static void
+journal_start_nodes(std::string start_nodes_as_graphviz)
+{
+  static const std::string journal_name = "start_nodes";
+  auto journal = logging::JournalStore::global().get_journal(journal_name);
+  if (!journal) {
+    logging::JournalStore::global()
+      .new_journal(journal_name)
+      .with_flat_type<std::string>()
+      .as_text(global_config().journal_directory)
+      .into_unique_files()
+      .build();
+    journal = logging::JournalStore::global().get_journal(journal_name);
+  }
+
+  journal->add_record_untyped(std::move(start_nodes_as_graphviz));
+}
 
 #pragma region helper_functions
 /**
@@ -159,13 +180,11 @@ dump_tree_to_graphviz(const Tree& tree, const std::string& path, GetTotalPoints 
 TilingAlgorithmBase::TilingAlgorithmBase(SamplingStrategy& sampling_strategy,
                                          ProgressReporter* progress_reporter,
                                          PointsPersistence& persistence,
-                                         TilerMetaParameters meta_parameters,
-                                         size_t concurrency)
+                                         TilerMetaParameters meta_parameters)
   : _sampling_strategy(sampling_strategy)
   , _progress_reporter(progress_reporter)
   , _persistence(persistence)
   , _meta_parameters(meta_parameters)
-  , _concurrency(concurrency)
 {}
 
 TilingAlgorithmBase::~TilingAlgorithmBase() {}
@@ -179,25 +198,32 @@ TilingAlgorithmBase::tile_terminal_node(octree::NodeData const& all_points,
                                         octree::NodeStructure const& node,
                                         size_t previously_taken_points_count)
 {
-  const auto points_to_take = std::min(all_points.size(), _meta_parameters.max_points_per_node);
-  if (points_to_take < all_points.size()) {
-    const auto dropped_points_count = all_points.size() - points_to_take;
-    util::write_log(
-      (boost::format("Dropped %1% points at node %2%") % dropped_points_count % node.name).str());
+  // const auto points_to_take = std::min(all_points.size(), _meta_parameters.max_points_per_node);
+  // if (points_to_take < all_points.size()) {
+  //   const auto dropped_points_count = all_points.size() - points_to_take;
+  //   util::write_log(
+  //     (boost::format("Dropped %1% points at node %2%") % dropped_points_count %
+  //     node.name).str());
 
-    if (_progress_reporter)
-      _progress_reporter->increment_progress(progress::INDEXING, dropped_points_count);
+  //   if (_progress_reporter)
+  //     _progress_reporter->increment_progress(progress::INDEXING, dropped_points_count);
+  // }
+
+  if (all_points.size() > _meta_parameters.max_points_per_node) {
+    util::write_log((boost::format("Taking %1% points at terminal node %2% without sampling") %
+                     all_points.size() % node.name)
+                      .str());
   }
 
   _persistence.persist_points(
     member_iterator(std::begin(all_points), &IndexedPoint64::point_reference),
-    member_iterator(std::begin(all_points) + points_to_take, &IndexedPoint64::point_reference),
+    member_iterator(std::end(all_points), &IndexedPoint64::point_reference),
     node.bounds,
     node.name);
 
   if (_progress_reporter)
     _progress_reporter->increment_progress(progress::INDEXING,
-                                           points_to_take - previously_taken_points_count);
+                                           all_points.size() - previously_taken_points_count);
 }
 
 /**
@@ -210,27 +236,48 @@ TilingAlgorithmBase::tile_internal_node(octree::NodeData& all_points,
                                         octree::NodeStructure const& root_node,
                                         size_t previously_taken_points_count)
 {
-  const auto partition_point =
-    filter_points_for_octree_node(std::begin(all_points),
-                                  std::end(all_points),
-                                  node.morton_index,
-                                  node.level,
-                                  root_node.bounds,
-                                  root_node.max_spacing,
-                                  SamplingBehaviour::TakeAllWhenCountBelowMaxPoints,
-                                  _sampling_strategy);
+  /**
+   * When we first hit a node with a range of points, we can take all points if their count is
+   * less than the maximum number of points per node. Once we had to sample a node for the first
+   * time - because of too many points - we ALWAYS have to sample it, because this node now has
+   * children with denser sampling. Suddenly picking all points without sampling might result in
+   * a parent node with the same (or even higher) density of points as a child node, which is
+   * visually unpleasing
+   * TODO How costly is this in terms of performance? --> ~20ish%
+   * This is a big performance hit, have to see how much it impacts my performance advantage
+   * compared to the other tools :/
+   */
+  const auto sampling_behaviour = (previously_taken_points_count > 0)
+                                    ? SamplingBehaviour::AlwaysAdhereToMinSpacing
+                                    : SamplingBehaviour::TakeAllWhenCountBelowMaxPoints;
+
+  const auto partition_point = filter_points_for_octree_node(std::begin(all_points),
+                                                             std::end(all_points),
+                                                             node.morton_index,
+                                                             node.level,
+                                                             root_node.bounds,
+                                                             root_node.max_spacing,
+                                                             sampling_behaviour,
+                                                             _sampling_strategy);
 
   const auto points_taken =
     static_cast<size_t>(std::distance(std::begin(all_points), partition_point));
 
-  if (node.level >= 15) {
+  if (node.level >= 16) {
     const auto taken_percentage = points_taken / static_cast<double>(all_points.size());
     if (taken_percentage < 0.01) {
       util::write_log(concat("Discovered potentially broken node ", node.name));
       // Dump points to text file for debugging
-      std::ofstream fs{ concat("./broken_", node.name + ".txt") };
-      if (!fs.is_open())
-        throw std::runtime_error{ "could not open dump file" };
+      const auto dump_file_path =
+        global_config().root_directory / concat("broken_", node.name + ".txt");
+      std::ofstream fs{ dump_file_path };
+      if (!fs.is_open()) {
+        throw std::runtime_error{
+          (boost::format("Could not open file %1% for dumping potentially broken node!") %
+           dump_file_path)
+            .str()
+        };
+      }
 
       fs << "Bounds:       " << node.bounds << "\n";
       fs << "Points taken: " << points_taken << "\n";
@@ -324,50 +371,77 @@ TilingAlgorithmBase::tile_node(octree::NodeData&& node_data,
   const auto cached_points_count = cached_points.size();
 
   const auto node_level_to_sample_from =
-    octree::get_node_level_to_sample_from(node_structure.level, root_node_structure);
+    required_morton_index_depth(_sampling_strategy, node_structure.level, root_node_structure);
+  const auto requires_deeper_morton_indices = node_level_to_sample_from > node_structure.level;
 
   // Check whether this node is an interior node, terminal node, or a node that
   // is so deep that it is a new root node
-  if (node_level_to_sample_from >= static_cast<int32_t>(node_structure.max_depth)) {
-    const auto all_points_for_this_node =
-      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
-    tile_terminal_node(all_points_for_this_node, node_structure, cached_points_count);
-    return {};
-  }
+  // We only allow re-indexing for nodes that are itself < max_level
 
-  if (node_level_to_sample_from >= static_cast<int32_t>(MAX_OCTREE_LEVELS - 1)) {
-    // If we are so deep that we exceed the capacity of the MortonIndex, we
-    // have to index our points again with the current node as new root node. We
-    // also have to carry the information that we have a new root over to the
-    // children so that the paths of the nodes are correct.
+  const auto max_level =
+    gsl::narrow<int32_t>(std::min(MAX_OCTREE_LEVELS - 1, node_structure.max_depth));
 
-    // Fun fact: We don't have to adjust the loaded indices because if we ever
-    // get to a node this deep again, the indices have been calculated with the
-    // new root the last time also, so everything is as it should be
-    auto all_points_for_this_node =
-      octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
-
-    // Set this node as the new root node
-    auto new_root_node = node_structure;
-    new_root_node.max_depth = node_structure.max_depth - node_structure.level;
-
-    // Compute new indices based upon this node as root node
-    for (auto& indexed_point : all_points_for_this_node) {
-      indexed_point.morton_index = calculate_morton_index<MAX_OCTREE_LEVELS>(
-        indexed_point.point_reference.position(), new_root_node.bounds);
+  if (!requires_deeper_morton_indices) {
+    if (node_level_to_sample_from >= max_level) {
+      const auto all_points_for_this_node =
+        octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
+      tile_terminal_node(all_points_for_this_node, node_structure, cached_points_count);
+      return {};
     }
 
-    // Make sure everything is sorted again
-    std::sort(all_points_for_this_node.begin(), all_points_for_this_node.end());
-
+    auto all_points_for_this_node =
+      octree::merge_node_data_sorted(std::move(node_data), std::move(cached_points));
     return tile_internal_node(
-      all_points_for_this_node, node_structure, new_root_node, cached_points_count);
-  }
+      all_points_for_this_node, node_structure, root_node_structure, cached_points_count);
+  } else {
+    if (node_structure.level >= max_level) {
+      const auto all_points_for_this_node =
+        octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
+      tile_terminal_node(all_points_for_this_node, node_structure, cached_points_count);
+      return {};
+    }
 
-  auto all_points_for_this_node =
-    octree::merge_node_data_sorted(std::move(node_data), std::move(cached_points));
-  return tile_internal_node(
-    all_points_for_this_node, node_structure, root_node_structure, cached_points_count);
+    if (node_level_to_sample_from >= static_cast<int32_t>(MAX_OCTREE_LEVELS - 1)) {
+
+      if (global_config().is_journaling_enabled) {
+        journal_string((boost::format("Recalculating Morton indices for deep node %1%%2%") %
+                        root_node_structure.name % node_structure.name)
+                         .str());
+      }
+
+      // If we are so deep that we exceed the capacity of the MortonIndex, we
+      // have to index our points again with the current node as new root node. We
+      // also have to carry the information that we have a new root over to the
+      // children so that the paths of the nodes are correct.
+
+      // Fun fact: We don't have to adjust the loaded indices because if we ever
+      // get to a node this deep again, the indices have been calculated with the
+      // new root the last time also, so everything is as it should be
+      auto all_points_for_this_node =
+        octree::merge_node_data_unsorted(std::move(node_data), std::move(cached_points));
+
+      // Set this node as the new root node
+      auto new_root_node = node_structure;
+      new_root_node.max_depth = node_structure.max_depth - node_structure.level;
+
+      // Compute new indices based upon this node as root node
+      for (auto& indexed_point : all_points_for_this_node) {
+        indexed_point.morton_index = calculate_morton_index<MAX_OCTREE_LEVELS>(
+          indexed_point.point_reference.position(), new_root_node.bounds);
+      }
+
+      // Make sure everything is sorted again
+      std::sort(all_points_for_this_node.begin(), all_points_for_this_node.end());
+
+      return tile_internal_node(
+        all_points_for_this_node, node_structure, new_root_node, cached_points_count);
+    }
+
+    auto all_points_for_this_node =
+      octree::merge_node_data_sorted(std::move(node_data), std::move(cached_points));
+    return tile_internal_node(
+      all_points_for_this_node, node_structure, root_node_structure, cached_points_count);
+  }
 }
 
 /**
@@ -433,20 +507,18 @@ TilingAlgorithmBase::do_tiling_for_node(octree::NodeData&& node_data,
 TilingAlgorithmV1::TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
                                      ProgressReporter* progress_reporter,
                                      PointsPersistence& persistence,
-                                     TilerMetaParameters meta_parameters,
-                                     size_t concurrency)
-  : TilingAlgorithmBase(sampling_strategy,
-                        progress_reporter,
-                        persistence,
-                        meta_parameters,
-                        concurrency)
+                                     TilerMetaParameters meta_parameters)
+  : TilingAlgorithmBase(sampling_strategy, progress_reporter, persistence, meta_parameters)
 {}
 
-void
-TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf)
+std::pair<tf::Task, tf::Task>
+TilingAlgorithmV1::build_execution_graph(util::Range<PointBuffer::PointIterator> points,
+                                         const AABB& bounds,
+                                         uint32_t num_indexing_threads,
+                                         tf::Taskflow& tf)
 {
   _root_node_points.clear();
-  _root_node_points.resize(points.count());
+  _root_node_points.resize(points.size());
   _points_cache.clear();
 
   auto indexing_tasks = parallel::transform(
@@ -457,7 +529,7 @@ TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds
       return index_point<MAX_OCTREE_LEVELS>(point, bounds, OutlierPointsBehaviour::ClampToBounds);
     },
     tf,
-    _concurrency,
+    num_indexing_threads,
     "calc_morton_indices");
 
   auto sort_task =
@@ -481,6 +553,8 @@ TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds
 
   indexing_tasks.second.precede(sort_task);
   sort_task.precede(process_task);
+
+  return { indexing_tasks.first, process_task };
 }
 
 #pragma endregion
@@ -490,17 +564,15 @@ TilingAlgorithmV1::build_execution_graph(PointBuffer& points, const AABB& bounds
 TilingAlgorithmV2::TilingAlgorithmV2(SamplingStrategy& sampling_strategy,
                                      ProgressReporter* progress_reporter,
                                      PointsPersistence& persistence,
-                                     TilerMetaParameters meta_parameters,
-                                     size_t concurrency)
-  : TilingAlgorithmBase(sampling_strategy,
-                        progress_reporter,
-                        persistence,
-                        meta_parameters,
-                        concurrency)
+                                     TilerMetaParameters meta_parameters)
+  : TilingAlgorithmBase(sampling_strategy, progress_reporter, persistence, meta_parameters)
 {}
 
-void
-TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf)
+std::pair<tf::Task, tf::Task>
+TilingAlgorithmV2::build_execution_graph(util::Range<PointBuffer::PointIterator> points,
+                                         const AABB& bounds,
+                                         uint32_t num_indexing_threads,
+                                         tf::Taskflow& tf)
 {
   /**
    * #### Revised algorithm for better concurrency ####
@@ -513,17 +585,18 @@ TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds
    */
 
   _root_node_points.clear();
-  _root_node_points.resize(points.count());
+  _root_node_points.resize(points.size());
   _points_cache.clear();
   _indexed_points_ranges.clear();
-  _indexed_points_ranges.resize(_concurrency);
+  _indexed_points_ranges.resize(num_indexing_threads);
 
-  const auto chunk_size = _root_node_points.size() / _concurrency;
+  const auto chunk_size = _root_node_points.size() / num_indexing_threads;
 
   auto scatter_task = parallel::scatter(
     std::begin(points),
     std::end(points),
-    [this, chunk_size, bounds](PointsIter points_begin, PointsIter points_end, size_t task_index) {
+    [this, chunk_size, bounds, num_indexing_threads](
+      PointsIter points_begin, PointsIter points_end, size_t task_index) {
       // A bit of logic to access the slots of pre-allocated memory for this
       // task
       const auto point_data_offset = (task_index * chunk_size);
@@ -535,13 +608,13 @@ TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds
       index_and_sort_points(
         { points_begin, points_end }, { indexed_points_begin, indexed_points_end }, bounds);
       task_output = split_indexed_points_into_subranges(
-        { indexed_points_begin, indexed_points_end }, _concurrency);
+        { indexed_points_begin, indexed_points_end }, num_indexing_threads);
     },
     tf,
-    _concurrency);
+    num_indexing_threads);
 
-  auto transpose_task = tf.emplace([this, bounds](tf::Subflow& subflow) {
-    auto ranges_per_node = merge_selected_start_nodes(_indexed_points_ranges, _concurrency);
+  auto transpose_task = tf.emplace([this, bounds, num_indexing_threads](tf::Subflow& subflow) {
+    auto ranges_per_node = merge_selected_start_nodes(_indexed_points_ranges, num_indexing_threads);
 
     // ranges_per_node is an Octree where some of the nodes contain the starting
     // data for tiling
@@ -584,6 +657,8 @@ TilingAlgorithmV2::build_execution_graph(PointBuffer& points, const AABB& bounds
   for (auto& scatter_subtask : scatter_task.scattered_tasks) {
     scatter_subtask.precede(transpose_task);
   }
+
+  return { scatter_task.begin_task, transpose_task };
 }
 
 void
@@ -1014,18 +1089,16 @@ TilingAlgorithmV3::TilingAlgorithmV3(SamplingStrategy& sampling_strategy,
                                      ProgressReporter* progress_reporter,
                                      PointsPersistence& persistence,
                                      TilerMetaParameters meta_parameters,
-                                     const fs::path& output_dir,
-                                     size_t concurrency)
-  : TilingAlgorithmBase(sampling_strategy,
-                        progress_reporter,
-                        persistence,
-                        meta_parameters,
-                        concurrency)
+                                     const fs::path& output_dir)
+  : TilingAlgorithmBase(sampling_strategy, progress_reporter, persistence, meta_parameters)
   , _output_dir(output_dir)
 {}
 
-void
-TilingAlgorithmV3::build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf)
+std::pair<tf::Task, tf::Task>
+TilingAlgorithmV3::build_execution_graph(util::Range<PointBuffer::PointIterator> points,
+                                         const AABB& bounds,
+                                         uint32_t num_indexing_threads,
+                                         tf::Taskflow& tf)
 {
   /**
    * #### Revised algorithm for better concurrency ####
@@ -1038,15 +1111,15 @@ TilingAlgorithmV3::build_execution_graph(PointBuffer& points, const AABB& bounds
    */
 
   _root_node_points.clear();
-  _root_node_points.resize(points.count());
+  _root_node_points.resize(points.size());
   _points_cache.clear();
   _indexed_points_ranges.clear();
-  _indexed_points_ranges.resize(_concurrency);
+  _indexed_points_ranges.resize(num_indexing_threads);
 
   if (!_level_of_start_nodes.has_value()) {
-    build_execution_graph_for_first_iteration(points, bounds, tf);
+    return build_execution_graph_for_first_iteration(points, bounds, num_indexing_threads, tf);
   } else {
-    build_execution_graph_for_later_iterations(points, bounds, tf);
+    return build_execution_graph_for_later_iterations(points, bounds, num_indexing_threads, tf);
   }
 }
 
@@ -1061,15 +1134,17 @@ TilingAlgorithmV3::finalize(const AABB& bounds)
   reconstruct_left_out_nodes(bounds);
 }
 
-void
-TilingAlgorithmV3::build_execution_graph_for_first_iteration(PointBuffer& points,
-                                                             const AABB& bounds,
-                                                             tf::Taskflow& tf)
+std::pair<tf::Task, tf::Task>
+TilingAlgorithmV3::build_execution_graph_for_first_iteration(
+  util::Range<PointBuffer::PointIterator> points,
+  const AABB& bounds,
+  uint32_t num_indexing_threads,
+  tf::Taskflow& tf)
 {
   // After indexing the points, we sort them all together, estimate the start
   // node level and then generate the start nodes
 
-  const auto chunk_size = _root_node_points.size() / _concurrency;
+  const auto chunk_size = _root_node_points.size() / num_indexing_threads;
 
   auto index_task = parallel::scatter(
     std::begin(points),
@@ -1089,33 +1164,31 @@ TilingAlgorithmV3::build_execution_graph_for_first_iteration(PointBuffer& points
                        });
     },
     tf,
-    _concurrency,
+    num_indexing_threads,
     "index_points");
 
   auto sort_estimate_get_start_node =
-    tf.emplace([this, bounds](tf::Subflow& subflow) {
+    tf.emplace([this, bounds, num_indexing_threads](tf::Subflow& subflow) {
         util::Range<IndexedPointsIter> indexed_points{ std::begin(_root_node_points),
                                                        std::end(_root_node_points) };
         indexed_points.sort();
 
-        _level_of_start_nodes = estimate_start_node_level_in_octree(indexed_points, _concurrency);
+        _level_of_start_nodes =
+          estimate_start_node_level_in_octree(indexed_points, num_indexing_threads);
 
-        util::write_log(concat("Level of start nodes: ", *_level_of_start_nodes, "\n"));
-        if (debug::Journal::instance().is_enabled()) {
-          debug::Journal::instance().add_entry(
-            concat("Level of start nodes: ", *_level_of_start_nodes, "\n"));
+        if (global_config().is_journaling_enabled) {
+          journal_string(concat("Level of start nodes: ", *_level_of_start_nodes));
         }
 
         auto start_nodes =
           split_indexed_points_into_subranges(indexed_points, *_level_of_start_nodes);
 
-        if (debug::Journal::instance().is_enabled()) {
-          debug::Journal::instance().add_entry(
-            concat("start nodes 0:\n", start_nodes.to_graphviz([](const auto& node) {
-              std::stringstream ss;
-              ss << OctreeNodeIndex64::to_string(node.index()) << " - " << node->size();
-              return ss.str();
-            })));
+        if (global_config().is_journaling_enabled) {
+          journal_start_nodes(start_nodes.to_graphviz([](const auto& node) {
+            std::stringstream ss;
+            ss << OctreeNodeIndex64::to_string(node.index()) << " - " << node->size();
+            return ss.str();
+          }));
         }
 
         for (auto node : start_nodes.traverse_level_order()) {
@@ -1156,17 +1229,18 @@ TilingAlgorithmV3::build_execution_graph_for_first_iteration(PointBuffer& points
   for (auto& scatter_subtask : index_task.scattered_tasks) {
     scatter_subtask.precede(sort_estimate_get_start_node);
   }
+
+  return { index_task.begin_task, sort_estimate_get_start_node };
 }
 
-void
-TilingAlgorithmV3::build_execution_graph_for_later_iterations(PointBuffer& points,
-                                                              const AABB& bounds,
-                                                              tf::Taskflow& tf)
+std::pair<tf::Task, tf::Task>
+TilingAlgorithmV3::build_execution_graph_for_later_iterations(
+  util::Range<PointBuffer::PointIterator> points,
+  const AABB& bounds,
+  uint32_t num_indexing_threads,
+  tf::Taskflow& tf)
 {
-
-  static uint32_t s_counter = 0;
-
-  const auto chunk_size = _root_node_points.size() / _concurrency;
+  const auto chunk_size = _root_node_points.size() / num_indexing_threads;
 
   auto scatter_task = parallel::scatter(
     std::begin(points),
@@ -1186,25 +1260,24 @@ TilingAlgorithmV3::build_execution_graph_for_later_iterations(PointBuffer& point
         { indexed_points_begin, indexed_points_end }, *_level_of_start_nodes);
     },
     tf,
-    _concurrency,
+    num_indexing_threads,
     "index_then_sort_then_split_ranges");
 
   auto transpose_task =
     tf.emplace([this, bounds](tf::Subflow& subflow) {
         auto ranges_per_node = merge_selected_start_nodes(_indexed_points_ranges);
 
-        if (debug::Journal::instance().is_enabled()) {
-          debug::Journal::instance().add_entry(concat(
-            "start nodes ", ++s_counter, ":\n", ranges_per_node.to_graphviz([](const auto& node) {
-              std::stringstream ss;
-              ss << OctreeNodeIndex64::to_string(node.index()) << " - "
-                 << std::accumulate(
-                      std::begin(*node),
-                      std::end(*node),
-                      size_t{ 0 },
-                      [](auto accum, const auto& range) { return accum + range.size(); });
-              return ss.str();
-            })));
+        if (global_config().is_journaling_enabled) {
+          journal_start_nodes(ranges_per_node.to_graphviz([](const auto& node) {
+            std::stringstream ss;
+            ss << OctreeNodeIndex64::to_string(node.index()) << " - "
+               << std::accumulate(
+                    std::begin(*node),
+                    std::end(*node),
+                    size_t{ 0 },
+                    [](auto accum, const auto& range) { return accum + range.size(); });
+            return ss.str();
+          }));
         }
 
         // ranges_per_node is an Octree where some of the nodes contain the
@@ -1240,6 +1313,8 @@ TilingAlgorithmV3::build_execution_graph_for_later_iterations(PointBuffer& point
   for (auto& scatter_subtask : scatter_task.scattered_tasks) {
     scatter_subtask.precede(transpose_task);
   }
+
+  return { scatter_task.begin_task, transpose_task };
 }
 
 void
@@ -1527,14 +1602,14 @@ TilingAlgorithmV3::reconstruct_left_out_nodes(const AABB& root_bounds)
             std::end(sorted_nodes_to_reconstruct),
             [](const auto& l, const auto& r) { return l.levels() > r.levels(); });
 
-  if (debug::Journal::instance().is_enabled()) {
+  if (global_config().is_journaling_enabled) {
     std::stringstream ss;
     ss << "Reconstructed nodes: [ ";
     for (auto& node : sorted_nodes_to_reconstruct) {
       ss << "\"" << OctreeNodeIndex64::to_string(node) << "\" ";
     }
     ss << "]";
-    debug::Journal::instance().add_entry(ss.str());
+    journal_string(ss.str());
   }
 
   const auto t_start = std::chrono::high_resolution_clock::now();
@@ -1544,11 +1619,10 @@ TilingAlgorithmV3::reconstruct_left_out_nodes(const AABB& root_bounds)
   }
 
   const auto t_end = std::chrono::high_resolution_clock::now();
-  if (debug::Journal::instance().is_enabled()) {
+  if (global_config().is_journaling_enabled) {
     const auto delta_t = t_end - t_start;
     const auto delta_t_seconds = static_cast<double>(delta_t.count()) / 1e9;
-    debug::Journal::instance().add_entry(
-      (boost::format("Reconstructing nodes: %1% s") % delta_t_seconds).str());
+    journal_string((boost::format("Reconstructing nodes: %1% s") % delta_t_seconds).str());
   }
 }
 #pragma endregion

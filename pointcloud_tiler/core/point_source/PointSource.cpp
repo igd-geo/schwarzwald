@@ -119,11 +119,10 @@ PointSource::move_to_next_file()
 MultiReaderPointSource::MultiReaderPointSource(std::vector<fs::path> files,
                                                util::IgnoreErrors errors_to_ignore)
   : _files(std::move(files))
+  , _next_files(std::begin(_files), std::end(_files))
   , _errors_to_ignore(errors_to_ignore)
   , _open_files_lock(std::make_unique<std::mutex>())
-{
-  _next_file = std::begin(_files);
-}
+{}
 
 std::optional<MultiReaderPointSource::PointSourceHandle>
 MultiReaderPointSource::lock_source()
@@ -148,6 +147,42 @@ MultiReaderPointSource::lock_source()
   _open_files.push_back(std::move(next_file));
 
   return handle;
+}
+
+std::optional<MultiReaderPointSource::PointSourceHandle>
+MultiReaderPointSource::lock_specific_source(const fs::path& file_name)
+{
+  std::lock_guard guard{ *_open_files_lock };
+
+  // Check first if file_name is in _open_files
+  const auto open_file_record_or_failure = get_specific_open_file(file_name);
+
+  if (open_file_record_or_failure.has_value()) {
+    auto file_record = open_file_record_or_failure.value();
+    file_record->available = false;
+    return std::make_optional(PointSourceHandle{ file_record, this });
+  }
+
+  const auto reason_for_failure = open_file_record_or_failure.error();
+  switch (reason_for_failure) {
+    case GetSpecificOpenFileFailure::NotAvailable:
+      throw std::runtime_error{ "Requested file source is already locked by another thread!" };
+    case GetSpecificOpenFileFailure::NotYetOpened: {
+      auto opened_file = try_open_specific_file(file_name);
+      if (!opened_file) {
+        return std::nullopt;
+      }
+
+      opened_file->available = false;
+      PointSourceHandle handle{ opened_file.get(), this };
+
+      _open_files.push_back(std::move(opened_file));
+
+      return handle;
+    }
+    default:
+      throw std::runtime_error{ "Unrecognized GetSpecificOpenFileFailure constant" };
+  }
 }
 
 void
@@ -182,7 +217,7 @@ MultiReaderPointSource::max_concurrent_reads()
   const auto open_files = std::count_if(std::begin(_open_files),
                                         std::end(_open_files),
                                         [](const auto& open_file) { return open_file->available; });
-  const auto remaining_files = static_cast<size_t>(std::distance(_next_file, std::cend(_files)));
+  const auto remaining_files = _next_files.size();
   return open_files + remaining_files;
 }
 
@@ -195,16 +230,34 @@ MultiReaderPointSource::add_transformation(Transform transform)
 std::unique_ptr<MultiReaderPointSource::PointFileEntry>
 MultiReaderPointSource::try_open_next_file()
 {
-  if (_next_file == std::end(_files))
+  const auto next_file_iter = std::begin(_next_files);
+  if (next_file_iter == std::end(_next_files))
     return nullptr;
 
-  return open_point_file(*_next_file++)
-    .map([this](PointFile point_file) mutable {
-      return std::visit(
-        [this](auto& typed_file) mutable {
-          return std::make_unique<PointFileEntry>(std::move(typed_file));
-        },
-        point_file);
+  return do_open_file(next_file_iter);
+}
+
+std::unique_ptr<MultiReaderPointSource::PointFileEntry>
+MultiReaderPointSource::try_open_specific_file(const fs::path& file)
+{
+  const auto file_iter = _next_files.find(file);
+  if (file_iter == std::end(_next_files)) {
+    return nullptr;
+  }
+
+  return do_open_file(file_iter);
+}
+
+std::unique_ptr<MultiReaderPointSource::PointFileEntry>
+MultiReaderPointSource::do_open_file(
+  std::unordered_set<fs::path, util::PathHash>::iterator file_iter)
+{
+  const auto file_path = *file_iter;
+  _next_files.erase(file_iter);
+
+  return open_point_file(file_path)
+    .map([this, &file_path](PointFile point_file) mutable {
+      return std::make_unique<PointFileEntry>(std::move(point_file), file_path);
     })
     .or_else([this](const util::ErrorChain& error_chain) {
       if (_errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
@@ -230,6 +283,26 @@ MultiReaderPointSource::find_next_available_open_file()
   }
 
   return next_available_file_iter->get();
+}
+
+tl::expected<MultiReaderPointSource::PointFileEntry*,
+             MultiReaderPointSource::GetSpecificOpenFileFailure>
+MultiReaderPointSource::get_specific_open_file(const fs::path& file) const
+{
+  const auto is_open_iter = std::find_if(
+    std::begin(_open_files), std::end(_open_files), [&file](const auto& point_file_entry) {
+      return point_file_entry->file_path == file;
+    });
+
+  if (is_open_iter == std::end(_open_files)) {
+    return tl::make_unexpected(GetSpecificOpenFileFailure::NotYetOpened);
+  }
+
+  if (!(*is_open_iter)->available) {
+    return tl::make_unexpected(GetSpecificOpenFileFailure::NotAvailable);
+  }
+
+  return { is_open_iter->get() };
 }
 
 bool
@@ -342,9 +415,10 @@ MultiReaderPointSource::PointSourceHandle::PointSourceHandle(
   , _multi_reader_source(multi_reader_source)
 {}
 
-MultiReaderPointSource::PointFileEntry::PointFileEntry(PointFile file)
+MultiReaderPointSource::PointFileEntry::PointFileEntry(PointFile file, const fs::path& file_path)
   : point_file(std::move(file))
   , available(true)
+  , file_path(file_path)
 {
   // Get an iterator to the start of the file and store it
   //( std::variant syntax is so nasty :( )

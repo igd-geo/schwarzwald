@@ -15,6 +15,7 @@
 #include "io/LASFile.h"
 #include "io/LASPersistence.h"
 #include "point_source/PointSource.h"
+#include "util/Config.h"
 #include "util/Stats.h"
 #include "util/Transformation.h"
 #include "util/stuff.h"
@@ -50,6 +51,16 @@ prepare_output_directory(const std::string& output_directory)
     // TODO We could add a progress bar here!
     util::write_log("Output directory not empty, removing existing files\n");
     for (auto& entry : fs::directory_iterator{ output_directory }) {
+      // A bit hacky, but we have to make sure that we don't delete the journal output folder
+      if (global_config().is_journaling_enabled && entry == global_config().journal_directory) {
+        // Remove only the contents of the journal output folder, so that we can run the tool
+        // multiple times with the same output folder and don't get leave garbage
+        for (auto& journal_entry : fs::directory_iterator{ entry }) {
+          fs::remove_all(journal_entry);
+        }
+        continue;
+      }
+
       fs::remove_all(entry);
     }
   } else {
@@ -315,65 +326,76 @@ TilerProcess::determine_input_and_output_attributes()
   _output_attributes = std::move(supported_attributes);
 }
 
-TilerProcess::CalculateBoundsResult
-TilerProcess::calculate_bounds(SRSTransformHelper const* srs_transform)
+DatasetMetadata
+TilerProcess::calculate_dataset_metadata(const SRSTransformHelper* srs_transform)
 {
-  AABB aabb;
+  DatasetMetadata dataset_metadata;
+
   for (const auto& source : _args.sources) {
     open_point_file(source)
-      .map([&aabb, srs_transform](const PointFile& point_file) {
+      .map([&dataset_metadata, srs_transform, &source](const PointFile& point_file) {
         auto bounds = pc::get_bounds(point_file);
+        auto point_count = pc::get_point_count(point_file);
 
         if (srs_transform) {
           srs_transform->transformAABBsTo(TargetSRS::CesiumWorld, gsl::make_span(&bounds, 1));
         }
 
-        aabb.update(bounds.min);
-        aabb.update(bounds.max);
+        dataset_metadata.add_file_metadata(source, point_count, bounds);
       })
       .or_else([this, source](const auto& err) {
         if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-          util::write_log((boost::format("warning: Ignoring file %1% in bounding box "
-                                         "calculation\ncaused by: %2%\n") %
-                           source.string() % err.what())
-                            .str());
+          util::write_log(
+            (boost::format(
+               "warning: Ignoring file %1% while calculating dataset metadata\ncaused by: %2%\n") %
+             source.string() % err.what())
+              .str());
           return;
         }
 
-        throw util::chain_error(err, "Calculating the point cloud bounding box failed");
+        throw util::chain_error(err, "Calculating dataset metadata failed");
       });
   }
 
-  const auto tight_bounds = aabb;
-  const auto cubic_bounds = aabb.cubic();
-  AABB cubic_bounds_at_origin = { cubic_bounds.min - cubic_bounds.getCenter(),
-                                  cubic_bounds.max - cubic_bounds.getCenter() };
-
-  return { tight_bounds, cubic_bounds, cubic_bounds_at_origin };
+  return dataset_metadata;
 }
 
-size_t
-TilerProcess::get_total_points_count() const
+std::variant<FixedThreadCount, AdaptiveThreadCount>
+TilerProcess::calculate_actual_thread_counts(const DatasetMetadata& dataset_metadata) const
 {
-  size_t total_count = 0;
-  for (auto& source : _args.sources) {
-    open_point_file(source)
-      .map([&total_count](const PointFile& point_file) {
-        total_count += pc::get_point_count(point_file);
-      })
-      .or_else([this, source](const auto& err) {
-        if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-          util::write_log((boost::format("warning: Ignoring file %1% while counting "
-                                         "total number of points\n\tcaused by: %2%\n") %
-                           source.string() % err.what())
-                            .str());
-          return;
-        }
-
-        throw util::chain_error(err, "Calculating the total number of points failed");
-      });
+  if (std::holds_alternative<AdaptiveThreadCount>(_args.thread_config)) {
+    return _args.thread_config;
   }
-  return total_count;
+
+  const auto& fixed_thread_config_before_adjustment =
+    std::get<FixedThreadCount>(_args.thread_config);
+
+  FixedThreadCount fixed_thread_count;
+  fixed_thread_count.num_threads_for_reading =
+    fixed_thread_config_before_adjustment.num_threads_for_reading;
+  fixed_thread_count.num_threads_for_indexing =
+    fixed_thread_config_before_adjustment.num_threads_for_indexing;
+
+  // We can never have more reading threads than we have files! If we have less files than the
+  // requested number of reading threads, we move the excess reading threads over to indexing
+  const auto num_files = gsl::narrow<uint32_t>(dataset_metadata.get_all_files_metadata().size());
+  if (num_files < fixed_thread_config_before_adjustment.num_threads_for_reading) {
+    const auto diff = fixed_thread_config_before_adjustment.num_threads_for_reading - num_files;
+    fixed_thread_count.num_threads_for_reading = num_files;
+    fixed_thread_count.num_threads_for_indexing += diff;
+
+    std::cout << "Requested " << fixed_thread_config_before_adjustment.num_threads_for_reading
+              << " threads for reading points but there are only " << num_files
+              << " files to read from. Using " << fixed_thread_count.num_threads_for_reading
+              << " threads for reading and " << fixed_thread_count.num_threads_for_indexing
+              << " threads for indexing instead!\n";
+  } else {
+    std::cout << "Using " << fixed_thread_count.num_threads_for_reading << " threads for reading\n";
+    std::cout << "Using " << fixed_thread_count.num_threads_for_indexing
+              << " threads for indexing\n";
+  }
+
+  return { fixed_thread_count };
 }
 
 void
@@ -447,9 +469,9 @@ TilerProcess::make_sampling_strategy() const
 Tiler
 TilerProcess::make_tiler(bool shift_points_to_center,
                          uint32_t max_depth,
+                         std::variant<FixedThreadCount, AdaptiveThreadCount> thread_count,
                          SRSTransformHelper const* srs_transform,
-                         AABB const& cubic_bounds,
-                         AABB const& cubic_bounds_at_origin,
+                         DatasetMetadata dataset_metadata,
                          SamplingStrategy sampling_strategy,
                          ProgressReporter* progress_reporter,
                          PointsPersistence& persistence) const
@@ -461,36 +483,36 @@ TilerProcess::make_tiler(bool shift_points_to_center,
   tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
   tiler_meta_parameters.tiling_strategy = _args.tiling_strategy;
   tiler_meta_parameters.batch_read_size = _args.max_batch_read_size;
+  tiler_meta_parameters.shift_points_to_origin = shift_points_to_center;
+  tiler_meta_parameters.thread_count = thread_count;
 
   MultiReaderPointSource point_source{ _args.sources, _args.errors_to_ignore };
-  point_source.add_transformation([this, srs_transform, &cubic_bounds, shift_points_to_center](
-                                    util::Range<PointBuffer::PointIterator> points) {
-    srs_transform->transformPointsTo(TargetSRS::CesiumWorld, points);
+  point_source.add_transformation(
+    [this,
+     srs_transform,
+     cubic_bounds = dataset_metadata.total_bounds_cubic(),
+     shift_points_to_center](util::Range<PointBuffer::PointIterator> points) {
+      srs_transform->transformPointsTo(TargetSRS::CesiumWorld, points);
 
-    // 3D Tiles is not strictly lossless as it stores 32-bit floating point
-    // values instead of 64-bit. We shift all points to the center of the
-    // bounding box of the full point-cloud and truncate the values to
-    // 32-bit to get the maximum precision while at the same time
-    // guaranteeing lossless persistence
-    if (shift_points_to_center) {
-      for (auto point_ref : points) {
-        auto& position = point_ref.position();
-        position -= cubic_bounds.getCenter();
-        position.x = static_cast<float>(position.x);
-        position.y = static_cast<float>(position.y);
-        position.z = static_cast<float>(position.z);
+      // 3D Tiles is not strictly lossless as it stores 32-bit floating point
+      // values instead of 64-bit. We shift all points to the center of the
+      // bounding box of the full point-cloud and truncate the values to
+      // 32-bit to get the maximum precision while at the same time
+      // guaranteeing lossless persistence
+      if (shift_points_to_center) {
+        for (auto point_ref : points) {
+          auto& position = point_ref.position();
+          position -= cubic_bounds.getCenter();
+          position.x = static_cast<float>(position.x);
+          position.y = static_cast<float>(position.y);
+          position.z = static_cast<float>(position.z);
+        }
       }
-    }
-  });
+    });
 
-  return { shift_points_to_center ? cubic_bounds_at_origin : cubic_bounds,
-           tiler_meta_parameters,
-           sampling_strategy,
-           progress_reporter,
-           std::move(point_source),
-           persistence,
-           _input_attributes,
-           _args.output_directory };
+  return { std::move(dataset_metadata), tiler_meta_parameters,   sampling_strategy,
+           progress_reporter,           std::move(point_source), persistence,
+           _input_attributes,           _args.output_directory };
 }
 
 void
@@ -500,14 +522,6 @@ TilerProcess::run()
 
   prepare();
 
-  const auto total_points_count = get_total_points_count();
-
-  if (!total_points_count) {
-    throw std::runtime_error{ "Found no points to process" };
-  }
-
-  util::write_log(concat("Total points: ", total_points_count, "\n"));
-
   std::unique_ptr<SRSTransformHelper> srs_transform;
   if (_args.source_projection) {
     srs_transform = std::make_unique<Proj4Transform>(*_args.source_projection);
@@ -515,15 +529,26 @@ TilerProcess::run()
     srs_transform = std::make_unique<IdentityTransform>();
   }
 
-  const auto [tight_bounds, cubic_bounds, cubic_bounds_at_origin] =
-    calculate_bounds(srs_transform.get());
-  util::write_log(concat("Bounds:\n", tight_bounds, "\n"));
-  util::write_log(concat("Bounds (cubic):\n", cubic_bounds, "\n"));
+  auto dataset_metadata = calculate_dataset_metadata(srs_transform.get());
+
+  const auto total_points_count = dataset_metadata.total_points_count();
+  const auto cubic_bounds = dataset_metadata.total_bounds_cubic();
+  if (!total_points_count) {
+    throw std::runtime_error{ "Found no points to process" };
+  }
+
+  util::write_log(concat("Total points: ", total_points_count, "\n"));
+
+  util::write_log(concat("Bounds:\n", dataset_metadata.total_bounds_tight(), "\n"));
+  util::write_log(concat("Bounds (cubic):\n", dataset_metadata.total_bounds_cubic(), "\n"));
 
   if (_args.diagonal_fraction != 0) {
-    _args.spacing = (float)(cubic_bounds.extent().length() / _args.diagonal_fraction);
+    _args.spacing =
+      (float)(dataset_metadata.total_bounds_cubic().extent().length() / _args.diagonal_fraction);
     util::write_log(concat("Spacing calculated from diagonal: ", _args.spacing, "\n"));
   }
+
+  auto thread_counts = calculate_actual_thread_counts(dataset_metadata);
 
   auto& progress_reporter = _ui_state.get_progress_reporter();
   progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
@@ -535,7 +560,7 @@ TilerProcess::run()
                                       _output_attributes,
                                       _args.rgb_mapping,
                                       _args.spacing,
-                                      cubic_bounds);
+                                      dataset_metadata.total_bounds_cubic());
 
   const auto shift_points_to_center = (_args.output_format == OutputFormat::CZM_3DTILES);
 
@@ -550,9 +575,9 @@ TilerProcess::run()
 
   auto tiler = make_tiler(shift_points_to_center,
                           max_depth,
+                          thread_counts,
                           srs_transform.get(),
-                          cubic_bounds,
-                          cubic_bounds_at_origin,
+                          std::move(dataset_metadata),
                           std::move(sampling_strategy),
                           &progress_reporter,
                           persistence);

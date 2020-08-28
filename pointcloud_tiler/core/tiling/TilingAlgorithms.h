@@ -72,13 +72,17 @@ struct TilingAlgorithmBase
   TilingAlgorithmBase(SamplingStrategy& sampling_strategy,
                       ProgressReporter* progress_reporter,
                       PointsPersistence& persistence,
-                      TilerMetaParameters meta_parameters,
-                      size_t concurrency);
+                      TilerMetaParameters meta_parameters);
   virtual ~TilingAlgorithmBase();
   /**
-   * Build an execution graph for tiling the given PointBuffer
+   * Build an execution graph for tiling the given range of points. Returns the start and end tasks
+   * of the execution graph
    */
-  virtual void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) = 0;
+  virtual std::pair<tf::Task, tf::Task> build_execution_graph(
+    util::Range<PointBuffer::PointIterator> points,
+    const AABB& bounds,
+    uint32_t num_indexing_threads,
+    tf::Taskflow& tf) = 0;
 
   /**
    * Finalize the computation after all points have been indexed
@@ -106,7 +110,6 @@ protected:
   ProgressReporter* _progress_reporter;
   PointsPersistence& _persistence;
   TilerMetaParameters _meta_parameters;
-  size_t _concurrency;
 
   octree::NodeData _root_node_points;
   PointsCache _points_cache;
@@ -125,10 +128,13 @@ struct TilingAlgorithmV1 : TilingAlgorithmBase
   TilingAlgorithmV1(SamplingStrategy& sampling_strategy,
                     ProgressReporter* progress_reporter,
                     PointsPersistence& persistence,
-                    TilerMetaParameters meta_parameters,
-                    size_t concurrency);
+                    TilerMetaParameters meta_parameters);
 
-  void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
+  std::pair<tf::Task, tf::Task> build_execution_graph(
+    util::Range<PointBuffer::PointIterator> points,
+    const AABB& bounds,
+    uint32_t num_indexing_threads,
+    tf::Taskflow& tf) override;
 };
 
 /**
@@ -146,10 +152,13 @@ struct TilingAlgorithmV2 : TilingAlgorithmBase
   TilingAlgorithmV2(SamplingStrategy& sampling_strategy,
                     ProgressReporter* progress_reporter,
                     PointsPersistence& persistence,
-                    TilerMetaParameters meta_parameters,
-                    size_t concurrency);
+                    TilerMetaParameters meta_parameters);
 
-  void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
+  std::pair<tf::Task, tf::Task> build_execution_graph(
+    util::Range<PointBuffer::PointIterator> points,
+    const AABB& bounds,
+    uint32_t num_indexing_threads,
+    tf::Taskflow& tf) override;
 
 private:
   using IndexedPoints = std::vector<IndexedPoint64>;
@@ -205,10 +214,13 @@ struct TilingAlgorithmV3 : TilingAlgorithmBase
                     ProgressReporter* progress_reporter,
                     PointsPersistence& persistence,
                     TilerMetaParameters meta_parameters,
-                    const fs::path& output_dir,
-                    size_t concurrency);
+                    const fs::path& output_dir);
 
-  void build_execution_graph(PointBuffer& points, const AABB& bounds, tf::Taskflow& tf) override;
+  std::pair<tf::Task, tf::Task> build_execution_graph(
+    util::Range<PointBuffer::PointIterator> points,
+    const AABB& bounds,
+    uint32_t num_indexing_threads,
+    tf::Taskflow& tf) override;
 
   void finalize(const AABB& bounds) override;
 
@@ -217,12 +229,16 @@ private:
   using IndexedPointsIter = typename IndexedPoints::iterator;
   using PointsIter = typename PointBuffer::PointIterator;
 
-  void build_execution_graph_for_first_iteration(PointBuffer& points,
-                                                 const AABB& bounds,
-                                                 tf::Taskflow& tf);
-  void build_execution_graph_for_later_iterations(PointBuffer& points,
-                                                  const AABB& bounds,
-                                                  tf::Taskflow& tf);
+  std::pair<tf::Task, tf::Task> build_execution_graph_for_first_iteration(
+    util::Range<PointBuffer::PointIterator> points,
+    const AABB& bounds,
+    uint32_t num_indexing_threads,
+    tf::Taskflow& tf);
+  std::pair<tf::Task, tf::Task> build_execution_graph_for_later_iterations(
+    util::Range<PointBuffer::PointIterator> points,
+    const AABB& bounds,
+    uint32_t num_indexing_threads,
+    tf::Taskflow& tf);
 
   /**
    * Takes a range of points from a PointBuffer, calculates the Morton indices

@@ -98,8 +98,15 @@ create_hierarchy_files(const fs::path& root_dir,
   };
 
   for (auto& kv : hierarchy) {
-    const auto node_index =
-      OctreeNodeIndex64::from_string(kv.first, MortonIndexNamingConvention::Entwine).value();
+    const auto maybe_node_index =
+      OctreeNodeIndex64::from_string(kv.first, MortonIndexNamingConvention::Entwine);
+    if (!maybe_node_index.has_value()) {
+      std::cerr << "Could not include node " << kv.first
+                << " into ept-hierarchy: " << maybe_node_index.error() << "\n";
+      continue;
+    }
+
+    const auto node_index = maybe_node_index.value();
     const auto parent = get_parent_index_in_hierarchy(node_index);
 
     auto hierarchy_iter = split_hierarchies.find(parent);
