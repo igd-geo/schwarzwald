@@ -1,7 +1,7 @@
 # Pointcloud Tiler
 
-Command-line tool to generate acceleration structures for point cloud data. Can be used to convert raw point cloud data in LAS/LAZ format into [3D Tiles format](https://github.com/AnalyticalGraphicsInc/3d-tiles). 
-Built upon the [potree-converter](https://github.com/potree/PotreeConverter) tool. 
+Command-line tool to generate acceleration structures for point cloud data. Can be used to convert raw point cloud data in LAS/LAZ format into [3D Tiles format](https://github.com/AnalyticalGraphicsInc/3d-tiles) and [Potree format](https://github.com/potree/potree/). 
+Loosely built upon the [PotreeConverter](https://github.com/potree/PotreeConverter) tool in version 1.7. 
 
 This tool generates a multi-resolution [octree](https://en.wikipedia.org/wiki/Octree) from raw point cloud data. The octree can be used to speed up rendering or analysis by quickly identifying points that lie at a given location or in a given region in space. The Pointcloud Tiler stores the octree structure by writing one file for each node in the octree. Files are named according to the path from the root node to that specific node. The root node is always named `r`, every level in the octree is identified by a number between 0 and 7 (inclusive) indicating the octant that a node belongs to. 
 
@@ -15,7 +15,7 @@ This tool generates a multi-resolution [octree](https://en.wikipedia.org/wiki/Oc
 
 ## Build
 
-**Windows build is not supported currently!**
+**Windows build is not tested!**
 
 Requirements:
 *  [CMake >= 3.11](https://cmake.org/)
@@ -57,11 +57,11 @@ Run `sudo docker build -t pointcloud-tiler:latest .` from the root folder.
 
 The Pointcloud Tiler supports two different modes:
 *  `tiler` for creating an optimized point cloud structure
-*  (**Currently not fully supported**) `converter` to convert the result of the `tiler` mode into different output formats
+*  (**Currently unsupported, might be removed in future versions**) `converter` to convert the result of the `tiler` mode into different output formats
 
 To get information about the possible arguments, call `PointcloudTiler` without any arguments. 
 
-### Generating 3D Tiles directly from LAS/LAZ
+### Generating 3D Tiles from LAS/LAZ
 
 The easiest way to generate 3D Tiles is to call the Pointcloud Tiler like this:
 
@@ -71,21 +71,91 @@ PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles 
 
 This starts a tiling process that generates 3D Tiles and stores them in the specified output folder. 
 
-### Specifying output attributes for 3D Tiles
+### Generating Potree tiles from LAS/LAZ
 
-You can specify which of the attributes in the LAS/LAZ files you want to write to the 3D Tiles files. This is done through the `-a` option:
+Potree-compatible tiles can be generated like this:
 
 ```
-PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format 3DTILES -a RGB
+PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format ENTWINE_LAZ
 ```
 
-This writes RGB colors to the 3D Tiles files by reading the RGB values from LAS/LAZ. Possible attributes are:
+As the name suggests, this generates data in the same format as the [Entwine tool](https://entwine.io/), which is fully compatible with Potree. 
 
-*  `RGB`: Write 8-bit per channel RGB values by reading the RGB fields of LAS/LAZ
-*  `INTENSITY`: Write 16-bit intensity values by reading the intensity field of LAS/LAZ
-*  `RGB_FROM_INTENSITY`: Write 8-bit per channel RGB values by reading the intensity field of LAS/LAZ and converting it to greyscale
-*  `CLASSIFICATION`: Write 8-bit classification values by readin the classification field of LAS/LAZ
-*  There is also `NORMALS` which would write point normals, however LAS/LAZ does not support point normals so this option is reserved for future versions
+### Tiling parameters
+
+There are several parameters that control the structure of the tiles. They are very similar to the ones that [PotreeConverter](https://github.com/potree/PotreeConverter) supports:
+
+```
+  -s [ --spacing ] arg (=0)             Distance between points at root level. 
+                                        Distance halves each level.
+  -d [ --spacing-by-diagonal-fraction ] arg (=0)
+                                        Maximum number of points on the 
+                                        diagonal in the first level (sets 
+                                        spacing). spacing = diagonal / value
+  --sampling arg (=MIN_DISTANCE)        Sampling strategy to use. Possible 
+                                        values are RANDOM_GRID, GRID_CENTER, 
+                                        MIN_DISTANCE. The quality of the 
+                                        resulting point cloud can be adjusted 
+                                        with this parameter, with RANDOM_GRID 
+                                        corresponding to the lowest quality and
+                                        MIN_DISTANCE to the highest quality.
+  --tiling-strategy arg (=FAST)         The tiling strategy to use. Valid 
+                                        options are FAST or ACCURATE, where 
+                                        FAST will yield better performance but 
+                                        larger data.
+```
+
+There should be little reason to manually set the `tiling-strategy` parameter unless you have strict space and quality requirements. The `FAST` strategy, which is the default, has much better performance but will produce slightly larger data. 
+
+### Handling errors during processing
+
+Depending on your environment, you might want to ignore some errors that can occur during processing, such as unreadable files or unsupported file formats. To do some, use can use the following option: 
+
+```
+  --ignore arg (=NONE)                  If provided, all recoverable errors for
+                                        the given categories are ignored and 
+                                        processing proceeds normally instead of
+                                        terminating the program. Specify one or
+                                        more of the following possible values:
+                                        MISSING_FILES (= ignore missing files)
+                                        INACCESSIBLE_FILES (= ignore 
+                                        inaccessible files)
+                                        UNSUPPORTED_FILE_FORMAT (= ignore files
+                                        with unsupported file formats)
+                                        CORRUPTED_FILES (= ignore 
+                                        corrupted/broken files)
+                                        MISSING_POINT_ATTRIBUTES (= ignore 
+                                        files that don't have the point 
+                                        attributes specified by the -a option. 
+                                        Default values will be used for these 
+                                        attributes)
+                                        ALL_FILE_ERRORS (= ignore all 
+                                        recoverable file-related errors)
+                                        ALL_ERRORS (= ignore all recoverable 
+                                        errors)
+                                        NONE (= terminate program on every 
+                                        error)
+```
+
+### Point attributes
+
+The tiler supports all regular point attributes defined by the [LAS standard (v1.2)](https://www.asprs.org/a/society/committees/standards/asprs_las_format_v12.pdf). For the output formats `ENTWINE_LAS` and `ENTWINE_LAZ`, all attributes are retained in the output LAS/LAZ files. For the `3D_TILES` output format, this is not possible as `3D_TILES` does not natively support all the different attribute types that `LAS` does. Currently, the tiler only stores the positions, RGB colors and intensities with `3D_TILES`. 
+
+It is possible to calculate RGB colors from other attributes when writing `3D_TILES` using the following option:
+
+```
+  --calculate-rgb-from arg              Calculate RGB values from one of the 
+                                        other point attributes. Accepted values
+                                        are: INTENSITY_LINEAR (convert 
+                                        intensity values to RGB using a linear 
+                                        mapping), INTENSITY_LOG (convert 
+                                        intensity values to RGB using a 
+                                        logarithmic mapping), NONE (do not 
+                                        calculate RGB values, same as not 
+                                        specifying this option). This feature 
+                                        is only supported when output-format is
+                                        3DTILES
+```
 
 ### Transforming the points into EPSG:4978 (the world coordinate system used by 3D Tiles)
 
@@ -97,12 +167,3 @@ PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles 
 ```
 
 This example uses the proj string for the UTM32N spatial reference system. 
-
-### Storing tiling results as LAS/LAZ
-
-If you want to generate LAS/LAZ instead of 3D Tiles, you have to run the Pointcloud Tiler twice, once to generate the octree structure in an intermediate format, and then again to convert this structure into LAS/LAZ:
-
-```
-PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/octree
-PointcloudTiler --converter -i /output/path/for/octree -o /output/path/for/LAS/files --output-format LAS //or LAZ
-```
