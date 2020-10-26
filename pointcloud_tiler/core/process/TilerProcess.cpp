@@ -157,6 +157,10 @@ check_if_file_exists(const fs::path& file, util::IgnoreErrors errors_to_ignore)
 
   if (errors_to_ignore & util::IgnoreErrors::MissingFiles) {
     std::cout << "Ignoring file " << file.string() << " because it does not exist!\n";
+    // util::write_log(
+    //     (boost::format("Ignoring file %1% because it does not exist!") %
+    //      file.filename())
+    //         .str());
     return false;
   }
 
@@ -262,14 +266,15 @@ TilerProcess::determine_input_and_output_attributes()
         if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
           util::write_log((boost::format("warning: Ignoring file %1% while determining point "
                                          "attributes\ncaused by: %2%\n") %
-                           source.string() % err.what())
+source.string() % err.what())
                             .str());
           return;
         }
 
-        throw util::chain_error(err, "Determining the point attributes failed");
+                                                 throw util::chain_error(err, "Determining the point attributes failed");
       });
   }
+
 
   _input_attributes = std::move(input_attributes);
 
@@ -325,6 +330,7 @@ TilerProcess::determine_input_and_output_attributes()
 
   _output_attributes = std::move(supported_attributes);
 }
+
 
 DatasetMetadata
 TilerProcess::calculate_dataset_metadata(const SRSTransformHelper* srs_transform)
@@ -561,10 +567,9 @@ TilerProcess::run()
                                       _args.rgb_mapping,
                                       _args.spacing,
                                       dataset_metadata.total_bounds_cubic());
-
   const auto shift_points_to_center = (_args.output_format == OutputFormat::CZM_3DTILES);
 
-  const auto max_depth =
+const auto max_depth =
     (_args.max_depth <= 0)
       ? (100u)
       : static_cast<uint32_t>(_args.max_depth); // TODO max_depth parameter with uint32_t max
