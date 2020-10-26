@@ -167,3 +167,7 @@ PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles 
 ```
 
 This example uses the proj string for the UTM32N spatial reference system. 
+
+## License
+
+Based on the source code of PotreeConverter v1.7 by Markus Schütz, licensed under BSD 2-Clause. Source code available at https://github.com/potree/PotreeConverter 
