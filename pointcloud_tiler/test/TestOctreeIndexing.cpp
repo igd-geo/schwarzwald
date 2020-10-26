@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "octree/OctreeAlgorithms.h"
+#include "tiling/OctreeAlgorithms.h"
 
 #include <random>
 
@@ -12,7 +12,7 @@ struct StringMaker<MortonIndex<Levels>>
 {
   static std::string convert(MortonIndex<Levels> const& value) { return to_string(value); }
 };
-}
+} // namespace Catch
 
 template<unsigned int Levels>
 static V3
@@ -153,8 +153,8 @@ TEST_CASE("Octree keys for sub-range computed correctly", "[calculate_morton_ind
 
 TEST_CASE("Octree point filtering works correctly", "[filter_points_for_octree_node]")
 {
-  // Generate a 3D grid of points where the spacing is a power of 0.5 times the octree size
-  // Pick different spaced sets of points
+  // Generate a 3D grid of points where the spacing is a power of 0.5 times the
+  // octree size Pick different spaced sets of points
   constexpr uint32_t Levels = 5;
   constexpr double SideLength = 1 << Levels;
   constexpr size_t MaxPointsPerNode = 16;
@@ -179,7 +179,8 @@ TEST_CASE("Octree point filtering works correctly", "[filter_points_for_octree_n
   calculate_morton_indices_for_points<Levels>(
     points.positions().begin(), points.positions().end(), octree_indices.begin(), bounds);
 
-  // Create a vector of PointReferences with their associated MortonIndexs for filtering
+  // Create a vector of PointReferences with their associated MortonIndexs for
+  // filtering
   std::vector<IndexedPoint<Levels>> points_and_keys;
   points_and_keys.reserve(points.count());
   for (size_t idx = 0; idx < points.count(); ++idx) {
@@ -187,20 +188,22 @@ TEST_CASE("Octree point filtering works correctly", "[filter_points_for_octree_n
     points_and_keys.push_back(IndexedPoint<Levels>{ point_ref, octree_indices[idx] });
   }
 
-  // Make sure the indexed points are sorted in ascending order, otherwise the filter algorithm
-  // doesn't work
+  // Make sure the indexed points are sorted in ascending order, otherwise the
+  // filter algorithm doesn't work
   std::sort(points_and_keys.begin(), points_and_keys.end(), [](const auto& l, const auto& r) {
     return l.morton_index.get() < r.morton_index.get();
   });
 
   MortonIndex<Levels> root_key;
-  const auto partition_point_at_l0 = filter_points_for_octree_node(points_and_keys.begin(),
-                                                                   points_and_keys.end(),
-                                                                   root_key,
-                                                                   0,
-                                                                   bounds,
-                                                                   SideLength,
-                                                                   sampling_strategy);
+  const auto partition_point_at_l0 =
+    filter_points_for_octree_node(points_and_keys.begin(),
+                                  points_and_keys.end(),
+                                  root_key,
+                                  0,
+                                  bounds,
+                                  SideLength,
+                                  SamplingBehaviour::TakeAllWhenCountBelowMaxPoints,
+                                  sampling_strategy);
 
   std::vector<V3> expected_positions = { V3{ 0.5, 0.5, 0.5 },   V3{ 0.5, 0.5, 16.5 },
                                          V3{ 0.5, 16.5, 0.5 },  V3{ 0.5, 16.5, 16.5 },
@@ -218,74 +221,10 @@ TEST_CASE("Octree point filtering works correctly", "[filter_points_for_octree_n
     actual_positions.begin(),
     [](const auto& point_and_key) { return point_and_key.point_reference.position(); });
 
-  // filter_points_for_octree_node should be stable, so the relative order of points must not
-  // change!
+  // filter_points_for_octree_node should be stable, so the relative order of
+  // points must not change!
   REQUIRE(actual_positions == expected_positions);
 }
-
-// TODO For now, we disabled the max_points_per_node parameter as it gives visual artifacts
-// for the grid sampling methods due to the sorting (i.e. it potentially skips large regions
-// of points because it proceeds in sorted order)
-// Evaluate if this always makes sense
-
-// TEST_CASE("Octree point filtering obeys the max_points_per_node parameter",
-//           "[filter_points_for_octree_node]")
-// {
-//   // Generate a 3D grid of points where the spacing is a power of 0.5 times the octree size
-//   // Pick different spaced sets of points
-//   constexpr uint32_t Levels = 5;
-//   constexpr double SideLength = 1 << Levels;
-
-//   std::vector<V3> positions;
-//   positions.reserve(SideLength * SideLength * SideLength);
-
-//   for (size_t x = 0; x < SideLength; ++x) {
-//     for (size_t y = 0; y < SideLength; ++y) {
-//       for (size_t z = 0; z < SideLength; ++z) {
-//         positions.push_back({ x + 0.5, y + 0.5, z + 0.5 });
-//       }
-//     }
-//   }
-
-//   AABB bounds{ V3{ 0, 0, 0 }, V3{ SideLength, SideLength, SideLength } };
-//   PointBuffer points{ positions.size(), std::move(positions) };
-
-//   std::vector<MortonIndex<Levels>> octree_indices;
-//   octree_indices.resize(points.count());
-//   calculate_morton_indices_for_points<Levels>(
-//     points.positions().begin(), points.positions().end(), octree_indices.begin(), bounds);
-
-//   // Create a vector of PointReferences with their associated MortonIndexs for filtering
-//   std::vector<IndexedPoint<Levels>> points_and_keys;
-//   points_and_keys.reserve(points.count());
-//   for (size_t idx = 0; idx < points.count(); ++idx) {
-//     auto point_ref = *(points.begin() + idx);
-//     points_and_keys.push_back(IndexedPoint<Levels>{ point_ref, octree_indices[idx] });
-//   }
-
-//   // Make sure the indexed points are sorted in ascending order, otherwise the filter algorithm
-//   // doesn't work
-//   std::sort(points_and_keys.begin(), points_and_keys.end(), [](const auto& l, const auto& r) {
-//     return l.morton_index.get() < r.morton_index.get();
-//   });
-
-//   const auto expected_points_count = 2u;
-//   auto sampling_strategy =
-//   make_sampling_strategy<RandomSortedGridSampling>(expected_points_count);
-
-//   // There are 8 candidate positions, but we artificially limit to 2
-//   MortonIndex<Levels> root_key;
-//   const auto partition_point_at_l0 = filter_points_for_octree_node(points_and_keys.begin(),
-//                                                                    points_and_keys.end(),
-//                                                                    root_key,
-//                                                                    0,
-//                                                                    bounds,
-//                                                                    SideLength,
-//                                                                    sampling_strategy);
-
-//   const auto num_selected_points = std::distance(points_and_keys.begin(), partition_point_at_l0);
-//   REQUIRE(num_selected_points == expected_points_count);
-// }
 
 TEST_CASE("Octree point filtering is stable", "[filter_points_for_octree_node]")
 {
@@ -316,7 +255,8 @@ TEST_CASE("Octree point filtering is stable", "[filter_points_for_octree_node]")
   calculate_morton_indices_for_points<Levels>(
     points.positions().begin(), points.positions().end(), octree_indices.begin(), bounds);
 
-  // Create a vector of PointReferences with their associated MortonIndexs for filtering
+  // Create a vector of PointReferences with their associated MortonIndexs for
+  // filtering
   std::vector<IndexedPoint<Levels>> points_and_keys;
   points_and_keys.reserve(points.count());
   for (size_t idx = 0; idx < points.count(); ++idx) {
@@ -324,20 +264,22 @@ TEST_CASE("Octree point filtering is stable", "[filter_points_for_octree_node]")
     points_and_keys.push_back(IndexedPoint<Levels>{ point_ref, octree_indices[idx] });
   }
 
-  // Make sure the indexed points are sorted in ascending order, otherwise the filter algorithm
-  // doesn't work
+  // Make sure the indexed points are sorted in ascending order, otherwise the
+  // filter algorithm doesn't work
   std::sort(points_and_keys.begin(), points_and_keys.end(), [](const auto& l, const auto& r) {
     return l.morton_index.get() < r.morton_index.get();
   });
 
   MortonIndex<Levels> root_key;
-  const auto partition_point_at_l0 = filter_points_for_octree_node(points_and_keys.begin(),
-                                                                   points_and_keys.end(),
-                                                                   root_key,
-                                                                   0,
-                                                                   bounds,
-                                                                   SideLength,
-                                                                   sampling_strategy);
+  const auto partition_point_at_l0 =
+    filter_points_for_octree_node(points_and_keys.begin(),
+                                  points_and_keys.end(),
+                                  root_key,
+                                  0,
+                                  bounds,
+                                  SideLength,
+                                  SamplingBehaviour::TakeAllWhenCountBelowMaxPoints,
+                                  sampling_strategy);
 
   // All taken points have to be sorted still
   const auto taken_points_first_non_sorted_iter = std::adjacent_find(
@@ -360,8 +302,8 @@ TEST_CASE("Octree point filtering is stable", "[filter_points_for_octree_node]")
 TEST_CASE("Partitioning points at root level into child octants works correctly",
           "[partition_points_into_child_octants]")
 {
-  // Use a lot of levels so that we can test the 'parent_node_level' parameter of
-  // 'partition_points_into_child_octants'
+  // Use a lot of levels so that we can test the 'parent_node_level' parameter
+  // of 'partition_points_into_child_octants'
   constexpr uint32_t Levels = 10;
 
   std::vector<V3> positions = {
@@ -391,35 +333,37 @@ TEST_CASE("Partitioning points at root level into child octants works correctly"
   }
 
   using Iter = std::vector<IndexedPoint<Levels>>::iterator;
-  std::array<std::pair<Iter, Iter>, 8> expected_ranges = {
-    std::pair<Iter, Iter>{ indexed_points.begin(), indexed_points.begin() + 1 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 1, indexed_points.begin() + 2 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 2, indexed_points.begin() + 3 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 3, indexed_points.begin() + 4 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 4, indexed_points.begin() + 5 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 5, indexed_points.begin() + 6 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 6, indexed_points.begin() + 7 },
-    std::pair<Iter, Iter>{ indexed_points.begin() + 7, indexed_points.end() }
+  std::array<util::Range<Iter>, 8> expected_ranges = {
+    util::Range<Iter>{ indexed_points.begin(), indexed_points.begin() + 1 },
+    util::Range<Iter>{ indexed_points.begin() + 1, indexed_points.begin() + 2 },
+    util::Range<Iter>{ indexed_points.begin() + 2, indexed_points.begin() + 3 },
+    util::Range<Iter>{ indexed_points.begin() + 3, indexed_points.begin() + 4 },
+    util::Range<Iter>{ indexed_points.begin() + 4, indexed_points.begin() + 5 },
+    util::Range<Iter>{ indexed_points.begin() + 5, indexed_points.begin() + 6 },
+    util::Range<Iter>{ indexed_points.begin() + 6, indexed_points.begin() + 7 },
+    util::Range<Iter>{ indexed_points.begin() + 7, indexed_points.end() }
   };
 
   const auto actual_ranges =
     partition_points_into_child_octants(indexed_points.begin(), indexed_points.end(), 0);
 
   for (size_t idx = 0; idx < 8; ++idx) {
-    REQUIRE(actual_ranges[idx] == expected_ranges[idx]);
+    REQUIRE(actual_ranges[idx].begin() == expected_ranges[idx].begin());
+    REQUIRE(actual_ranges[idx].end() == expected_ranges[idx].end());
   }
 }
 
 TEST_CASE("Partitioning points at non-root level into child octants works correctly",
           "[partition_points_into_child_octants]")
 {
-  // Use multiple levels so that we can test the 'parent_node_level' parameter of
-  // 'partition_points_into_child_octants'
+  // Use multiple levels so that we can test the 'parent_node_level' parameter
+  // of 'partition_points_into_child_octants'
   constexpr uint32_t Levels = 5;
 
   AABB bounds{ V3{ 0, 0, 0 }, V3{ 32, 32, 32 } };
 
-  // Define octant indices first, generate positions from that and then check the partitioning
+  // Define octant indices first, generate positions from that and then check
+  // the partitioning
   std::vector<std::array<uint8_t, Levels>> octant_indices = {
     { 3, 4, 5, 2, 0 }, { 3, 4, 5, 2, 0 }, { 3, 4, 5, 2, 3 },
     { 3, 4, 5, 2, 5 }, { 3, 4, 5, 2, 5 }, { 3, 4, 5, 2, 6 }
@@ -445,8 +389,9 @@ TEST_CASE("Partitioning points at non-root level into child octants works correc
     indexed_points.push_back(IndexedPoint<Levels>{ *(points.begin() + idx), octree_indices[idx] });
   }
 
-  // The expected ranges are: [0;2) - (2,2) - (2,2) - [2,3) - (3,3) - [3,5) - [5,6) - (6,6)
-  // We only store the offsets to the initial element here as this is easier to report in a test
+  // The expected ranges are: [0;2) - (2,2) - (2,2) - [2,3) - (3,3) - [3,5) -
+  // [5,6) - (6,6) We only store the offsets to the initial element here as this
+  // is easier to report in a test
   std::array<std::pair<int, int>, 8> expected_ranges = {
     std::pair<int, int>{ 0, 2 }, std::pair<int, int>{ 2, 2 }, std::pair<int, int>{ 2, 2 },
     std::pair<int, int>{ 2, 3 }, std::pair<int, int>{ 3, 3 }, std::pair<int, int>{ 3, 5 },
@@ -458,8 +403,8 @@ TEST_CASE("Partitioning points at non-root level into child octants works correc
 
   for (size_t idx = 0; idx < 8; ++idx) {
     const auto& cur_range = actual_ranges[idx];
-    const auto actual_start_offset = std::distance(indexed_points.begin(), cur_range.first);
-    const auto actual_end_offset = std::distance(indexed_points.begin(), cur_range.second);
+    const auto actual_start_offset = std::distance(indexed_points.begin(), cur_range.begin());
+    const auto actual_end_offset = std::distance(indexed_points.begin(), cur_range.end());
     REQUIRE(actual_start_offset == expected_ranges[idx].first);
     REQUIRE(actual_end_offset == expected_ranges[idx].second);
   }
@@ -497,9 +442,9 @@ TEST_CASE("Getting octant bounds from AABB works correctly", "[get_octant_bounds
   REQUIRE(bounds_octant7 == expected_bounds_octant7);
 }
 
-TEST_CASE(
-  "Partitioning points into child octants ensures points are still contained in child bounds",
-  "[partition_points_into_child_octants]")
+TEST_CASE("Partitioning points into child octants ensures points are still "
+          "contained in child bounds",
+          "[partition_points_into_child_octants]")
 {
   constexpr uint32_t Levels = 10;
   constexpr size_t NumPoints = 1024;
@@ -548,9 +493,9 @@ TEST_CASE(
     const auto& child_range = partitioned_points_at_l0[idx];
     const auto& cur_bounds = child_bounds[idx];
 
-    std::for_each(child_range.first, child_range.second, [&](const auto& indexed_point) {
+    for (const auto& indexed_point : child_range) {
       REQUIRE(cur_bounds.isInside(indexed_point.point_reference.position()));
-    });
+    }
   }
 }
 

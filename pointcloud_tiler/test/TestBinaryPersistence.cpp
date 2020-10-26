@@ -2,8 +2,8 @@
 
 #include "io/BinaryPersistence.h"
 #include "math/AABB.h"
-#include "octree/OctreeAlgorithms.h"
 #include "pointcloud/PointAttributes.h"
+#include "tiling/OctreeAlgorithms.h"
 
 #include <random>
 #include <string>
@@ -53,7 +53,7 @@ TEST_CASE("BinaryPersistence for points is lossless")
   const auto root_folder = "."s;
   PointAttributes attributes;
   attributes.insert(PointAttribute::Position);
-  BinaryPersistence persistence{ root_folder, attributes, Compressed::No };
+  BinaryPersistence persistence{ root_folder, attributes, attributes, Compressed::No };
 
   AABB bounds{ { 0, 0, 0 }, { 1, 1, 1 } };
 
@@ -79,10 +79,11 @@ TEST_CASE("BinaryPersistence for points is lossless")
   // immediately retrieve them. Compare the retrieved points to the initial
   // points for equality
   for (auto& octant_range : octant_partitions) {
-    const auto points_begin = octant_range.first;
-    const auto points_end = octant_range.second;
-    if (std::distance(points_begin, points_end) == 0)
+    if (octant_range.size() == 0)
       continue;
+
+    const auto points_begin = std::begin(octant_range);
+    const auto points_end = std::end(octant_range);
 
     const auto node_name = "_persistence_test_"s;
     const auto node_bounds = get_bounds_from_morton_index(points_begin->morton_index, bounds, 0);

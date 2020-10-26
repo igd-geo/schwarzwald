@@ -6,7 +6,8 @@
 #include "pointcloud/PointAttributes.h"
 #include "util/Definitions.h"
 
-struct ConverterArguments {
+struct ConverterArguments
+{
   std::string source_folder;
   std::string output_folder;
   OutputFormat output_format;
@@ -19,4 +20,5 @@ struct ConverterArguments {
 /**
  * Run conversion process
  */
-void run_conversion(const ConverterArguments &args);
+void
+run_conversion(const ConverterArguments& args);

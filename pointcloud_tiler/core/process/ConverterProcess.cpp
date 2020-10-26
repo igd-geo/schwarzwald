@@ -1,14 +1,13 @@
 #include "process/ConverterProcess.h"
 
+#include "datastructures/DynamicMortonIndex.h"
 #include "io/Cesium3DTilesPersistence.h"
-#include "io/LASPointReader.h"
 #include "io/PNTSWriter.h"
 #include "io/PointsPersistence.h"
 #include "io/TileSetWriter.h"
 #include "math/AABB.h"
-#include "octree/DynamicMortonIndex.h"
-#include "octree/OctreeAlgorithms.h"
 #include "pointcloud/Tileset.h"
+#include "tiling/OctreeAlgorithms.h"
 #include "util/Transformation.h"
 #include "util/stuff.h"
 #include <terminal/TerminalUI.h>
@@ -242,25 +241,27 @@ get_persistence_for_file(const fs::path& file_path,
 {
   const auto extension = file_path.extension();
 
+  // TODO Support for schema conversions in the ConverterProcess
+
   if (extension == ".bin") {
     return std::make_optional<PointsPersistence>(
-      BinaryPersistence{ source_folder, attributes, Compressed::No });
+      BinaryPersistence{ source_folder, attributes, attributes, Compressed::No });
   }
   if (extension == ".binz") {
     return std::make_optional<PointsPersistence>(
-      BinaryPersistence{ source_folder, attributes, Compressed::Yes });
+      BinaryPersistence{ source_folder, attributes, attributes, Compressed::Yes });
   }
   if (extension == ".las") {
     return std::make_optional<PointsPersistence>(
-      LASPersistence{ source_folder, attributes, Compressed::No });
+      LASPersistence{ source_folder, attributes, attributes, Compressed::No });
   }
   if (extension == ".laz") {
     return std::make_optional<PointsPersistence>(
-      LASPersistence{ source_folder, attributes, Compressed::Yes });
+      LASPersistence{ source_folder, attributes, attributes, Compressed::Yes });
   }
   if (extension == ".pnts") {
-    return std::make_optional<PointsPersistence>(
-      Cesium3DTilesPersistence{ source_folder, attributes, spacing_at_root, {} });
+    return std::make_optional<PointsPersistence>(Cesium3DTilesPersistence{
+      source_folder, attributes, attributes, RGBMapping::None, spacing_at_root, {} });
   }
 
   return std::nullopt;
@@ -433,9 +434,6 @@ create_tileset_for_interior_node(const OctreeNode& node,
   tileset.boundingVolume = boundingVolumeFromAABB(node.bounds, transformation);
   tileset.content_url = node.name + ".pnts";
 
-  // TODO create child tilesets and add here. Do this up to the maximum level of
-  // the subtree; for this we need a root-level parameter passed into this
-  // function!
   for (auto& child_node : node.children) {
     if (!child_node)
       continue;
@@ -508,7 +506,7 @@ convert_to_pnts_file(const std::string& source_folder,
   }
 
   const auto out_file_name = get_pnts_file_path(input_file, output_folder);
-  PNTSWriter writer{ out_file_name, attributes };
+  PNTSWriter writer{ out_file_name, attributes, RGBMapping::None };
 
   const auto node_name = input_file.filename().stem().string();
 
@@ -555,7 +553,7 @@ convert_to_las_file(const std::string& source_folder,
     return;
   }
 
-  LASPersistence las_persistence{ output_folder, attributes, compressed };
+  LASPersistence las_persistence{ output_folder, attributes, attributes, compressed };
 
   const auto node_name = input_file.filename().stem().string();
 

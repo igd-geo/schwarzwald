@@ -5,7 +5,8 @@
 #include <optional>
 #include <stdint.h>
 
-struct PNTSHeader {
+struct PNTSHeader
+{
   uint8_t magic[4];
   uint32_t version;
   uint32_t byteLength;
@@ -15,7 +16,8 @@ struct PNTSHeader {
   uint32_t batchTableBinaryByteLength;
 };
 
-struct PNTSFile {
+struct PNTSFile
+{
   PNTSHeader header;
   Vector3<double> rtc_center;
   PointBuffer points;
@@ -24,4 +26,5 @@ struct PNTSFile {
 /// <summary>
 /// Tries to read the given .pnts file. Returns std::nullopt on failure
 /// </summary>
-std::optional<PNTSFile> readPNTSFile(const std::string &filepath);
+std::optional<PNTSFile>
+readPNTSFile(const std::string& filepath, const PointAttributes& input_attributes);

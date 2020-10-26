@@ -15,12 +15,32 @@
 enum class PointAttribute
 {
   Position,
-  RGB, // TODO This should maybe be named COLOR, but this would be a breaking
-       // change for the command line arguments
-  RGBFromIntensity,
+  RGB, // TECH_DEBT This should maybe be named COLOR, but this would be a
+       // breaking change for the command line arguments
   Intensity,
   Classification,
   Normal,
+  GPSTime,
+  EdgeOfFlightLine,
+  NumberOfReturns,
+  ReturnNumber,
+  PointSourceID,
+  ScanAngleRank,
+  ScanDirectionFlag,
+  UserData
+};
+
+/**
+ * Optional mappings from other point attributes to RGB colors
+ */
+enum class RGBMapping
+{
+  // No mapping (i.e. either use the RGB values inside the source files, or skip RGB)
+  None,
+  // Convert the intensity values to RGB colors (greyscale). Applies a linear conversion
+  FromIntensityLinear,
+  // Convert the intensity values to RGB colors (greyscale). Applies a logarithmic conversion
+  FromIntensityLogarithmic
 };
 
 namespace util {
@@ -29,10 +49,17 @@ static const std::unordered_set<std::pair<PointAttribute, std::string>, util::Pa
   POINT_ATTRIBUTE_STRING_MAPPING = {
     { PointAttribute::Position, "POSITION" },
     { PointAttribute::RGB, "RGB" },
-    { PointAttribute::RGBFromIntensity, "RGB_FROM_INTENSITY" },
     { PointAttribute::Intensity, "INTENSITY" },
     { PointAttribute::Classification, "CLASSIFICATION" },
     { PointAttribute::Normal, "NORMAL" },
+    { PointAttribute::GPSTime, "GPS_TIME" },
+    { PointAttribute::EdgeOfFlightLine, "EDGE_OF_FLIGHT_LINE" },
+    { PointAttribute::NumberOfReturns, "NUMBER_OF_RETURNS" },
+    { PointAttribute::ReturnNumber, "RETURN_NUMBER" },
+    { PointAttribute::PointSourceID, "POINT_SOURCE_ID" },
+    { PointAttribute::ScanAngleRank, "SCAN_ANGLE_RANK" },
+    { PointAttribute::ScanDirectionFlag, "SCAN_DIRECTION_FLAG" },
+    { PointAttribute::UserData, "USER_DATA" },
   };
 }
 
@@ -75,8 +102,28 @@ validate(boost::any& v, const std::vector<std::string>& values, PointAttributes*
 
 bool
 has_attribute(PointAttributes const& attributes, PointAttribute attribute_to_find);
+/**
+ * Returns true if the first set of PointAttributes is a subset of the second set of PointAttributes
+ */
+bool
+attributes_are_subset(PointAttributes const& maybe_subset, PointAttributes const& maybe_superset);
 std::string
 print_attributes(PointAttributes const& attributes);
 
 tl::expected<PointAttributes, std::string>
 point_attributes_from_strings(const std::vector<std::string>& attribute_names);
+
+/**
+ * Returns a PointAttributes object with all possible point attributes in it
+ */
+inline PointAttributes
+point_attributes_all()
+{
+  PointAttributes all;
+  all.reserve(util::POINT_ATTRIBUTE_STRING_MAPPING.size());
+  std::transform(std::begin(util::POINT_ATTRIBUTE_STRING_MAPPING),
+                 std::end(util::POINT_ATTRIBUTE_STRING_MAPPING),
+                 std::inserter(all, all.end()),
+                 [](const auto& kv) { return kv.first; });
+  return all;
+}

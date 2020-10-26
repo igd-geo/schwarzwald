@@ -19,8 +19,12 @@ struct SRSTransformHelper;
  */
 struct Cesium3DTilesPersistence
 {
+  static PointAttributes supported_output_attributes();
+
   Cesium3DTilesPersistence(const std::string& work_dir,
-                           const PointAttributes& point_attributes,
+                           const PointAttributes& input_attributes,
+                           const PointAttributes& output_attributes,
+                           RGBMapping rgb_mapping,
                            float spacing_at_root,
                            const Vector3<double>& global_offset);
   Cesium3DTilesPersistence(Cesium3DTilesPersistence&&) = default;
@@ -32,8 +36,15 @@ struct Cesium3DTilesPersistence
                       const AABB& bounds,
                       const std::string& node_name)
   {
-    PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"), _point_attributes };
-    // TODO This is not optimal, writer should be able to take iterator pair
+    if (std::distance(points_begin, points_end) == 0) {
+      throw std::runtime_error{ "persist_points requires a non-empty range" };
+    }
+
+    PNTSWriter writer{ concat(_work_dir, "/", node_name, ".pnts"),
+                       _output_attributes,
+                       _rgb_mapping };
+    // OPTIMIZATION This is not optimal, writer should be able to take iterator
+    // pair
     PointBuffer tmp_points;
     std::for_each(points_begin, points_end, [&tmp_points](const auto& point_ref) {
       tmp_points.push_point(point_ref);
@@ -47,12 +58,18 @@ struct Cesium3DTilesPersistence
 
   void retrieve_points(const std::string& node_name, PointBuffer& points);
 
+  bool node_exists(const std::string& node_name) const;
+
+  inline bool is_lossless() const { return true; }
+
 private:
   void on_write_node(const std::string& node_name, const AABB& node_bounds);
   void write_tilesets() const;
 
   std::string _work_dir;
-  const PointAttributes& _point_attributes;
+  PointAttributes _input_attributes;
+  PointAttributes _output_attributes;
+  RGBMapping _rgb_mapping;
   float _spacing_at_root;
   Vector3<double> _global_offset;
 

@@ -7,14 +7,17 @@ set(SOURCE_FILES
     TestAlgorithm.cpp
     TestBinaryPersistence.cpp
     TestChunkRange.cpp
+    TestJournal.cpp
     TestLASFile.cpp
     TestLASPersistence.cpp
     TestLRUCache.cpp
     TestMain.cpp
     TestMemoryIntrospection.cpp
+    TestMortonIndex.cpp
+    TestOctree.cpp
     TestOctreeIndexing.cpp
     TestOctreeIndexWriter.cpp
-    TestOctreeNodeKey.cpp
+    TestOctreeNodeIndex.cpp
     TestTiler.cpp
     TestUnits.cpp
     TestUtilities.cpp

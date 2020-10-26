@@ -1,6 +1,7 @@
 #include "catch.hpp"
 
 #include "io/LASFile.h"
+#include "io/LASPersistence.h"
 
 #include <boost/scope_exit.hpp>
 #include <random>
@@ -78,78 +79,6 @@ struct StringMaker<laszip_header>
 };
 }
 
-static void
-write_tmp_file(fs::path const& path, AABB const& bounds, PointBuffer const& points)
-{
-  // Handrolled LAS file writing used for verification. It would be even better to have an existing
-  // file that these tests read, but that is harder to set up
-  laszip_POINTER laswriter = nullptr;
-  REQUIRE(laszip_create(&laswriter) == 0);
-
-  laszip_header* las_header;
-  REQUIRE(laszip_get_header_pointer(laswriter, &las_header) == 0);
-
-  las_header->number_of_point_records = points.count();
-  las_header->number_of_points_by_return[0] = points.count();
-  las_header->number_of_points_by_return[1] = las_header->number_of_points_by_return[2] =
-    las_header->number_of_points_by_return[3] = las_header->number_of_points_by_return[4] = 0;
-  las_header->version_major = 1;
-  las_header->version_minor = 2;
-  std::memcpy(las_header->generating_software, "pointcloud_tiler", sizeof("pointcloud_tiler"));
-  las_header->offset_to_point_data = las_header->header_size;
-  las_header->number_of_variable_length_records = 0;
-  las_header->point_data_format = 2;
-  las_header->point_data_record_length = 26;
-
-  las_header->x_offset = bounds.min.x;
-  las_header->y_offset = bounds.min.y;
-  las_header->z_offset = bounds.min.z;
-  las_header->min_x = bounds.min.x; // - local_offset_to_world.x;
-  las_header->min_y = bounds.min.y; // - local_offset_to_world.y;
-  las_header->min_z = bounds.min.z; // - local_offset_to_world.z;
-  las_header->max_x = bounds.max.x; // - local_offset_to_world.x;
-  las_header->max_y = bounds.max.y; // - local_offset_to_world.y;
-  las_header->max_z = bounds.max.z; // - local_offset_to_world.z;
-
-  las_header->x_scale_factor = las_header->y_scale_factor = las_header->z_scale_factor = 0.001;
-
-  laszip_open_writer(laswriter, path.c_str(), false);
-
-  laszip_point* laspoint;
-  REQUIRE(laszip_get_point_pointer(laswriter, &laspoint) == 0);
-
-  for (const auto& point_ref : points) {
-    const auto pos = point_ref.position();
-    laszip_F64 coordinates[3] = { pos.x, pos.y, pos.z };
-    REQUIRE(laszip_set_coordinates(laswriter, coordinates) == 0);
-
-    const auto rgb = point_ref.rgbColor();
-    if (rgb) {
-      laspoint->rgb[0] = rgb->x;
-      laspoint->rgb[1] = rgb->y;
-      laspoint->rgb[2] = rgb->z;
-      laspoint->rgb[3] = static_cast<uint8_t>(255);
-    }
-
-    const auto intensity = point_ref.intensity();
-    if (intensity) {
-      laspoint->intensity = *intensity;
-    }
-
-    const auto classification = point_ref.classification();
-    if (classification) {
-      laspoint->classification = *classification;
-    }
-
-    REQUIRE(laszip_write_point(laswriter) == 0);
-  }
-
-  auto ec = laszip_close_writer(laswriter);
-  REQUIRE(ec == 0);
-  ec = laszip_destroy(laswriter);
-  REQUIRE(ec == 0);
-}
-
 static PointBuffer
 generate_random_points(size_t count, const AABB& bounds)
 {
@@ -164,7 +93,96 @@ generate_random_points(size_t count, const AABB& bounds)
     return { x_dist(mt), y_dist(mt), z_dist(mt) };
   });
 
-  return { count, std::move(positions) };
+  std::uniform_int_distribution<uint8_t> color_dist;
+  std::vector<Vector3<uint8_t>> colors;
+  colors.reserve(count);
+  std::generate_n(std::back_inserter(colors), count, [&]() -> Vector3<uint8_t> {
+    return { color_dist(mt), color_dist(mt), color_dist(mt) };
+  });
+
+  std::uniform_int_distribution<uint16_t> intensity_dist;
+  std::vector<uint16_t> intensities;
+  intensities.reserve(count);
+  std::generate_n(
+    std::back_inserter(intensities), count, [&]() -> uint16_t { return intensity_dist(mt); });
+
+  // The seemingly random values for the following distributions are part of the LAS specification
+  // For example, while classifications are stored in 8 bits, only 5 of those bits are used for the
+  // actual classification value, while the upper three bits store flags
+
+  std::uniform_int_distribution<uint8_t> classification_dist{ 0, 31 };
+  std::vector<uint8_t> classifications;
+  classifications.reserve(count);
+  std::generate_n(std::back_inserter(classifications), count, [&]() -> uint8_t {
+    return classification_dist(mt);
+  });
+
+  std::uniform_int_distribution<uint8_t> eof_dist{ 0, 1 };
+  std::vector<uint8_t> eof_lines;
+  eof_lines.reserve(count);
+  std::generate_n(std::back_inserter(eof_lines), count, [&]() -> uint8_t { return eof_dist(mt); });
+
+  std::uniform_real_distribution<double> gps_time_dist;
+  std::vector<double> gps_times;
+  gps_times.reserve(count);
+  std::generate_n(
+    std::back_inserter(gps_times), count, [&]() -> double { return gps_time_dist(mt); });
+
+  std::uniform_int_distribution<uint8_t> number_of_returns_dist{ 1, 5 };
+  std::vector<uint8_t> number_of_returns;
+  number_of_returns.reserve(count);
+  std::generate_n(std::back_inserter(number_of_returns), count, [&]() -> uint8_t {
+    return number_of_returns_dist(mt);
+  });
+
+  std::uniform_int_distribution<uint8_t> return_numbers_dist{ 1, 5 };
+  std::vector<uint8_t> return_numbers;
+  return_numbers.reserve(count);
+  std::generate_n(std::back_inserter(return_numbers), count, [&]() -> uint8_t {
+    return return_numbers_dist(mt);
+  });
+
+  std::uniform_int_distribution<uint16_t> point_source_ids_dist;
+  std::vector<uint16_t> point_source_ids;
+  point_source_ids.reserve(count);
+  std::generate_n(std::back_inserter(point_source_ids), count, [&]() -> uint8_t {
+    return point_source_ids_dist(mt);
+  });
+
+  std::uniform_int_distribution<int8_t> scan_angle_ranks_dist;
+  std::vector<int8_t> scan_angle_ranks;
+  scan_angle_ranks.reserve(count);
+  std::generate_n(std::back_inserter(scan_angle_ranks), count, [&]() -> uint8_t {
+    return scan_angle_ranks_dist(mt);
+  });
+
+  std::uniform_int_distribution<uint8_t> scan_direction_flags_dist{ 0, 1 };
+  std::vector<uint8_t> scan_direction_flags;
+  scan_direction_flags.reserve(count);
+  std::generate_n(std::back_inserter(scan_direction_flags), count, [&]() -> uint8_t {
+    return scan_direction_flags_dist(mt);
+  });
+
+  std::uniform_int_distribution<uint8_t> user_data_dist;
+  std::vector<uint8_t> user_data;
+  user_data.reserve(count);
+  std::generate_n(
+    std::back_inserter(user_data), count, [&]() -> uint8_t { return user_data_dist(mt); });
+
+  return { count,
+           std::move(positions),
+           std::move(colors),
+           {}, // No normals, LAS doesn't support normals
+           std::move(intensities),
+           std::move(classifications),
+           std::move(eof_lines),
+           std::move(gps_times),
+           std::move(number_of_returns),
+           std::move(return_numbers),
+           std::move(point_source_ids),
+           std::move(scan_direction_flags),
+           std::move(scan_angle_ranks),
+           std::move(user_data) };
 }
 
 static void
@@ -174,6 +192,18 @@ compare_points(const PointBuffer& source, const PointBuffer& target)
   for (size_t idx = 0; idx < source.count(); ++idx) {
     const auto distance = source.positions()[idx].distanceTo(target.positions()[idx]);
     REQUIRE(distance <= 0.001);
+
+    REQUIRE(source.rgbColors()[idx] == target.rgbColors()[idx]);
+    REQUIRE(source.intensities()[idx] == target.intensities()[idx]);
+    REQUIRE(source.classifications()[idx] == target.classifications()[idx]);
+    REQUIRE(source.edge_of_flight_lines()[idx] == target.edge_of_flight_lines()[idx]);
+    REQUIRE(source.gps_times()[idx] == target.gps_times()[idx]);
+    REQUIRE(source.number_of_returns()[idx] == target.number_of_returns()[idx]);
+    REQUIRE(source.return_numbers()[idx] == target.return_numbers()[idx]);
+    REQUIRE(source.point_source_ids()[idx] == target.point_source_ids()[idx]);
+    REQUIRE(source.scan_angle_ranks()[idx] == target.scan_angle_ranks()[idx]);
+    REQUIRE(source.scan_direction_flags()[idx] == target.scan_direction_flags()[idx]);
+    REQUIRE(source.user_data()[idx] == target.user_data()[idx]);
   }
 }
 
@@ -190,8 +220,24 @@ SCENARIO("LASFile in read-mode")
   const auto expected_points = generate_random_points(count, bounds);
   PointAttributes attributes;
   attributes.insert(PointAttribute::Position);
+  attributes.insert(PointAttribute::RGB);
+  attributes.insert(PointAttribute::Intensity);
+  attributes.insert(PointAttribute::Classification);
+  attributes.insert(PointAttribute::EdgeOfFlightLine);
+  attributes.insert(PointAttribute::GPSTime);
+  attributes.insert(PointAttribute::NumberOfReturns);
+  attributes.insert(PointAttribute::ReturnNumber);
+  attributes.insert(PointAttribute::PointSourceID);
+  attributes.insert(PointAttribute::ScanAngleRank);
+  attributes.insert(PointAttribute::ScanDirectionFlag);
+  attributes.insert(PointAttribute::UserData);
+
   fs::path file_path = "./tmp_testlasfile.las";
-  write_tmp_file(file_path, bounds, expected_points);
+  LASPersistence las_persistence{ ".", attributes, attributes };
+  las_persistence.persist_points(expected_points, bounds, "tmp_testlasfile");
+
+  BOOST_SCOPE_EXIT(&file_path) { fs::remove(file_path); }
+  BOOST_SCOPE_EXIT_END
 
   WHEN("The file is opened in read-mode")
   {
@@ -224,8 +270,6 @@ SCENARIO("LASFile in read-mode")
       }
     }
   }
-
-  fs::remove(file_path);
 }
 
 SCENARIO("LASFile in write-mode")
@@ -235,6 +279,18 @@ SCENARIO("LASFile in write-mode")
   const auto expected_points = generate_random_points(count, bounds);
   PointAttributes attributes;
   attributes.insert(PointAttribute::Position);
+  attributes.insert(PointAttribute::RGB);
+  attributes.insert(PointAttribute::Intensity);
+  attributes.insert(PointAttribute::Classification);
+  attributes.insert(PointAttribute::EdgeOfFlightLine);
+  attributes.insert(PointAttribute::GPSTime);
+  attributes.insert(PointAttribute::NumberOfReturns);
+  attributes.insert(PointAttribute::ReturnNumber);
+  attributes.insert(PointAttribute::PointSourceID);
+  attributes.insert(PointAttribute::ScanAngleRank);
+  attributes.insert(PointAttribute::ScanDirectionFlag);
+  attributes.insert(PointAttribute::UserData);
+
   fs::path file_path = "./tmp_testlasfile.las";
 
   GIVEN("A LASFile opened in write-mode")
@@ -259,8 +315,8 @@ SCENARIO("LASFile in write-mode")
 
       meta.offset_to_point_data = meta.header_size;
       meta.number_of_variable_length_records = 0;
-      meta.point_data_format = 2;
-      meta.point_data_record_length = 26;
+      meta.point_data_format = 3;
+      meta.point_data_record_length = 34;
       file.set_metadata(meta);
 
       THEN("Correct metadata can be retrieved from the file")
@@ -274,6 +330,7 @@ SCENARIO("LASFile in write-mode")
       // We can only write points if the header has the corresponding point count set
       WHEN("Points are written using output iterator")
       {
+
         auto out_iter = std::begin(file);
         for (auto point : expected_points) {
           laszip_point las_point = {};
@@ -283,6 +340,22 @@ SCENARIO("LASFile in write-mode")
             std::round((point.position().y - bounds.min.y) / meta.y_scale_factor));
           las_point.Z = static_cast<laszip_I32>(
             std::round((point.position().z - bounds.min.z) / meta.z_scale_factor));
+
+          las_point.rgb[0] = point.rgbColor()->x << 8;
+          las_point.rgb[1] = point.rgbColor()->y << 8;
+          las_point.rgb[2] = point.rgbColor()->z << 8;
+
+          las_point.intensity = *point.intensity();
+          las_point.classification = *point.classification();
+          las_point.edge_of_flight_line = *point.edge_of_flight_line();
+          las_point.gps_time = *point.gps_time();
+          las_point.number_of_returns = *point.number_of_returns();
+          las_point.return_number = *point.return_number();
+          las_point.point_source_ID = *point.point_source_id();
+          las_point.scan_angle_rank = *point.scan_angle_rank();
+          las_point.scan_direction_flag = *point.scan_direction_flag();
+          las_point.user_data = *point.user_data();
+
           out_iter = las_point;
         }
         file.close();
@@ -294,6 +367,20 @@ SCENARIO("LASFile in write-mode")
           PointBuffer actual_points;
           pc::read_points(begin, count, pc::metadata(file), attributes, actual_points);
           compare_points(expected_points, actual_points);
+        }
+
+        THEN("Reading points manually using LASInputIterator also works")
+        {
+          const auto& const_file = file;
+          auto expected_point_iter = std::begin(expected_points);
+          for (auto point : const_file) {
+            auto expected_point = *expected_point_iter++;
+            const auto pos = position_from_las_point(point, meta);
+            const auto distance = pos.distanceTo(expected_point.position());
+            REQUIRE(distance <= 0.001);
+          }
+
+          REQUIRE(expected_point_iter == std::end(expected_points));
         }
       }
     }

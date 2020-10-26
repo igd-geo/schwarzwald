@@ -11,10 +11,11 @@
 #include "Tiler.h"
 #include "io/BinaryPersistence.h"
 #include "io/Cesium3DTilesPersistence.h"
+#include "io/EntwinePersistence.h"
 #include "io/LASFile.h"
 #include "io/LASPersistence.h"
-#include "io/LASPointReader.h"
 #include "point_source/PointSource.h"
+#include "util/Config.h"
 #include "util/Stats.h"
 #include "util/Transformation.h"
 #include "util/stuff.h"
@@ -50,6 +51,16 @@ prepare_output_directory(const std::string& output_directory)
     // TODO We could add a progress bar here!
     util::write_log("Output directory not empty, removing existing files\n");
     for (auto& entry : fs::directory_iterator{ output_directory }) {
+      // A bit hacky, but we have to make sure that we don't delete the journal output folder
+      if (global_config().is_journaling_enabled && entry == global_config().journal_directory) {
+        // Remove only the contents of the journal output folder, so that we can run the tool
+        // multiple times with the same output folder and don't get leave garbage
+        for (auto& journal_entry : fs::directory_iterator{ entry }) {
+          fs::remove_all(journal_entry);
+        }
+        continue;
+      }
+
       fs::remove_all(entry);
     }
   } else {
@@ -166,11 +177,6 @@ check_if_file_format_is_supported(const fs::path& file, util::IgnoreErrors error
   if (errors_to_ignore & util::IgnoreErrors::UnsupportedFileFormat) {
     std::cout << "Ignoring file " << file.string() << " because its file format ("
               << file.extension().string() << ") is not supported!\n";
-    // util::write_log(
-    //     (boost::format(
-    //          "Ignoring file %1% because its file format is not supported!") %
-    //      file.filename())
-    //         .str());
     return false;
   }
 
@@ -223,12 +229,9 @@ TilerProcess::prepare()
 
   _args.sources = std::move(filtered_source_files);
 
-  // Position attribute is ALWAYS included
-  if (!has_attribute(_args.output_attributes, PointAttribute::Position)) {
-    _args.output_attributes.insert(PointAttribute::Position);
-  }
+  determine_input_and_output_attributes();
 
-  const auto attributesDescription = print_attributes(_args.output_attributes);
+  const auto attributesDescription = print_attributes(_output_attributes);
   util::write_log(concat("Writing the following point attributes: ", attributesDescription, "\n"));
 
   prepare_output_directory(_args.output_directory);
@@ -243,69 +246,170 @@ TilerProcess::cleanUp()
   }
 }
 
-AABB
-TilerProcess::calculateAABB(SRSTransformHelper const* srs_transform)
+void
+TilerProcess::determine_input_and_output_attributes()
 {
-  AABB aabb;
+  auto input_attributes = point_attributes_all();
+
   for (const auto& source : _args.sources) {
     open_point_file(source)
-      .map([&aabb, srs_transform](const PointFile& point_file) {
+      .map([&input_attributes](const PointFile& point_file) {
+        // Remove all attributes from 'attributes' that are NOT in the current
+        // point file
+        for (auto it = std::begin(input_attributes); it != std::end(input_attributes); ++it) {
+          if (pc::has_attribute(point_file, *it))
+            continue;
+          it = input_attributes.erase(it);
+        }
+      })
+      .or_else([this, source](const auto& err) {
+        if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
+          util::write_log((boost::format("warning: Ignoring file %1% while determining point "
+                                         "attributes\ncaused by: %2%\n") %
+source.string() % err.what())
+                            .str());
+          return;
+        }
+
+                                                 throw util::chain_error(err, "Determining the point attributes failed");
+      });
+  }
+
+
+  _input_attributes = std::move(input_attributes);
+
+  // Output attributes are dependent on the attributes that the desired output
+  // format supports, and on whether or not one of the input attributes should
+  // be converted to RGB
+  auto output_attributes = _input_attributes;
+  // TODO 3D Tiles is the only format supporting RGB remapping at the moment
+  if (_args.output_format == OutputFormat::CZM_3DTILES) {
+    switch (_args.rgb_mapping) {
+      case RGBMapping::FromIntensityLinear:
+      case RGBMapping::FromIntensityLogarithmic:
+        output_attributes.insert(PointAttribute::RGB);
+        break;
+      default:
+        break;
+    }
+  }
+
+  const auto supported_output_attributes =
+    supported_output_attributes_for_format(_args.output_format);
+  PointAttributes supported_attributes, unsupported_attributes;
+  std::for_each(std::begin(output_attributes),
+                std::end(output_attributes),
+                [&supported_output_attributes, &supported_attributes, &unsupported_attributes](
+                  PointAttribute attribute) {
+                  const auto is_supported = supported_output_attributes.find(attribute) !=
+                                            std::end(supported_output_attributes);
+                  if (is_supported) {
+                    supported_attributes.insert(attribute);
+                  } else {
+                    unsupported_attributes.insert(attribute);
+                  }
+                });
+
+  if (!unsupported_attributes.empty()) {
+    const auto format_name = util::to_string(_args.output_format);
+    util::write_log((boost::format("warning: Not all point attributes in the input files are "
+                                   "supported when using output "
+                                   "format %1%. Input files have attributes %2%, %3% only "
+                                   "supports attributes %4%, so "
+                                   "attributes %5% will be ignored!\n") %
+                     format_name % print_attributes(_input_attributes) % format_name %
+                     print_attributes(supported_output_attributes) %
+                     print_attributes(unsupported_attributes))
+                      .str());
+
+    // Remove unsupported attributes from _input_attributes
+    for (auto unsupported_attribute : unsupported_attributes) {
+      _input_attributes.erase(unsupported_attribute);
+    }
+  }
+
+  _output_attributes = std::move(supported_attributes);
+}
+
+
+DatasetMetadata
+TilerProcess::calculate_dataset_metadata(const SRSTransformHelper* srs_transform)
+{
+  DatasetMetadata dataset_metadata;
+
+  for (const auto& source : _args.sources) {
+    open_point_file(source)
+      .map([&dataset_metadata, srs_transform, &source](const PointFile& point_file) {
         auto bounds = pc::get_bounds(point_file);
+        auto point_count = pc::get_point_count(point_file);
 
         if (srs_transform) {
           srs_transform->transformAABBsTo(TargetSRS::CesiumWorld, gsl::make_span(&bounds, 1));
         }
 
-        aabb.update(bounds.min);
-        aabb.update(bounds.max);
+        dataset_metadata.add_file_metadata(source, point_count, bounds);
       })
       .or_else([this, source](const auto& err) {
-        const auto error_flags =
-          (util::IgnoreErrors::CorruptedFiles | util::IgnoreErrors::InaccessibleFiles);
-        if (_args.errors_to_ignore & error_flags) {
-          util::write_log((boost::format("warning: Ignoring file %1% in bounding box "
-                                         "calculation\ncaused by: %2%\n") %
-                           source.string() % err.what())
-                            .str());
+        if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
+          util::write_log(
+            (boost::format(
+               "warning: Ignoring file %1% while calculating dataset metadata\ncaused by: %2%\n") %
+             source.string() % err.what())
+              .str());
           return;
         }
 
-        throw util::chain_error(err, "Calculating the point cloud bounding box failed");
+        throw util::chain_error(err, "Calculating dataset metadata failed");
       });
   }
 
-  return aabb;
+  return dataset_metadata;
 }
 
-size_t
-TilerProcess::get_total_points_count() const
+std::variant<FixedThreadCount, AdaptiveThreadCount>
+TilerProcess::calculate_actual_thread_counts(const DatasetMetadata& dataset_metadata) const
 {
-  size_t total_count = 0;
-  for (auto& source : _args.sources) {
-    open_point_file(source)
-      .map([&total_count](const PointFile& point_file) {
-        total_count += pc::get_point_count(point_file);
-      })
-      .or_else([this, source](const auto& err) {
-        const auto error_flags =
-          (util::IgnoreErrors::CorruptedFiles | util::IgnoreErrors::InaccessibleFiles);
-        if (_args.errors_to_ignore & error_flags) {
-          util::write_log((boost::format("warning: Ignoring file %1% while counting "
-                                         "total number of points\n\tcaused by: %2%\n") %
-                           source.string() % err.what())
-                            .str());
-          return;
-        }
-
-        throw util::chain_error(err, "Calculating the total number of points failed");
-      });
+  if (std::holds_alternative<AdaptiveThreadCount>(_args.thread_config)) {
+    return _args.thread_config;
   }
-  return total_count;
+
+  const auto& fixed_thread_config_before_adjustment =
+    std::get<FixedThreadCount>(_args.thread_config);
+
+  FixedThreadCount fixed_thread_count;
+  fixed_thread_count.num_threads_for_reading =
+    fixed_thread_config_before_adjustment.num_threads_for_reading;
+  fixed_thread_count.num_threads_for_indexing =
+    fixed_thread_config_before_adjustment.num_threads_for_indexing;
+
+  // We can never have more reading threads than we have files! If we have less files than the
+  // requested number of reading threads, we move the excess reading threads over to indexing
+  const auto num_files = gsl::narrow<uint32_t>(dataset_metadata.get_all_files_metadata().size());
+  if (num_files < fixed_thread_config_before_adjustment.num_threads_for_reading) {
+    const auto diff = fixed_thread_config_before_adjustment.num_threads_for_reading - num_files;
+    fixed_thread_count.num_threads_for_reading = num_files;
+    fixed_thread_count.num_threads_for_indexing += diff;
+
+    std::cout << "Requested " << fixed_thread_config_before_adjustment.num_threads_for_reading
+              << " threads for reading points but there are only " << num_files
+              << " files to read from. Using " << fixed_thread_count.num_threads_for_reading
+              << " threads for reading and " << fixed_thread_count.num_threads_for_indexing
+              << " threads for indexing instead!\n";
+  } else {
+    std::cout << "Using " << fixed_thread_count.num_threads_for_reading << " threads for reading\n";
+    std::cout << "Using " << fixed_thread_count.num_threads_for_indexing
+              << " threads for indexing\n";
+  }
+
+  return { fixed_thread_count };
 }
 
 void
 TilerProcess::check_for_missing_point_attributes(const PointAttributes& required_attributes) const
 {
+  // TODO Rework this method once the attribute rework is done and we support
+  // custom schemas
+
   for (auto& source : _args.sources) {
     open_point_file(source)
       .map([this, &source, &required_attributes](const PointFile& point_file) {
@@ -332,9 +436,7 @@ TilerProcess::check_for_missing_point_attributes(const PointAttributes& required
                                     .str() };
       })
       .or_else([this, source](const auto& err) {
-        const auto error_flags =
-          (util::IgnoreErrors::CorruptedFiles | util::IgnoreErrors::InaccessibleFiles);
-        if (_args.errors_to_ignore & error_flags) {
+        if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
           util::write_log((boost::format("warning: Ignoring file %1% while checking for missing "
                                          "attributes in source files\n\tcaused by: %2%\n") %
                            source.string() % err.what())
@@ -348,22 +450,83 @@ TilerProcess::check_for_missing_point_attributes(const PointAttributes& required
   }
 }
 
+SamplingStrategy
+TilerProcess::make_sampling_strategy() const
+{
+  if (_args.sampling_strategy == "RANDOM_GRID")
+    return RandomSortedGridSampling{ _args.max_points_per_node };
+  if (_args.sampling_strategy == "GRID_CENTER")
+    return GridCenterSampling{ _args.max_points_per_node };
+  if (_args.sampling_strategy == "MIN_DISTANCE")
+    return PoissonDiskSampling{ _args.max_points_per_node };
+  if (_args.sampling_strategy == "MIN_DISTANCE_FAST")
+    return AdaptivePoissonDiskSampling{ _args.max_points_per_node, [](int32_t node_level) -> float {
+                                         if (node_level < 0)
+                                           return 0.25f;
+                                         if (node_level < 1)
+                                           return 0.5f;
+                                         return 1.f;
+                                       } };
+  throw std::invalid_argument{
+    (boost::format("Unrecognized sampling strategy %1%") % _args.sampling_strategy).str()
+  };
+}
+
+Tiler
+TilerProcess::make_tiler(bool shift_points_to_center,
+                         uint32_t max_depth,
+                         std::variant<FixedThreadCount, AdaptiveThreadCount> thread_count,
+                         SRSTransformHelper const* srs_transform,
+                         DatasetMetadata dataset_metadata,
+                         SamplingStrategy sampling_strategy,
+                         ProgressReporter* progress_reporter,
+                         PointsPersistence& persistence) const
+{
+  TilerMetaParameters tiler_meta_parameters;
+  tiler_meta_parameters.spacing_at_root = _args.spacing;
+  tiler_meta_parameters.max_depth = max_depth;
+  tiler_meta_parameters.max_points_per_node = _args.max_points_per_node;
+  tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
+  tiler_meta_parameters.tiling_strategy = _args.tiling_strategy;
+  tiler_meta_parameters.batch_read_size = _args.max_batch_read_size;
+  tiler_meta_parameters.shift_points_to_origin = shift_points_to_center;
+  tiler_meta_parameters.thread_count = thread_count;
+
+  MultiReaderPointSource point_source{ _args.sources, _args.errors_to_ignore };
+  point_source.add_transformation(
+    [this,
+     srs_transform,
+     cubic_bounds = dataset_metadata.total_bounds_cubic(),
+     shift_points_to_center](util::Range<PointBuffer::PointIterator> points) {
+      srs_transform->transformPointsTo(TargetSRS::CesiumWorld, points);
+
+      // 3D Tiles is not strictly lossless as it stores 32-bit floating point
+      // values instead of 64-bit. We shift all points to the center of the
+      // bounding box of the full point-cloud and truncate the values to
+      // 32-bit to get the maximum precision while at the same time
+      // guaranteeing lossless persistence
+      if (shift_points_to_center) {
+        for (auto point_ref : points) {
+          auto& position = point_ref.position();
+          position -= cubic_bounds.getCenter();
+          position.x = static_cast<float>(position.x);
+          position.y = static_cast<float>(position.y);
+          position.z = static_cast<float>(position.z);
+        }
+      }
+    });
+
+  return { std::move(dataset_metadata), tiler_meta_parameters,   sampling_strategy,
+           progress_reporter,           std::move(point_source), persistence,
+           _input_attributes,           _args.output_directory };
+}
+
 void
 TilerProcess::run()
 {
   const auto prepare_start = std::chrono::high_resolution_clock::now();
 
   prepare();
-
-  check_for_missing_point_attributes(_args.output_attributes);
-
-  const auto total_points_count = get_total_points_count();
-
-  if (!total_points_count) {
-    throw std::runtime_error{ "Found no points to process" };
-  }
-
-  util::write_log(concat("Total points: ", total_points_count, "\n"));
 
   std::unique_ptr<SRSTransformHelper> srs_transform;
   if (_args.source_projection) {
@@ -372,77 +535,57 @@ TilerProcess::run()
     srs_transform = std::make_unique<IdentityTransform>();
   }
 
-  AABB aabb = calculateAABB(srs_transform.get());
-  util::write_log(concat("Bounds:\n", aabb, "\n"));
-  aabb.makeCubic();
-  util::write_log(concat("Bounds (cubic):\n", aabb, "\n"));
+  auto dataset_metadata = calculate_dataset_metadata(srs_transform.get());
+
+  const auto total_points_count = dataset_metadata.total_points_count();
+  const auto cubic_bounds = dataset_metadata.total_bounds_cubic();
+  if (!total_points_count) {
+    throw std::runtime_error{ "Found no points to process" };
+  }
+
+  util::write_log(concat("Total points: ", total_points_count, "\n"));
+
+  util::write_log(concat("Bounds:\n", dataset_metadata.total_bounds_tight(), "\n"));
+  util::write_log(concat("Bounds (cubic):\n", dataset_metadata.total_bounds_cubic(), "\n"));
 
   if (_args.diagonal_fraction != 0) {
-    _args.spacing = (float)(aabb.extent().length() / _args.diagonal_fraction);
+    _args.spacing =
+      (float)(dataset_metadata.total_bounds_cubic().extent().length() / _args.diagonal_fraction);
     util::write_log(concat("Spacing calculated from diagonal: ", _args.spacing, "\n"));
   }
 
-  const auto local_bounds = AABB{ aabb.min - aabb.getCenter(), aabb.max - aabb.getCenter() };
+  auto thread_counts = calculate_actual_thread_counts(dataset_metadata);
 
   auto& progress_reporter = _ui_state.get_progress_reporter();
   progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
   progress_reporter.register_progress_counter<size_t>(progress::INDEXING, total_points_count);
 
-  auto persistence = [&]() -> PointsPersistence {
-    switch (_args.output_format) {
-      case OutputFormat::BIN:
-        return PointsPersistence{ BinaryPersistence{ _args.output_directory,
-                                                     _args.output_attributes,
-                                                     _args.use_compression ? Compressed::Yes
-                                                                           : Compressed::No } };
-      case OutputFormat::CZM_3DTILES:
-        return PointsPersistence{ Cesium3DTilesPersistence{
-          _args.output_directory, _args.output_attributes, _args.spacing, aabb.getCenter() } };
-      default:
-        throw std::invalid_argument{ "Unrecognized output format!" };
-    }
-  }();
+  auto persistence = make_persistence(_args.output_format,
+                                      _args.output_directory,
+                                      _input_attributes,
+                                      _output_attributes,
+                                      _args.rgb_mapping,
+                                      _args.spacing,
+                                      dataset_metadata.total_bounds_cubic());
+  const auto shift_points_to_center = (_args.output_format == OutputFormat::CZM_3DTILES);
 
-  const auto max_depth =
+const auto max_depth =
     (_args.max_depth <= 0)
       ? (100u)
       : static_cast<uint32_t>(_args.max_depth); // TODO max_depth parameter with uint32_t max
                                                 // results in only root level being created...
 
   util::write_log(concat("Using ", _args.sampling_strategy, " sampling\n"));
-  auto sampling_strategy = [&]() -> SamplingStrategy {
-    if (_args.sampling_strategy == "RANDOM_GRID")
-      return RandomSortedGridSampling{ _args.max_points_per_node };
-    if (_args.sampling_strategy == "GRID_CENTER")
-      return GridCenterSampling{ _args.max_points_per_node };
-    if (_args.sampling_strategy == "MIN_DISTANCE")
-      return PoissonDiskSampling{ _args.max_points_per_node };
-    if (_args.sampling_strategy == "MIN_DISTANCE_FAST")
-      return AdaptivePoissonDiskSampling{ _args.max_points_per_node,
-                                          [](int32_t node_level) -> float {
-                                            if (node_level < 0)
-                                              return 0.25f;
-                                            if (node_level < 1)
-                                              return 0.5f;
-                                            return 1.f;
-                                          } };
-    throw std::invalid_argument{
-      (boost::format("Unrecognized sampling strategy %1%") % _args.sampling_strategy).str()
-    };
-  }();
+  auto sampling_strategy = make_sampling_strategy();
 
-  TilerMetaParameters tiler_meta_parameters;
-  tiler_meta_parameters.spacing_at_root = _args.spacing;
-  tiler_meta_parameters.max_depth = max_depth;
-  tiler_meta_parameters.max_points_per_node = _args.max_points_per_node;
-  tiler_meta_parameters.internal_cache_size = _args.internal_cache_size;
-
-  Tiler tiler{ (_args.output_format == OutputFormat::CZM_3DTILES) ? local_bounds : aabb,
-               tiler_meta_parameters,
-               sampling_strategy,
-               &progress_reporter,
-               persistence,
-               _args.output_directory };
+  auto tiler = make_tiler(shift_points_to_center,
+                          max_depth,
+                          thread_counts,
+                          srs_transform.get(),
+                          std::move(dataset_metadata),
+                          std::move(sampling_strategy),
+                          &progress_reporter,
+                          persistence);
 
   TerminalUIAsyncRenderer ui_renderer{ _ui };
 
@@ -452,36 +595,7 @@ TilerProcess::run()
 
   const auto indexing_start = std::chrono::high_resolution_clock::now();
 
-  PointSource point_source{ _args.sources, _args.errors_to_ignore };
-  std::optional<PointBuffer> points;
-
-  point_source.add_transformation([this, &srs_transform, &aabb](PointBuffer& points) {
-    srs_transform->transformPositionsTo(TargetSRS::CesiumWorld, gsl::make_span(points.positions()));
-
-    // 3D Tiles is not strictly lossless as it stores 32-bit floating point
-    // values instead of 64-bit. We shift all points to the center of the
-    // bounding box of the full point-cloud and truncate the values to
-    // 32-bit to get the maximum precision while at the same time
-    // guaranteeing lossless persistence
-    if (_args.output_format == OutputFormat::CZM_3DTILES) {
-      for (auto& position : points.positions()) {
-        position -= aabb.getCenter();
-        position.x = static_cast<float>(position.x);
-        position.y = static_cast<float>(position.y);
-        position.z = static_cast<float>(position.z);
-      }
-    }
-  });
-
-  while (points = point_source.read_next(_args.max_batch_read_size, _args.output_attributes)) {
-    tiler.cache(*points);
-    if (tiler.needs_indexing()) {
-      tiler.index();
-    }
-  }
-
-  tiler.index();
-  tiler.close();
+  const auto num_processed_points = tiler.run();
 
   const auto indexing_end = std::chrono::high_resolution_clock::now();
   const auto indexing_duration =
@@ -492,7 +606,23 @@ TilerProcess::run()
   stats.indexing_duration = indexing_duration;
   stats.points_processed = total_points_count;
 
-  write_properties_json(_args.output_directory, aabb, _args.spacing, stats);
+  write_properties_json(_args.output_directory, cubic_bounds, _args.spacing, stats);
+
+  if (_args.output_format == OutputFormat::ENTWINE_LAS ||
+      _args.output_format == OutputFormat::ENTWINE_LAZ) {
+    EptJson ept_json;
+    ept_json.bounds = cubic_bounds;
+    ept_json.conforming_bounds = cubic_bounds;
+    ept_json.data_type =
+      (_args.output_format == OutputFormat::ENTWINE_LAZ) ? EntwineFormat::LAZ : EntwineFormat::LAS;
+    ept_json.hierarchy_type = "json";
+    ept_json.points = num_processed_points;
+    ept_json.schema = point_attributes_to_ept_schema(_output_attributes);
+    ept_json.span = _args.spacing;
+    // ept_json.srs = ...;
+    ept_json.version = "1.0.0";
+    write_ept_json(_args.output_directory / "ept.json", ept_json);
+  }
 
   const auto total_indexed_count = progress_reporter.get_progress<size_t>(progress::INDEXING);
   const auto dropped_points_count = total_points_count - total_indexed_count;

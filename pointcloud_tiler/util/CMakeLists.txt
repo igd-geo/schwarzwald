@@ -2,8 +2,8 @@ project(util)
 
 FetchContent_Declare(
 	cpp-taskflow
-	GIT_REPOSITORY https://github.com/cpp-taskflow/cpp-taskflow.git
-	GIT_TAG v2.2.0
+	GIT_REPOSITORY https://github.com/taskflow/taskflow.git
+	GIT_TAG v2.5.0
 )
 set(TF_BUILD_EXAMPLES FALSE)
 set(TF_BUILD_TESTS FALSE)
@@ -15,9 +15,21 @@ if(NOT cpp-taskflow_POPULATED)
   add_subdirectory(${cpp-taskflow_SOURCE_DIR} ${cpp-taskflow_BINARY_DIR})
 endif()
 
+FetchContent_Declare(
+	cista
+	GIT_REPOSITORY https://github.com/felixguendling/cista.git
+	GIT_TAG v0.7
+)
+FetchContent_GetProperties(cista)
+if(NOT cista_POPULATED)
+	FetchContent_Populate(cista)
+	add_subdirectory(${cista_SOURCE_DIR} ${cista_BINARY_DIR})
+endif()
+
 set(files 
 	algorithms/Algorithm.h
 	algorithms/Enums.h
+	algorithms/Hash.h
 	algorithms/Pairs.h
 	algorithms/Strings.h
 
@@ -30,9 +42,16 @@ set(files
 	debug/ProgressReporter.h
 	debug/ThroughputCounter.h
 	debug/ThroughputCounter.cpp
+	debug/Timing.h
 
 	io/io_util.h
 	io/io_util.cpp
+	
+	logging/Journal.h
+	logging/Journal.cpp
+
+	reflection/StaticReflection.h
+	reflection/StaticReflection.cpp
 
 	terminal/stdout_helper.h
 	terminal/stdout_helper.cpp
@@ -47,7 +66,9 @@ set(files
 	threading/TaskSystem.h
 	threading/TaskSystem.cpp
 
+	types/MembersOf.h
 	types/type_util.h
+	types/Typelist.h
 	types/Units.h
 	types/Units.cpp
 )
@@ -67,7 +88,7 @@ find_package(Boost CONFIG REQUIRED system program_options iostreams)
 
 add_library(util STATIC ${files} ${lib_tl_expected_files})
 
-target_include_directories(util PUBLIC . ${TL_EXPECTED_INCLUDE_DIRS} ${cpp-taskflow_SOURCE_DIR})
+target_include_directories(util PUBLIC . ${TL_EXPECTED_INCLUDE_DIRS} ${cpp-taskflow_SOURCE_DIR} ${cista_include_files})
 
 if(UNIX)
 	target_link_libraries(util 
@@ -76,6 +97,7 @@ if(UNIX)
 				Boost::program_options
 				Boost::system
 				Boost::iostreams
+				cista
 		PRIVATE 
 				-lstdc++fs)
 else()
@@ -84,5 +106,6 @@ else()
 				Microsoft.GSL::GSL 
 				Boost::program_options
 				Boost::system 
-				Boost::iostreams)
+				Boost::iostreams
+				cista)
 endif()

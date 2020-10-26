@@ -25,14 +25,22 @@ writeBinary(const T& obj, std::ofstream& stream)
 
 namespace {
 static attributes::PointAttributeBase::Ptr
-createPointAttributeCache(const PointAttribute& attribute)
+createPointAttributeCache(const PointAttribute& attribute, RGBMapping rgb_mapping)
 {
   switch (attribute) {
     case PointAttribute::Position:
       return std::make_unique<attributes::PositionAttribute>();
     case PointAttribute::RGB:
-    case PointAttribute::RGBFromIntensity:
-      return std::make_unique<attributes::RGBAttribute>();
+      switch (rgb_mapping) {
+        case RGBMapping::FromIntensityLinear:
+          return std::make_unique<attributes::RGBFromIntensityAttribute>(
+            attributes::RGBFromIntensityAttribute::MappingType::Linear);
+        case RGBMapping::FromIntensityLogarithmic:
+          return std::make_unique<attributes::RGBFromIntensityAttribute>(
+            attributes::RGBFromIntensityAttribute::MappingType::Log);
+        default:
+          return std::make_unique<attributes::RGBAttribute>();
+      }
     case PointAttribute::Intensity:
       return std::make_unique<attributes::IntensityAttribute>();
     case PointAttribute::Classification:
@@ -43,11 +51,13 @@ createPointAttributeCache(const PointAttribute& attribute)
 }
 } // namespace
 
-PNTSWriter::PNTSWriter(const std::string& filePath, const PointAttributes& pointAttributes)
+PNTSWriter::PNTSWriter(const std::string& filePath,
+                       const PointAttributes& pointAttributes,
+                       RGBMapping rgb_mapping)
   : _filePath(filePath)
 {
   for (auto& desiredPointAttribute : pointAttributes) {
-    auto attributeCache = createPointAttributeCache(desiredPointAttribute);
+    auto attributeCache = createPointAttributeCache(desiredPointAttribute, rgb_mapping);
     if (!attributeCache) {
       std::cerr << "Could not create attribute cache for PointAttribute "
                 << util::to_string(desiredPointAttribute) << "! Attribute will be skipped..."
@@ -57,7 +67,7 @@ PNTSWriter::PNTSWriter(const std::string& filePath, const PointAttributes& point
     _featuretable.perPointAttributes.push_back(std::move(attributeCache));
   }
 
-  // TODO Create global attributes (how should we define them?)
+  // FEATURE 3D Tiles Global attributes
 }
 
 PNTSWriter::~PNTSWriter()
@@ -65,9 +75,6 @@ PNTSWriter::~PNTSWriter()
   close();
 }
 
-/*
-Writes a Point to the Batch Table
-*/
 void
 PNTSWriter::write_points(const PointBuffer& points)
 {
@@ -113,7 +120,7 @@ PNTSWriter::flush(const Vector3<double>& localCenter)
   const auto featureTableBlob = createFeatureTableBlob(localCenter);
   const auto totalSize = static_cast<uint32_t>(featureTableBlob.bytes.size()) + HEADER_SIZE;
 
-  // TODO Batch table
+  // FEATURE Support batch table
   const auto batchTableJSONSize = 0u;
   const auto batchTableBinarySize = 0u;
 
@@ -176,19 +183,6 @@ PNTSWriter::createFeatureTableBlob(const Vector3<double>& localCenter) // create
     const auto attributeByteSize = static_cast<uint32_t>(attributeBytesRange.size());
 
     if (attributeBytesRange.empty()) {
-      // TODO This raises a general question: If multiple source files are
-      // specified that have different attributes in them, how would we extract
-      // these attributes? We can either skip them in all files that have them,
-      // assuming that if the attributes are not available for _ALL_ files, they
-      // are not available at all, or we go the opposite way and fill the
-      // missing attributes with default values... In any case, the user should
-      // be notified about this!
-      // std::cerr << "No values for attribute \""
-      //          << perPointAttribute->getAttributeNameForJSON()
-      //          << "\" were extracted from source files, the attribute will be
-      //          "
-      //             "skipped in \""
-      //          << _filePath << "\"!" << std::endl;
       continue;
     }
     if (perPointAttribute->getNumEntries() != _featuretable.numPoints) {
@@ -235,7 +229,7 @@ PNTSWriter::createFeatureTableBlob(const Vector3<double>& localCenter) // create
               startInBinaryBody);
   }
 
-  // TODO Global attributes for the JSON header
+  // FEATURE Global attributes for the JSON header
 
   StringBuffer jsonBuffer;
   Writer<StringBuffer> writer(jsonBuffer);
@@ -276,7 +270,7 @@ transform_pnts_file_coordinates(const std::string& file_path,
                                 const PointAttributes& points_attributes)
 {
 
-  auto pnts_file = readPNTSFile(file_path);
+  auto pnts_file = readPNTSFile(file_path, points_attributes);
   if (!pnts_file) {
     std::cerr << "Could not read file " << file_path << std::endl;
     return;
@@ -300,7 +294,7 @@ transform_pnts_file_coordinates(const std::string& file_path,
     local_center = setOriginToSmallestPoint(pnts_file->points.positions());
   }
 
-  PNTSWriter writer{ file_path, points_attributes };
+  PNTSWriter writer{ file_path, points_attributes, RGBMapping::None };
   writer.write_points(pnts_file->points);
   writer.flush(local_center);
 }
@@ -365,14 +359,14 @@ attributes::PositionAttribute::getAlignmentRequirement() const
 void
 attributes::PositionQuantizedAttribute::extractFromPoints(const PointBuffer& points)
 {
-  // TODO
+  // FEATURE Support quantized positions
 }
 
 void
 attributes::PositionQuantizedAttribute::extractFromPoints(
   gsl::span<PointBuffer::PointReference> points)
 {
-  // TODO
+  // FEATURE Support quantized positions
 }
 
 std::string
@@ -384,14 +378,14 @@ attributes::PositionQuantizedAttribute::getAttributeNameForJSON() const
 gsl::span<const std::byte>
 attributes::PositionQuantizedAttribute::getBinaryDataRange() const
 {
-  // TODO
+  // FEATURE Support quantized positions
   return {};
 }
 
 uint32_t
 attributes::PositionQuantizedAttribute::getAlignmentRequirement() const
 {
-  return uint32_t(); // TODO
+  return uint32_t(); // FEATURE Support quantized positions
 }
 
 void
@@ -507,6 +501,86 @@ attributes::RGBAttribute::getAlignmentRequirement() const
 {
   return 1u;
 }
+
+#pragma region RGBFromIntensityAttribute
+
+attributes::RGBFromIntensityAttribute::RGBFromIntensityAttribute(MappingType mapping_type)
+{
+  switch (mapping_type) {
+    case MappingType::Linear:
+      _mapping_func = [](uint16_t intensity) -> RGB {
+        const auto greyscale = static_cast<uint8_t>(intensity >> 8);
+        return { greyscale, greyscale, greyscale };
+      };
+      break;
+    case MappingType::Log:
+      _mapping_func = [](uint16_t intensity) -> RGB {
+        const auto intensity_max = std::numeric_limits<uint16_t>::max();
+        const auto greyscale = static_cast<uint8_t>(
+          255 * std::log(static_cast<float>(intensity) + 1) / std::log(intensity_max));
+        return { greyscale, greyscale, greyscale };
+      };
+      break;
+    default:
+      throw std::runtime_error{ "Invalid MappingType" };
+  }
+}
+
+void
+attributes::RGBFromIntensityAttribute::extractFromPoints(const PointBuffer& points)
+{
+  if (!points.count())
+    return;
+  if (!points.hasIntensities())
+    return;
+
+  _rgb_colors.reserve(_rgb_colors.size() + static_cast<size_t>(points.count()));
+  std::transform(points.intensities().begin(),
+                 points.intensities().end(),
+                 std::back_inserter(_rgb_colors),
+                 _mapping_func);
+}
+
+void
+attributes::RGBFromIntensityAttribute::extractFromPoints(
+  gsl::span<PointBuffer::PointReference> points)
+{
+  if (!points.size())
+    return;
+  if (!points[0].intensity())
+    return;
+
+  _rgb_colors.reserve(_rgb_colors.size() + static_cast<size_t>(points.size()));
+  std::transform(points.begin(),
+                 points.end(),
+                 std::back_inserter(_rgb_colors),
+                 [this](const auto& point_reference) -> RGB {
+                   const auto intensity = point_reference.intensity();
+                   assert(intensity != nullptr);
+                   return _mapping_func(*intensity);
+                 });
+}
+
+std::string
+attributes::RGBFromIntensityAttribute::getAttributeNameForJSON() const
+{
+  return "RGB";
+}
+
+gsl::span<const std::byte>
+attributes::RGBFromIntensityAttribute::getBinaryDataRange() const
+{
+  const auto begin = reinterpret_cast<std::byte const*>(_rgb_colors.data());
+  const auto end = begin + vector_byte_size(_rgb_colors);
+  return { begin, end };
+}
+
+uint32_t
+attributes::RGBFromIntensityAttribute::getAlignmentRequirement() const
+{
+  return 1u;
+}
+#pragma endregion
 
 void
 attributes::IntensityAttribute::extractFromPoints(const PointBuffer& points)

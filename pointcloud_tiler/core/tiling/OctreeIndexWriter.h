@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MortonIndex.h"
+#include "datastructures/MortonIndex.h"
 
 #include <fstream>
 #include <gsl/gsl>

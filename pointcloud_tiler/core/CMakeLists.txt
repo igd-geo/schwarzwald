@@ -9,6 +9,9 @@ set(SOURCE_FILES
     datastructures/PointBuffer.cpp
     datastructures/SparseGrid.h
     datastructures/SparseGrid.cpp
+    datastructures/DynamicMortonIndex.cpp
+    datastructures/DynamicMortonIndex.h
+    datastructures/MortonIndex.h
 
     io/BinaryPersistence.cpp
     io/BinaryPersistence.h
@@ -18,8 +21,8 @@ set(SOURCE_FILES
     io/LASFile.h
     io/LASPersistence.cpp
     io/LASPersistence.h
-    io/LASPointReader.cpp
-    io/LASPointReader.h
+    io/EntwinePersistence.cpp
+    io/EntwinePersistence.h
     io/MemoryPersistence.cpp
     io/MemoryPersistence.h
     io/PNTSReader.cpp
@@ -30,6 +33,7 @@ set(SOURCE_FILES
     io/PointcloudFactory.h
     io/PointcloudFile.h
     io/PointReader.h
+    io/PointsPersistence.cpp
     io/PointsPersistence.h
     io/TileSetWriter.cpp
     io/TileSetWriter.h
@@ -37,17 +41,18 @@ set(SOURCE_FILES
     math/AABB.h
     math/Vector3.h
 
-    octree/DynamicMortonIndex.cpp
-    octree/DynamicMortonIndex.h
-    octree/MortonIndex.h
-    octree/Node.cpp
-    octree/Node.h
-    octree/OctreeAlgorithms.cpp
-    octree/OctreeAlgorithms.h
-    octree/OctreeIndexWriter.h
-    octree/Sampling.cpp
-    octree/Sampling.h
+    tiling/Node.cpp
+    tiling/Node.h
+    tiling/OctreeAlgorithms.cpp
+    tiling/OctreeAlgorithms.h
+    tiling/OctreeIndexWriter.h
+    tiling/Sampling.cpp
+    tiling/Sampling.h
+    tiling/TilingAlgorithms.h
+    tiling/TilingAlgorithms.cpp
 
+    pointcloud/FileStats.h
+    pointcloud/FileStats.cpp
     pointcloud/Point.h
     pointcloud/PointAttributes.cpp
     pointcloud/PointAttributes.h
@@ -63,11 +68,14 @@ set(SOURCE_FILES
     process/Tiler.h
     process/TilerProcess.cpp
     process/TilerProcess.h
-
+    
+    util/Config.h
+    util/Config.cpp
     util/Definitions.h
     util/Error.h
     util/Error.cpp
-    util/ExecutorObserver.h
+    util/Scheduler.h
+    util/Scheduler.cpp
     util/Stats.cpp
     util/Stats.h
     util/stuff.cpp

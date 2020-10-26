@@ -1,6 +1,6 @@
 #include "catch.hpp"
 
-#include "octree/MortonIndex.h"
+#include "datastructures/MortonIndex.h"
 
 TEST_CASE("Default constructed key is zero", "[MortonIndex]")
 {
@@ -48,6 +48,18 @@ TEST_CASE("Level constructor works correctly", "[MortonIndex]")
   REQUIRE(k.get() == expected_value);
   for (uint32_t level = 0; level < Levels; ++level) {
     REQUIRE(k.get_octant_at_level(level) == expected_levels[level]);
+  }
+}
+
+TEST_CASE("Level constructor with full number of levels works", "[MortonIndex]")
+{
+  constexpr uint32_t Levels = 21;
+  using Key = MortonIndex<Levels>;
+  std::array<uint8_t, Levels> expected_octants{ 5, 3, 7, 4, 0, 1, 6, 4, 3, 5, 3,
+                                                6, 7, 3, 2, 1, 4, 0, 2, 5, 6 };
+  Key k{ expected_octants };
+  for (uint32_t level = 0; level < Levels; ++level) {
+    REQUIRE(k.get_octant_at_level(level) == expected_octants[level]);
   }
 }
 

@@ -1,7 +1,8 @@
 #include "io/MemoryPersistence.h"
 
-MemoryPersistence::MemoryPersistence()
-  : _lock(std::make_unique<std::mutex>())
+MemoryPersistence::MemoryPersistence(const PointAttributes& input_attributes)
+  : _input_attributes(input_attributes)
+  , _lock(std::make_unique<std::mutex>())
 {}
 
 void
@@ -19,4 +20,12 @@ MemoryPersistence::retrieve_points(const std::string& node_name, PointBuffer& po
 {
   std::lock_guard<std::mutex> lock{ *_lock };
   points = _points_cache[node_name];
+  points.apply_schema(_input_attributes);
+}
+
+bool
+MemoryPersistence::node_exists(const std::string& node_name) const
+{
+  std::lock_guard<std::mutex> lock{ *_lock };
+  return _points_cache.find(node_name) != std::end(_points_cache);
 }
