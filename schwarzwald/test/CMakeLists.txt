@@ -1,4 +1,4 @@
-project(PointcloudTilerTest)
+project(SchwarzwaldTest)
 
 set(SOURCE_FILES
 
@@ -23,6 +23,6 @@ set(SOURCE_FILES
     TestUtilities.cpp
 )
 
-add_executable(PointcloudTilerTest ${SOURCE_FILES})
+add_executable(SchwarzwaldTest ${SOURCE_FILES})
 
-target_link_libraries(PointcloudTilerTest PUBLIC PointcloudTilerCore)
+target_link_libraries(SchwarzwaldTest PUBLIC SchwarzwaldCore)

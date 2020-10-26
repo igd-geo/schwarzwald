@@ -12,15 +12,15 @@ RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release ..
 RUN cd build && make
 
 WORKDIR /data
-RUN mkdir PointcloudTiler
-WORKDIR /data/PointcloudTiler
-ADD . /data/PointcloudTiler
+RUN mkdir Schwarzwald
+WORKDIR /data/Schwarzwald
+ADD . /data/Schwarzwald
 RUN mkdir build
 RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so .. 
 RUN cd build && make
 
 # copy libproj.so dependency to a temporary directory
-RUN ldd /data/PointcloudTiler/build/Release/PointcloudTiler | grep 'libproj.so' | awk '{print $3}' | xargs -I '{}' cp -v '{}' /tmp/
+RUN ldd /data/Schwarzwald/build/Release/Schwarzwald | grep 'libproj.so' | awk '{print $3}' | xargs -I '{}' cp -v '{}' /tmp/
 
 # after building, create smaller image that only contains the binary
 # and its dependencies
@@ -32,7 +32,7 @@ COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /usr/lib/liblaszi
 COPY --from=build /tmp/libproj.so* /usr/lib/
 
 # copy binary
-COPY --from=build /data/PointcloudTiler/build/Release/PointcloudTiler /pointcloud-tiler/PointcloudTiler/build/Release/PointcloudTiler
-COPY --from=build /data/PointcloudTiler/build/Release/LASBenchmark /pointcloud-tiler/PointcloudTiler/build/Release/LASBenchmark
+COPY --from=build /data/Schwarzwald/build/Release/Schwarzwald /pointcloud-tiler/Schwarzwald/build/Release/Schwarzwald
+COPY --from=build /data/Schwarzwald/build/Release/LASBenchmark /pointcloud-tiler/Schwarzwald/build/Release/LASBenchmark
 
-ENTRYPOINT ["/pointcloud-tiler/PointcloudTiler/build/Release/PointcloudTiler"]
+ENTRYPOINT ["/pointcloud-tiler/Schwarzwald/build/Release/Schwarzwald"]

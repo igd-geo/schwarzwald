@@ -8,7 +8,7 @@ HunterGate(
     SHA1 "0b8c31bfdf0fd2fa87b4f743aabcd73904afa256"
 )
 
-project(PointcloudTilerRoot)
+project(SchwarzwaldRoot)
 
 set(LASZIP_INCLUDE_DIRS "" CACHE STRING "Include directory for LASzip")
 set(LASZIP_LIBRARY "" CACHE STRING "Path to LASzip library file")
@@ -33,11 +33,11 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/Debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/build/RelWithDebInfo)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/Release)
 
-add_subdirectory(pointcloud_tiler/util)
-add_subdirectory(pointcloud_tiler/core)
-add_subdirectory(pointcloud_tiler/executable)
-add_subdirectory(pointcloud_tiler/test)
-add_subdirectory(pointcloud_tiler/benchmark)
+add_subdirectory(schwarzwald/util)
+add_subdirectory(schwarzwald/core)
+add_subdirectory(schwarzwald/executable)
+add_subdirectory(schwarzwald/test)
+add_subdirectory(schwarzwald/benchmark)
 
 if (MSVC_VERSION GREATER_EQUAL "1900") 
     include(CheckCXXCompilerFlag)

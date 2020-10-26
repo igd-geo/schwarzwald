@@ -1,4 +1,4 @@
-project(PointcloudTilerCore)
+project(SchwarzwaldCore)
 
 set(SOURCE_FILES
     datastructures/GridCell.h
@@ -102,12 +102,12 @@ find_package(Boost CONFIG REQUIRED system program_options iostreams)
 hunter_add_package(RapidJSON)
 find_package(RapidJSON CONFIG REQUIRED)
 
-add_library(PointcloudTilerCore STATIC ${SOURCE_FILES} ${lib_tl_expected_files})
+add_library(SchwarzwaldCore STATIC ${SOURCE_FILES} ${lib_tl_expected_files})
 
-target_include_directories(PointcloudTilerCore PUBLIC . include ${LASZIP_INCLUDE_DIRS} ${TL_EXPECTED_INCLUDE_DIRS})
+target_include_directories(SchwarzwaldCore PUBLIC . include ${LASZIP_INCLUDE_DIRS} ${TL_EXPECTED_INCLUDE_DIRS})
 
 if(UNIX)
-	target_link_libraries(PointcloudTilerCore 
+	target_link_libraries(SchwarzwaldCore 
         PUBLIC 	util
                 ${LASZIP_LIBRARY} 
 				proj 
@@ -120,7 +120,7 @@ if(UNIX)
 				glm 
 				-lstdc++fs)
 else()
-	target_link_libraries(PointcloudTilerCore 
+	target_link_libraries(SchwarzwaldCore 
         PUBLIC 
                 util
 				${LASZIP_LIBRARY} 

@@ -1,9 +1,8 @@
-# Pointcloud Tiler
+# Schwarzwald - A fast point cloud tiling tool
 
-Command-line tool to generate acceleration structures for point cloud data. Can be used to convert raw point cloud data in LAS/LAZ format into [3D Tiles format](https://github.com/AnalyticalGraphicsInc/3d-tiles) and [Potree format](https://github.com/potree/potree/). 
-Loosely built upon the [PotreeConverter](https://github.com/potree/PotreeConverter) tool in version 1.7. 
-
-This tool generates a multi-resolution [octree](https://en.wikipedia.org/wiki/Octree) from raw point cloud data. The octree can be used to speed up rendering or analysis by quickly identifying points that lie at a given location or in a given region in space. The Pointcloud Tiler stores the octree structure by writing one file for each node in the octree. Files are named according to the path from the root node to that specific node. The root node is always named `r`, every level in the octree is identified by a number between 0 and 7 (inclusive) indicating the octant that a node belongs to. 
+Schwarzwald is a command line tool to generate acceleration structures for point cloud data, supporting the [3D Tiles format](https://github.com/AnalyticalGraphicsInc/3d-tiles) and [Potree format](https://github.com/potree/potree/). 
+Schwarzwald will convert your raw point cloud data into data that can be visualized with [CesiumJS](https://cesium.com/cesiumjs/) and [Potree](https://github.com/potree/potree/).
+Schwarzwald is very fast, supporting machines with dozens of logical cores. 
 
 **Supported input formats**
 *  LAS/LAZ
@@ -24,7 +23,7 @@ Requirements:
 
 ### Dependencies
 
-The Pointcloud Tiler uses `LASzip` from the [lastools](https://github.com/m-schuetz/LAStools.git). Before building the Pointcloud Tiler, build `LASzip` like this:
+Schwarzwald uses `LASzip` from the [lastools](https://github.com/m-schuetz/LAStools.git). Before building Schwarzwald, build `LASzip` like this:
 
 ```
 cd ~/dev/lastools
@@ -47,26 +46,26 @@ cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=~/dev/lastools/LASzip/dll
 make
 ```
 
-This should produce the `PointcloudTiler` executable in `~/dev/path-to-this-repository/build/Release`.
+This should produce the `Schwarzwald` executable in `~/dev/path-to-this-repository/build/Release`.
 
 ### Building with Docker
 
-Run `sudo docker build -t pointcloud-tiler:latest .` from the root folder. 
+Run `sudo docker build -t schwarzwald:latest .` from the root folder. 
 
 ## Usage
 
-The Pointcloud Tiler supports two different modes:
+Schwarzwald supports two different modes:
 *  `tiler` for creating an optimized point cloud structure
 *  (**Currently unsupported, might be removed in future versions**) `converter` to convert the result of the `tiler` mode into different output formats
 
-To get information about the possible arguments, call `PointcloudTiler` without any arguments. 
+To get information about the possible arguments, call `Schwarzwald` without any arguments. 
 
 ### Generating 3D Tiles from LAS/LAZ
 
-The easiest way to generate 3D Tiles is to call the Pointcloud Tiler like this:
+The easiest way to generate 3D Tiles is to call Schwarzwald like this:
 
 ```
-PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format 3DTILES
+Schwarzwald --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format 3DTILES
 ```
 
 This starts a tiling process that generates 3D Tiles and stores them in the specified output folder. 
@@ -76,7 +75,7 @@ This starts a tiling process that generates 3D Tiles and stores them in the spec
 Potree-compatible tiles can be generated like this:
 
 ```
-PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format ENTWINE_LAZ
+Schwarzwald --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format ENTWINE_LAZ
 ```
 
 As the name suggests, this generates data in the same format as the [Entwine tool](https://entwine.io/), which is fully compatible with Potree. 
@@ -139,7 +138,7 @@ Depending on your environment, you might want to ignore some errors that can occ
 
 ### Point attributes
 
-The tiler supports all regular point attributes defined by the [LAS standard (v1.2)](https://www.asprs.org/a/society/committees/standards/asprs_las_format_v12.pdf). For the output formats `ENTWINE_LAS` and `ENTWINE_LAZ`, all attributes are retained in the output LAS/LAZ files. For the `3D_TILES` output format, this is not possible as `3D_TILES` does not natively support all the different attribute types that `LAS` does. Currently, the tiler only stores the positions, RGB colors and intensities with `3D_TILES`. 
+Schwarzwald supports all regular point attributes defined by the [LAS standard (v1.2)](https://www.asprs.org/a/society/committees/standards/asprs_las_format_v12.pdf). For the output formats `ENTWINE_LAS` and `ENTWINE_LAZ`, all attributes are retained in the output LAS/LAZ files. For the `3D_TILES` output format, this is not possible as `3D_TILES` does not natively support all the different attribute types that `LAS` does. Currently, Schwarzwald only stores the positions, RGB colors and intensities with `3D_TILES`. 
 
 It is possible to calculate RGB colors from other attributes when writing `3D_TILES` using the following option:
 
@@ -159,15 +158,16 @@ It is possible to calculate RGB colors from other attributes when writing `3D_TI
 
 ### Transforming the points into EPSG:4978 (the world coordinate system used by 3D Tiles)
 
-If you call the Pointcloud Tiler without any further options, point positions are written as-is, that is in the same coordinate system as they were in the input files.
+By default, Schwarzwald writes point positions in the same coordinate system as they were in the input files.
 If you want to convert the positions into EPSG:4978 (the world coordinate system of 3D Tiles and Cesium), you have to specify the spatial reference system of your input files in [proj format](https://en.wikipedia.org/wiki/PROJ) like so:
 
 ```
-PointcloudTiler --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format 3DTILES --source-projection "+proj=utm +zone=32 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
+Schwarzwald --tiler -i /path/to/your/LAS/files -o /output/path/for/3D/tiles --output-format 3DTILES --source-projection "+proj=utm +zone=32 +ellps=WGS84 +datum=WGS84 +units=m +no_defs"
 ```
 
 This example uses the proj string for the UTM32N spatial reference system. 
 
 ## License
 
-Based on the source code of PotreeConverter v1.7 by Markus Schütz, licensed under BSD 2-Clause. Source code available at https://github.com/potree/PotreeConverter 
+Licensed under the Apache License, Version 2.0. 
+Loosely based on the source code of PotreeConverter v1.7 by Markus Schütz, licensed under BSD 2-Clause. Source code available at https://github.com/potree/PotreeConverter 
