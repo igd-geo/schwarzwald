@@ -11,6 +11,7 @@ const double cellSizeFactor = 5.0;
 SparseGrid::SparseGrid(AABB aabb, float spacing)
   : aabb(aabb)
   , squaredSpacing(spacing * spacing)
+  , _dbg_num_comparisons(0)
 {
   const auto bounds_extent = aabb.extent();
   this->width = (int)(bounds_extent.x / (spacing * cellSizeFactor));
@@ -29,12 +30,12 @@ SparseGrid::~SparseGrid()
 bool
 SparseGrid::isDistant(const Vector3<double>& p, GridCell* cell)
 {
-  if (!cell->isDistant(p, squaredSpacing)) {
+  if (!cell->isDistant(p, squaredSpacing, &_dbg_num_comparisons)) {
     return false;
   }
 
   for (const auto& neighbour : cell->neighbours) {
-    if (!neighbour->isDistant(p, squaredSpacing)) {
+    if (!neighbour->isDistant(p, squaredSpacing, &_dbg_num_comparisons)) {
       return false;
     }
   }
@@ -43,14 +44,16 @@ SparseGrid::isDistant(const Vector3<double>& p, GridCell* cell)
 }
 
 bool
-SparseGrid::isDistant(const Vector3<double>& p, GridCell* cell, float& squaredSpacing)
+SparseGrid::isDistant(const Vector3<double>& p,
+                      GridCell* cell,
+                      float& squaredSpacing)
 {
-  if (!cell->isDistant(p, squaredSpacing)) {
+  if (!cell->isDistant(p, squaredSpacing, &_dbg_num_comparisons)) {
     return false;
   }
 
   for (const auto& neighbour : cell->neighbours) {
-    if (!neighbour->isDistant(p, squaredSpacing)) {
+    if (!neighbour->isDistant(p, squaredSpacing, &_dbg_num_comparisons)) {
       return false;
     }
   }
@@ -169,10 +172,11 @@ SparseGrid::content_byte_size() const
 {
   // Estimate for the in-memory size of the map itself (keys, values and, since
   // the values are pointers, the dynamically allocated memory for the values)
-  const auto map_byte_size = this->size() * (sizeof(long long) + sizeof(void*) + sizeof(GridCell));
+  const auto map_byte_size =
+    this->size() * (sizeof(long long) + sizeof(void*) + sizeof(GridCell));
   // The memory that each GridCell is referencing dynamically
-  const auto cells_byte_size =
-    std::accumulate(begin(), end(), size_t{ 0 }, [](auto accum, const auto& kv_pair) {
+  const auto cells_byte_size = std::accumulate(
+    begin(), end(), size_t{ 0 }, [](auto accum, const auto& kv_pair) {
       return accum + kv_pair.second->content_byte_size();
     });
   return map_byte_size + cells_byte_size;

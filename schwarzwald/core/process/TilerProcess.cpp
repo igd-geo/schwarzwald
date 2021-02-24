@@ -51,10 +51,13 @@ prepare_output_directory(const std::string& output_directory)
     // TODO We could add a progress bar here!
     util::write_log("Output directory not empty, removing existing files\n");
     for (auto& entry : fs::directory_iterator{ output_directory }) {
-      // A bit hacky, but we have to make sure that we don't delete the journal output folder
-      if (global_config().is_journaling_enabled && entry == global_config().journal_directory) {
-        // Remove only the contents of the journal output folder, so that we can run the tool
-        // multiple times with the same output folder and don't get leave garbage
+      // A bit hacky, but we have to make sure that we don't delete the journal
+      // output folder
+      if (global_config().is_journaling_enabled &&
+          entry == global_config().journal_directory) {
+        // Remove only the contents of the journal output folder, so that we can
+        // run the tool multiple times with the same output folder and don't get
+        // leave garbage
         for (auto& journal_entry : fs::directory_iterator{ entry }) {
           fs::remove_all(journal_entry);
         }
@@ -115,8 +118,10 @@ write_properties_json(const std::string& output_directory,
 
   // Performance stats
   {
-    perf_stats.AddMember("prepare_duration", perf.prepare_duration.count(), alloc);
-    perf_stats.AddMember("indexing_duration", perf.indexing_duration.count(), alloc);
+    perf_stats.AddMember(
+      "prepare_duration", perf.prepare_duration.count(), alloc);
+    perf_stats.AddMember(
+      "indexing_duration", perf.indexing_duration.count(), alloc);
   }
 
   document.AddMember("source_properties", source_props, alloc);
@@ -156,7 +161,8 @@ check_if_file_exists(const fs::path& file, util::IgnoreErrors errors_to_ignore)
     return true;
 
   if (errors_to_ignore & util::IgnoreErrors::MissingFiles) {
-    std::cout << "Ignoring file " << file.string() << " because it does not exist!\n";
+    std::cout << "Ignoring file " << file.string()
+              << " because it does not exist!\n";
     // util::write_log(
     //     (boost::format("Ignoring file %1% because it does not exist!") %
     //      file.filename())
@@ -164,25 +170,29 @@ check_if_file_exists(const fs::path& file, util::IgnoreErrors errors_to_ignore)
     return false;
   }
 
-  const auto reason = (boost::format("Input file %1% does not exist!") % file.string()).str();
+  const auto reason =
+    (boost::format("Input file %1% does not exist!") % file.string()).str();
   throw std::runtime_error{ reason };
 }
 
 static bool
-check_if_file_format_is_supported(const fs::path& file, util::IgnoreErrors errors_to_ignore)
+check_if_file_format_is_supported(const fs::path& file,
+                                  util::IgnoreErrors errors_to_ignore)
 {
   if (file_format_is_supported(file.extension()))
     return true;
 
   if (errors_to_ignore & util::IgnoreErrors::UnsupportedFileFormat) {
-    std::cout << "Ignoring file " << file.string() << " because its file format ("
-              << file.extension().string() << ") is not supported!\n";
+    std::cout << "Ignoring file " << file.string()
+              << " because its file format (" << file.extension().string()
+              << ") is not supported!\n";
     return false;
   }
 
-  const auto reason = (boost::format("File format %1% of input file %2% is not supported!") %
-                       file.extension().string() % file.string())
-                        .str();
+  const auto reason =
+    (boost::format("File format %1% of input file %2% is not supported!") %
+     file.extension().string() % file.string())
+      .str();
   throw std::runtime_error{ reason };
 }
 
@@ -202,7 +212,8 @@ TilerProcess::prepare()
 
     if (fs::is_directory(source)) {
       fs::recursive_directory_iterator directory_iter{ source };
-      for (; directory_iter != fs::recursive_directory_iterator{}; directory_iter++) {
+      for (; directory_iter != fs::recursive_directory_iterator{};
+           directory_iter++) {
         const auto& dir_entry = directory_iter->path();
         if (!fs::is_regular_file(dir_entry))
           continue;
@@ -220,7 +231,8 @@ TilerProcess::prepare()
                std::back_inserter(filtered_source_files),
                [this](const fs::path& file) {
                  return check_if_file_exists(file, _args.errors_to_ignore) &&
-                        check_if_file_format_is_supported(file, _args.errors_to_ignore);
+                        check_if_file_format_is_supported(
+                          file, _args.errors_to_ignore);
                });
 
   if (filtered_source_files.empty()) {
@@ -232,7 +244,8 @@ TilerProcess::prepare()
   determine_input_and_output_attributes();
 
   const auto attributesDescription = print_attributes(_output_attributes);
-  util::write_log(concat("Writing the following point attributes: ", attributesDescription, "\n"));
+  util::write_log(concat(
+    "Writing the following point attributes: ", attributesDescription, "\n"));
 
   prepare_output_directory(_args.output_directory);
 }
@@ -256,7 +269,9 @@ TilerProcess::determine_input_and_output_attributes()
       .map([&input_attributes](const PointFile& point_file) {
         // Remove all attributes from 'attributes' that are NOT in the current
         // point file
-        for (auto it = std::begin(input_attributes); it != std::end(input_attributes); ++it) {
+        for (auto it = std::begin(input_attributes);
+             it != std::end(input_attributes);
+             ++it) {
           if (pc::has_attribute(point_file, *it))
             continue;
           it = input_attributes.erase(it);
@@ -264,17 +279,17 @@ TilerProcess::determine_input_and_output_attributes()
       })
       .or_else([this, source](const auto& err) {
         if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-          util::write_log((boost::format("warning: Ignoring file %1% while determining point "
-                                         "attributes\ncaused by: %2%\n") %
-source.string() % err.what())
-                            .str());
+          util::write_log(
+            (boost::format("warning: Ignoring file %1% while determining point "
+                           "attributes\ncaused by: %2%\n") %
+             source.string() % err.what())
+              .str());
           return;
         }
 
-                                                 throw util::chain_error(err, "Determining the point attributes failed");
+        throw util::chain_error(err, "Determining the point attributes failed");
       });
   }
-
 
   _input_attributes = std::move(input_attributes);
 
@@ -299,10 +314,12 @@ source.string() % err.what())
   PointAttributes supported_attributes, unsupported_attributes;
   std::for_each(std::begin(output_attributes),
                 std::end(output_attributes),
-                [&supported_output_attributes, &supported_attributes, &unsupported_attributes](
-                  PointAttribute attribute) {
-                  const auto is_supported = supported_output_attributes.find(attribute) !=
-                                            std::end(supported_output_attributes);
+                [&supported_output_attributes,
+                 &supported_attributes,
+                 &unsupported_attributes](PointAttribute attribute) {
+                  const auto is_supported =
+                    supported_output_attributes.find(attribute) !=
+                    std::end(supported_output_attributes);
                   if (is_supported) {
                     supported_attributes.insert(attribute);
                   } else {
@@ -312,15 +329,16 @@ source.string() % err.what())
 
   if (!unsupported_attributes.empty()) {
     const auto format_name = util::to_string(_args.output_format);
-    util::write_log((boost::format("warning: Not all point attributes in the input files are "
-                                   "supported when using output "
-                                   "format %1%. Input files have attributes %2%, %3% only "
-                                   "supports attributes %4%, so "
-                                   "attributes %5% will be ignored!\n") %
-                     format_name % print_attributes(_input_attributes) % format_name %
-                     print_attributes(supported_output_attributes) %
-                     print_attributes(unsupported_attributes))
-                      .str());
+    util::write_log(
+      (boost::format("warning: Not all point attributes in the input files are "
+                     "supported when using output "
+                     "format %1%. Input files have attributes %2%, %3% only "
+                     "supports attributes %4%, so "
+                     "attributes %5% will be ignored!\n") %
+       format_name % print_attributes(_input_attributes) % format_name %
+       print_attributes(supported_output_attributes) %
+       print_attributes(unsupported_attributes))
+        .str());
 
     // Remove unsupported attributes from _input_attributes
     for (auto unsupported_attribute : unsupported_attributes) {
@@ -331,20 +349,22 @@ source.string() % err.what())
   _output_attributes = std::move(supported_attributes);
 }
 
-
 DatasetMetadata
-TilerProcess::calculate_dataset_metadata(const SRSTransformHelper* srs_transform)
+TilerProcess::calculate_dataset_metadata(
+  const SRSTransformHelper* srs_transform)
 {
   DatasetMetadata dataset_metadata;
 
   for (const auto& source : _args.sources) {
     open_point_file(source)
-      .map([&dataset_metadata, srs_transform, &source](const PointFile& point_file) {
+      .map([&dataset_metadata, srs_transform, &source](
+             const PointFile& point_file) {
         auto bounds = pc::get_bounds(point_file);
         auto point_count = pc::get_point_count(point_file);
 
         if (srs_transform) {
-          srs_transform->transformAABBsTo(TargetSRS::CesiumWorld, gsl::make_span(&bounds, 1));
+          srs_transform->transformAABBsTo(TargetSRS::CesiumWorld,
+                                          gsl::make_span(&bounds, 1));
         }
 
         dataset_metadata.add_file_metadata(source, point_count, bounds);
@@ -352,8 +372,8 @@ TilerProcess::calculate_dataset_metadata(const SRSTransformHelper* srs_transform
       .or_else([this, source](const auto& err) {
         if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
           util::write_log(
-            (boost::format(
-               "warning: Ignoring file %1% while calculating dataset metadata\ncaused by: %2%\n") %
+            (boost::format("warning: Ignoring file %1% while calculating "
+                           "dataset metadata\ncaused by: %2%\n") %
              source.string() % err.what())
               .str());
           return;
@@ -367,7 +387,8 @@ TilerProcess::calculate_dataset_metadata(const SRSTransformHelper* srs_transform
 }
 
 std::variant<FixedThreadCount, AdaptiveThreadCount>
-TilerProcess::calculate_actual_thread_counts(const DatasetMetadata& dataset_metadata) const
+TilerProcess::calculate_actual_thread_counts(
+  const DatasetMetadata& dataset_metadata) const
 {
   if (std::holds_alternative<AdaptiveThreadCount>(_args.thread_config)) {
     return _args.thread_config;
@@ -382,21 +403,29 @@ TilerProcess::calculate_actual_thread_counts(const DatasetMetadata& dataset_meta
   fixed_thread_count.num_threads_for_indexing =
     fixed_thread_config_before_adjustment.num_threads_for_indexing;
 
-  // We can never have more reading threads than we have files! If we have less files than the
-  // requested number of reading threads, we move the excess reading threads over to indexing
-  const auto num_files = gsl::narrow<uint32_t>(dataset_metadata.get_all_files_metadata().size());
-  if (num_files < fixed_thread_config_before_adjustment.num_threads_for_reading) {
-    const auto diff = fixed_thread_config_before_adjustment.num_threads_for_reading - num_files;
+  // We can never have more reading threads than we have files! If we have less
+  // files than the requested number of reading threads, we move the excess
+  // reading threads over to indexing
+  const auto num_files =
+    gsl::narrow<uint32_t>(dataset_metadata.get_all_files_metadata().size());
+  if (num_files <
+      fixed_thread_config_before_adjustment.num_threads_for_reading) {
+    const auto diff =
+      fixed_thread_config_before_adjustment.num_threads_for_reading - num_files;
     fixed_thread_count.num_threads_for_reading = num_files;
     fixed_thread_count.num_threads_for_indexing += diff;
 
-    std::cout << "Requested " << fixed_thread_config_before_adjustment.num_threads_for_reading
+    std::cout << "Requested "
+              << fixed_thread_config_before_adjustment.num_threads_for_reading
               << " threads for reading points but there are only " << num_files
-              << " files to read from. Using " << fixed_thread_count.num_threads_for_reading
-              << " threads for reading and " << fixed_thread_count.num_threads_for_indexing
+              << " files to read from. Using "
+              << fixed_thread_count.num_threads_for_reading
+              << " threads for reading and "
+              << fixed_thread_count.num_threads_for_indexing
               << " threads for indexing instead!\n";
   } else {
-    std::cout << "Using " << fixed_thread_count.num_threads_for_reading << " threads for reading\n";
+    std::cout << "Using " << fixed_thread_count.num_threads_for_reading
+              << " threads for reading\n";
     std::cout << "Using " << fixed_thread_count.num_threads_for_indexing
               << " threads for indexing\n";
   }
@@ -405,7 +434,8 @@ TilerProcess::calculate_actual_thread_counts(const DatasetMetadata& dataset_meta
 }
 
 void
-TilerProcess::check_for_missing_point_attributes(const PointAttributes& required_attributes) const
+TilerProcess::check_for_missing_point_attributes(
+  const PointAttributes& required_attributes) const
 {
   // TODO Rework this method once the attribute rework is done and we support
   // custom schemas
@@ -417,35 +447,43 @@ TilerProcess::check_for_missing_point_attributes(const PointAttributes& required
         if (pc::has_all_attributes(
               point_file,
               required_attributes,
-              std::inserter(missing_attributes, std::end(missing_attributes)))) {
+              std::inserter(missing_attributes,
+                            std::end(missing_attributes)))) {
           return;
         }
 
         const std::string attribute_label =
           (missing_attributes.size() > 1) ? "attributes" : "attribute";
 
-        if (_args.errors_to_ignore & util::IgnoreErrors::MissingPointAttributes) {
-          util::write_log((boost::format("warning: Missing %1% %2% in file %3%\n") %
-                           attribute_label % print_attributes(missing_attributes) % source.string())
-                            .str());
+        if (_args.errors_to_ignore &
+            util::IgnoreErrors::MissingPointAttributes) {
+          util::write_log(
+            (boost::format("warning: Missing %1% %2% in file %3%\n") %
+             attribute_label % print_attributes(missing_attributes) %
+             source.string())
+              .str());
           return;
         }
 
-        throw std::runtime_error{ (boost::format("Missing %1% %2% in file %3%") % attribute_label %
-                                   print_attributes(missing_attributes) % source.string())
-                                    .str() };
+        throw std::runtime_error{
+          (boost::format("Missing %1% %2% in file %3%") % attribute_label %
+           print_attributes(missing_attributes) % source.string())
+            .str()
+        };
       })
       .or_else([this, source](const auto& err) {
         if (_args.errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-          util::write_log((boost::format("warning: Ignoring file %1% while checking for missing "
-                                         "attributes in source files\n\tcaused by: %2%\n") %
-                           source.string() % err.what())
-                            .str());
+          util::write_log(
+            (boost::format(
+               "warning: Ignoring file %1% while checking for missing "
+               "attributes in source files\n\tcaused by: %2%\n") %
+             source.string() % err.what())
+              .str());
           return;
         }
 
-        throw util::chain_error(err,
-                                "Checking for missing point attributes in source files failed");
+        throw util::chain_error(
+          err, "Checking for missing point attributes in source files failed");
       });
   }
 }
@@ -460,27 +498,33 @@ TilerProcess::make_sampling_strategy() const
   if (_args.sampling_strategy == "MIN_DISTANCE")
     return PoissonDiskSampling{ _args.max_points_per_node };
   if (_args.sampling_strategy == "MIN_DISTANCE_FAST")
-    return AdaptivePoissonDiskSampling{ _args.max_points_per_node, [](int32_t node_level) -> float {
-                                         if (node_level < 0)
-                                           return 0.25f;
-                                         if (node_level < 1)
-                                           return 0.5f;
-                                         return 1.f;
-                                       } };
-  throw std::invalid_argument{
-    (boost::format("Unrecognized sampling strategy %1%") % _args.sampling_strategy).str()
-  };
+    return AdaptivePoissonDiskSampling{ _args.max_points_per_node,
+                                        [](int32_t node_level) -> float {
+                                          if (node_level < 0)
+                                            return 0.25f;
+                                          if (node_level < 1)
+                                            return 0.5f;
+                                          return 1.f;
+                                        } };
+  if (_args.sampling_strategy == "JITTERED")
+    return JitteredSampling{ _args.max_points_per_node };
+
+  throw std::invalid_argument{ (boost::format(
+                                  "Unrecognized sampling strategy %1%") %
+                                _args.sampling_strategy)
+                                 .str() };
 }
 
 Tiler
-TilerProcess::make_tiler(bool shift_points_to_center,
-                         uint32_t max_depth,
-                         std::variant<FixedThreadCount, AdaptiveThreadCount> thread_count,
-                         SRSTransformHelper const* srs_transform,
-                         DatasetMetadata dataset_metadata,
-                         SamplingStrategy sampling_strategy,
-                         ProgressReporter* progress_reporter,
-                         PointsPersistence& persistence) const
+TilerProcess::make_tiler(
+  bool shift_points_to_center,
+  uint32_t max_depth,
+  std::variant<FixedThreadCount, AdaptiveThreadCount> thread_count,
+  SRSTransformHelper const* srs_transform,
+  DatasetMetadata dataset_metadata,
+  SamplingStrategy sampling_strategy,
+  ProgressReporter* progress_reporter,
+  PointsPersistence& persistence) const
 {
   TilerMetaParameters tiler_meta_parameters;
   tiler_meta_parameters.spacing_at_root = _args.spacing;
@@ -516,8 +560,9 @@ TilerProcess::make_tiler(bool shift_points_to_center,
       }
     });
 
-  return { std::move(dataset_metadata), tiler_meta_parameters,   sampling_strategy,
-           progress_reporter,           std::move(point_source), persistence,
+  return { std::move(dataset_metadata), tiler_meta_parameters,
+           sampling_strategy,           progress_reporter,
+           std::move(point_source),     persistence,
            _input_attributes,           _args.output_directory };
 }
 
@@ -545,20 +590,26 @@ TilerProcess::run()
 
   util::write_log(concat("Total points: ", total_points_count, "\n"));
 
-  util::write_log(concat("Bounds:\n", dataset_metadata.total_bounds_tight(), "\n"));
-  util::write_log(concat("Bounds (cubic):\n", dataset_metadata.total_bounds_cubic(), "\n"));
+  util::write_log(
+    concat("Bounds:\n", dataset_metadata.total_bounds_tight(), "\n"));
+  util::write_log(
+    concat("Bounds (cubic):\n", dataset_metadata.total_bounds_cubic(), "\n"));
 
   if (_args.diagonal_fraction != 0) {
     _args.spacing =
-      (float)(dataset_metadata.total_bounds_cubic().extent().length() / _args.diagonal_fraction);
-    util::write_log(concat("Spacing calculated from diagonal: ", _args.spacing, "\n"));
+      (float)(dataset_metadata.total_bounds_cubic().extent().length() /
+              _args.diagonal_fraction);
+    util::write_log(
+      concat("Spacing calculated from diagonal: ", _args.spacing, "\n"));
   }
 
   auto thread_counts = calculate_actual_thread_counts(dataset_metadata);
 
   auto& progress_reporter = _ui_state.get_progress_reporter();
-  progress_reporter.register_progress_counter<size_t>(progress::LOADING, total_points_count);
-  progress_reporter.register_progress_counter<size_t>(progress::INDEXING, total_points_count);
+  progress_reporter.register_progress_counter<size_t>(progress::LOADING,
+                                                      total_points_count);
+  progress_reporter.register_progress_counter<size_t>(progress::INDEXING,
+                                                      total_points_count);
 
   auto persistence = make_persistence(_args.output_format,
                                       _args.output_directory,
@@ -567,13 +618,15 @@ TilerProcess::run()
                                       _args.rgb_mapping,
                                       _args.spacing,
                                       dataset_metadata.total_bounds_cubic());
-  const auto shift_points_to_center = (_args.output_format == OutputFormat::CZM_3DTILES);
+  const auto shift_points_to_center =
+    (_args.output_format == OutputFormat::CZM_3DTILES);
 
-const auto max_depth =
+  const auto max_depth =
     (_args.max_depth <= 0)
       ? (100u)
-      : static_cast<uint32_t>(_args.max_depth); // TODO max_depth parameter with uint32_t max
-                                                // results in only root level being created...
+      : static_cast<uint32_t>(
+          _args.max_depth); // TODO max_depth parameter with uint32_t max
+                            // results in only root level being created...
 
   util::write_log(concat("Using ", _args.sampling_strategy, " sampling\n"));
   auto sampling_strategy = make_sampling_strategy();
@@ -591,7 +644,8 @@ const auto max_depth =
 
   const auto prepare_end = std::chrono::high_resolution_clock::now();
   const auto prepare_duration =
-    std::chrono::duration_cast<std::chrono::milliseconds>(prepare_end - prepare_start);
+    std::chrono::duration_cast<std::chrono::milliseconds>(prepare_end -
+                                                          prepare_start);
 
   const auto indexing_start = std::chrono::high_resolution_clock::now();
 
@@ -599,22 +653,25 @@ const auto max_depth =
 
   const auto indexing_end = std::chrono::high_resolution_clock::now();
   const auto indexing_duration =
-    std::chrono::duration_cast<std::chrono::milliseconds>(indexing_end - indexing_start);
+    std::chrono::duration_cast<std::chrono::milliseconds>(indexing_end -
+                                                          indexing_start);
 
   PerformanceStats stats;
   stats.prepare_duration = prepare_duration;
   stats.indexing_duration = indexing_duration;
   stats.points_processed = total_points_count;
 
-  write_properties_json(_args.output_directory, cubic_bounds, _args.spacing, stats);
+  write_properties_json(
+    _args.output_directory, cubic_bounds, _args.spacing, stats);
 
   if (_args.output_format == OutputFormat::ENTWINE_LAS ||
       _args.output_format == OutputFormat::ENTWINE_LAZ) {
     EptJson ept_json;
     ept_json.bounds = cubic_bounds;
     ept_json.conforming_bounds = cubic_bounds;
-    ept_json.data_type =
-      (_args.output_format == OutputFormat::ENTWINE_LAZ) ? EntwineFormat::LAZ : EntwineFormat::LAS;
+    ept_json.data_type = (_args.output_format == OutputFormat::ENTWINE_LAZ)
+                           ? EntwineFormat::LAZ
+                           : EntwineFormat::LAS;
     ept_json.hierarchy_type = "json";
     ept_json.points = num_processed_points;
     ept_json.schema = point_attributes_to_ept_schema(_output_attributes);
@@ -624,16 +681,19 @@ const auto max_depth =
     write_ept_json(_args.output_directory / "ept.json", ept_json);
   }
 
-  const auto total_indexed_count = progress_reporter.get_progress<size_t>(progress::INDEXING);
+  const auto total_indexed_count =
+    progress_reporter.get_progress<size_t>(progress::INDEXING);
   const auto dropped_points_count = total_points_count - total_indexed_count;
 
   if (dropped_points_count) {
-    util::write_log((boost::format("Tiler finished with warnings - Indexed %1% out of %2% "
-                                   "points (%3% points could not be indexed)") %
-                     total_indexed_count % total_points_count % dropped_points_count)
-                      .str());
-  } else {
     util::write_log(
-      (boost::format("Tiler finished - Indexed %1% points") % total_indexed_count).str());
+      (boost::format("Tiler finished with warnings - Indexed %1% out of %2% "
+                     "points (%3% points could not be indexed)") %
+       total_indexed_count % total_points_count % dropped_points_count)
+        .str());
+  } else {
+    util::write_log((boost::format("Tiler finished - Indexed %1% points") %
+                     total_indexed_count)
+                      .str());
   }
 }

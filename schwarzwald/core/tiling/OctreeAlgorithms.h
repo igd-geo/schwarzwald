@@ -14,29 +14,6 @@
 #include <vector>
 
 /**
- * A reference to a cached point in a PointBuffer, together with the points
- * octree index
- */
-template<unsigned int MaxLevels>
-struct IndexedPoint
-{
-  PointBuffer::PointReference point_reference;
-  MortonIndex<MaxLevels> morton_index;
-};
-
-/**
- * IndexedPoint using 64-bit MortonIndex
- */
-using IndexedPoint64 = IndexedPoint<21>;
-
-template<unsigned int MaxLevels>
-bool
-operator<(const IndexedPoint<MaxLevels>& l, const IndexedPoint<MaxLevels>& r)
-{
-  return l.morton_index.get() < r.morton_index.get();
-}
-
-/**
  * What to do with outlier points (i.e. points that are read from the source
  * file but are not within the bounds of the source file)
  */
