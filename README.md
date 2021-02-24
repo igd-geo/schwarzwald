@@ -28,7 +28,7 @@ Schwarzwald uses `LASzip` from the [lastools](https://github.com/m-schuetz/LASto
 ```
 cd ~/dev/lastools
 git clone https://github.com/m-schuetz/LAStools.git
-cd LASzip
+cd LAStools/LASzip
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Release .. && make

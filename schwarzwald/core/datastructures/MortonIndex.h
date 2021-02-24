@@ -11,11 +11,13 @@ template<unsigned int MaxBits>
 using KeyDataType_t = std::conditional_t<
   MaxBits <= 8,
   uint8_t,
-  std::conditional_t<MaxBits <= 16,
-                     uint16_t,
-                     std::conditional_t<MaxBits <= 32,
-                                        uint32_t,
-                                        std::conditional_t<MaxBits <= 64, uint64_t, __uint128_t>>>>;
+  std::conditional_t<
+    MaxBits <= 16,
+    uint16_t,
+    std::conditional_t<
+      MaxBits <= 32,
+      uint32_t,
+      std::conditional_t<MaxBits <= 64, uint64_t, __uint128_t>>>>;
 
 /**
  * Returns a bitmask with the first 'Bits' set bits, e.g. calling
@@ -33,18 +35,19 @@ all_set_bits()
 // Naming convention for parsing and printing Morton indices
 enum class MortonIndexNamingConvention
 {
-  // Concatenation of the octant indices, starting with the node that is closest to the root (e.g.
-  // 0475263). The root node itself is ignored, as it has no octant index. An empty Morton index
-  // thus corresponds to the empty string.
+  // Concatenation of the octant indices, starting with the node that is closest
+  // to the root (e.g. 0475263). The root node itself is ignored, as it has no
+  // octant index. An empty Morton index thus corresponds to the empty string.
   Simple,
-  // Like the 'Simple' convention, but the resulting string is prefixed with 'r' for the root node.
-  // An empty Morton index thus corresponds to the string 'r'. This is the naming convention that
-  // Potree uses.
+  // Like the 'Simple' convention, but the resulting string is prefixed with 'r'
+  // for the root node. An empty Morton index thus corresponds to the string
+  // 'r'. This is the naming convention that Potree uses.
   Potree,
-  // A concatenation of the depth of the Morton index with the X, Y and Z components of the Morton
-  // index. The spatial components correspond to the X, Y and Z indices of the octree node within a
-  // regular grid with 2^depth subdivisions. Strings then take the form of 'depth-X-Y-Z', e.g.
-  // 2-7-3-1. This is the naming convention that Entwine uses.
+  // A concatenation of the depth of the Morton index with the X, Y and Z
+  // components of the Morton index. The spatial components correspond to the X,
+  // Y and Z indices of the octree node within a regular grid with 2^depth
+  // subdivisions. Strings then take the form of 'depth-X-Y-Z', e.g. 2-7-3-1.
+  // This is the naming convention that Entwine uses.
   Entwine
 };
 
@@ -80,7 +83,8 @@ struct MortonIndex
   static constexpr auto MaxLevels = _MaxLevels;
 
   static constexpr auto BitsRequired = MaxLevels * 3;
-  static_assert(BitsRequired <= 128, "MaxLevels is too large, only 42 levels are supported!");
+  static_assert(BitsRequired <= 128,
+                "MaxLevels is too large, only 42 levels are supported!");
   using Store_t = detail::KeyDataType_t<BitsRequired>;
 
   static constexpr MortonIndex MAX = { ~Store_t{ 0 } };
@@ -107,7 +111,14 @@ struct MortonIndex
     return *this;
   }
 
-  bool operator==(const MortonIndex<_MaxLevels>& other) const { return get() == other.get(); }
+  bool operator==(const MortonIndex<_MaxLevels>& other) const
+  {
+    return get() == other.get();
+  }
+  bool operator<(const MortonIndex<_MaxLevels>& other) const
+  {
+    return get() < other.get();
+  }
 
   constexpr MortonIndex truncate_to_level(const uint32_t level) const
   {
@@ -145,7 +156,8 @@ struct MortonIndex
 private:
   Store_t _store;
 
-  constexpr Store_t init_from_levels(const std::array<uint8_t, MaxLevels>& levels)
+  constexpr Store_t init_from_levels(
+    const std::array<uint8_t, MaxLevels>& levels)
   {
     Store_t key{ 0 };
     for (uint32_t level = 0; level < MaxLevels; ++level) {
@@ -191,6 +203,17 @@ from_string(const std::string& str)
     key.set_octant_at_level(static_cast<uint32_t>(idx), level);
   }
   return key;
+}
+
+namespace std {
+template<unsigned int MaxLevels>
+struct hash<MortonIndex<MaxLevels>>
+{
+  size_t operator()(const MortonIndex<MaxLevels>& idx) const
+  {
+    return idx.get();
+  }
+};
 }
 
 /**

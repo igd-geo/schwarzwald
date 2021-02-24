@@ -336,3 +336,26 @@ write_json_to_file(const rapidjson::Document& doc, const fs::path& file_path)
                file_path.string()) });
   }
 }
+
+uint32_t
+get_prev_power_of_two(uint32_t x)
+{
+  x = x | (x >> 1);
+  x = x | (x >> 2);
+  x = x | (x >> 4);
+  x = x | (x >> 8);
+  x = x | (x >> 16);
+  return x - (x >> 1);
+}
+
+uint64_t
+get_prev_power_of_two(uint64_t x)
+{
+  x = x | (x >> 1);
+  x = x | (x >> 2);
+  x = x | (x >> 4);
+  x = x | (x >> 8);
+  x = x | (x >> 16);
+  x = x | (x >> 32);
+  return x - (x >> 1);
+}

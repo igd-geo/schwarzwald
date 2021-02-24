@@ -20,7 +20,8 @@ struct PointSource
 
   PointSource(std::vector<fs::path> files, util::IgnoreErrors errors_to_ignore);
 
-  std::optional<PointBuffer> read_next(size_t count, const PointAttributes& point_attributes);
+  std::optional<PointBuffer> read_next(size_t count,
+                                       const PointAttributes& point_attributes);
 
   void add_transformation(Transform transform);
 
@@ -63,7 +64,8 @@ struct MultiReaderPointSource
    *   async_source.release(source);
    */
 
-  using Transform = std::function<void(util::Range<PointBuffer::PointIterator>)>;
+  using Transform =
+    std::function<void(util::Range<PointBuffer::PointIterator>)>;
 
   // TODO HACK Storing the file types as variants and then storing a SEPARATE
   // variant for the iterators won't compile with more than one type in the
@@ -74,12 +76,15 @@ struct MultiReaderPointSource
 
   struct PointFileEntry
   {
-    PointFileEntry(PointFile point_file, const fs::path& file_path);
+    PointFileEntry(PointFile point_file,
+                   const fs::path& file_path,
+                   size_t file_index);
 
     PointFile point_file;
     PointFileCursor cursor;
     bool available;
     fs::path file_path;
+    size_t file_index;
   };
 
   /**
@@ -89,10 +94,13 @@ struct MultiReaderPointSource
   {
     friend struct MultiReaderPointSource;
 
-    std::optional<PointBuffer> read_next(size_t count, const PointAttributes& point_attributes);
+    std::optional<PointBuffer> read_next(
+      size_t count,
+      const PointAttributes& point_attributes);
 
-    PointBuffer::PointIterator read_next_into(util::Range<PointBuffer::PointIterator> point_range,
-                                              const PointAttributes& point_attributes);
+    PointBuffer::PointIterator read_next_into(
+      util::Range<PointBuffer::PointIterator> point_range,
+      const PointAttributes& point_attributes);
 
   private:
     PointSourceHandle(PointFileEntry* point_file_entry,
@@ -104,11 +112,13 @@ struct MultiReaderPointSource
 
   friend struct PointSourceHandle;
 
-  MultiReaderPointSource(std::vector<fs::path> files, util::IgnoreErrors errors_to_ignore);
+  MultiReaderPointSource(std::vector<fs::path> files,
+                         util::IgnoreErrors errors_to_ignore);
   MultiReaderPointSource(MultiReaderPointSource&&) = default;
 
   std::optional<PointSourceHandle> lock_source();
-  std::optional<PointSourceHandle> lock_specific_source(const fs::path& file_name);
+  std::optional<PointSourceHandle> lock_specific_source(
+    const fs::path& file_name);
   void release_source(const PointSourceHandle& source_handle);
 
   size_t max_concurrent_reads();
@@ -133,8 +143,8 @@ private:
     std::unordered_set<fs::path, util::PathHash>::iterator file_iter);
 
   PointFileEntry* find_next_available_open_file();
-  tl::expected<PointFileEntry*, GetSpecificOpenFileFailure> get_specific_open_file(
-    const fs::path& file) const;
+  tl::expected<PointFileEntry*, GetSpecificOpenFileFailure>
+  get_specific_open_file(const fs::path& file) const;
   bool point_file_entry_is_at_end(const PointFileEntry& point_file_entry) const;
 
   std::vector<fs::path> _files;

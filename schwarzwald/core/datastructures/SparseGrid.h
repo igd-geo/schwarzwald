@@ -27,13 +27,16 @@ public:
     , aabb(other.aabb)
     , squaredSpacing(other.squaredSpacing)
     , numAccepted(other.numAccepted)
+    , _dbg_num_comparisons(other._dbg_num_comparisons)
   {}
 
   ~SparseGrid();
 
   bool isDistant(const Vector3<double>& p, GridCell* cell);
 
-  bool isDistant(const Vector3<double>& p, GridCell* cell, float& squaredSpacing);
+  bool isDistant(const Vector3<double>& p,
+                 GridCell* cell,
+                 float& squaredSpacing);
 
   bool willBeAccepted(const Vector3<double>& p);
 
@@ -44,4 +47,9 @@ public:
   void addWithoutCheck(const Vector3<double>& p);
 
   size_t content_byte_size() const;
+
+  inline size_t dbg_num_comparisons() const { return _dbg_num_comparisons; }
+
+private:
+  size_t _dbg_num_comparisons;
 };
