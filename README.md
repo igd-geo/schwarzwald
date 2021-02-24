@@ -93,11 +93,14 @@ There are several parameters that control the structure of the tiles. They are v
                                         spacing). spacing = diagonal / value
   --sampling arg (=MIN_DISTANCE)        Sampling strategy to use. Possible 
                                         values are RANDOM_GRID, GRID_CENTER, 
-                                        MIN_DISTANCE. The quality of the 
-                                        resulting point cloud can be adjusted 
-                                        with this parameter, with RANDOM_GRID 
-                                        corresponding to the lowest quality and
-                                        MIN_DISTANCE to the highest quality.
+                                        MIN_DISTANCE, JITTERED. The quality of 
+                                        the resulting point cloud can be 
+                                        adjusted with this parameter, with 
+                                        RANDOM_GRID corresponding to the lowest
+                                        quality and MIN_DISTANCE to the highest
+                                        quality. JITTERED gives similar quality
+                                        to MIN_DISTANCE, but with better 
+                                        performance.
   --tiling-strategy arg (=FAST)         The tiling strategy to use. Valid 
                                         options are FAST or ACCURATE, where 
                                         FAST will yield better performance but 
