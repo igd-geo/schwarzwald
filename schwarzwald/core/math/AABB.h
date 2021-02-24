@@ -26,8 +26,8 @@ struct AABB
 
   bool isInside(const Vector3<double>& p) const
   {
-    return (p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y && p.z >= min.z &&
-            p.z <= max.z);
+    return (p.x >= min.x && p.x <= max.x && p.y >= min.y && p.y <= max.y &&
+            p.z >= min.z && p.z <= max.z);
   }
 
   void update(const Vector3<double>& point)
@@ -52,8 +52,12 @@ struct AABB
     const auto max_extent = extent().maxValue();
     const auto half_length = max_extent / 2;
     const auto center = getCenter();
-    min = { center.x - half_length, center.y - half_length, center.z - half_length };
-    max = { center.x + half_length, center.y + half_length, center.z + half_length };
+    min = { center.x - half_length,
+            center.y - half_length,
+            center.z - half_length };
+    max = { center.x + half_length,
+            center.y + half_length,
+            center.z + half_length };
   }
 
   AABB cubic() const
@@ -70,7 +74,10 @@ struct AABB
     return { min + translation, max + translation };
   }
 
-  bool operator==(const AABB& other) const { return min == other.min && max == other.max; }
+  bool operator==(const AABB& other) const
+  {
+    return min == other.min && max == other.max;
+  }
 
   friend std::ostream& operator<<(std::ostream& output, const AABB& value)
   {

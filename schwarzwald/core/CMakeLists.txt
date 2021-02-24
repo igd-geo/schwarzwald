@@ -12,6 +12,8 @@ set(SOURCE_FILES
     datastructures/DynamicMortonIndex.cpp
     datastructures/DynamicMortonIndex.h
     datastructures/MortonIndex.h
+    datastructures/MortonGrid.cpp
+    datastructures/MortonGrid.h
 
     io/BinaryPersistence.cpp
     io/BinaryPersistence.h

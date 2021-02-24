@@ -220,6 +220,19 @@ expand_bits_by_3(uint64_t val)
   return val;
 }
 
+inline uint64_t
+contract_bits_by_3(uint64_t val)
+{
+  val &= uint64_t(
+    0b00010010'01001001'00100100'10010010'01001001'00100100'10010010'01001001ULL);
+  val = (val | (val >> 2)) & uint64_t(0303030303030303030303);
+  val = (val | (val >> 4)) & uint64_t(0xF00F00F0'0F00F00F);
+  val = (val | (val >> 8)) & uint64_t(0x00FF0000'FF0000FF);
+  val = (val | (val >> 16)) & uint64_t(0x00FF0000'0000FFFF);
+  val = (val | (val >> 32)) & uint64_t(0x00000000'FFFFFFFF);
+  return val;
+}
+
 template<typename Key, typename Value, typename Compare, typename Alloc>
 std::vector<Key>
 keys(std::map<Key, Value, Compare, Alloc> const& map)
@@ -297,3 +310,15 @@ rj_string(const std::string& str, Allocator& alloc)
   }
   return { str.c_str(), static_cast<rapidjson::SizeType>(str.size()), alloc };
 }
+
+uint32_t
+get_prev_power_of_two(uint32_t x);
+
+uint64_t
+get_prev_power_of_two(uint64_t x);
+
+// template<unsigned N, typename Rng>
+// std::array<uint32_t, N> get_k_distinct_random_values_from(Rng& rng) {
+//   std::uniform_int_distribution<uint32_t> distribution{0, N};
+
+// }

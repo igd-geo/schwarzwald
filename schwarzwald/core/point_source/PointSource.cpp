@@ -5,7 +5,8 @@
 
 #include <boost/format.hpp>
 
-PointSource::PointSource(std::vector<fs::path> files, util::IgnoreErrors errors_to_ignore)
+PointSource::PointSource(std::vector<fs::path> files,
+                         util::IgnoreErrors errors_to_ignore)
   : _files(std::move(files))
   , _errors_to_ignore(errors_to_ignore)
 {
@@ -26,11 +27,12 @@ PointSource::read_next(size_t count, const PointAttributes& attributes)
     [this, count, &attributes](auto& typed_file) -> std::optional<PointBuffer> {
       const auto& metadata = pc::metadata(typed_file);
       auto point_buffer = std::visit(
-        [this, count, &attributes, &typed_file, &metadata](auto& typed_file_cursor) -> PointBuffer {
+        [this, count, &attributes, &typed_file, &metadata](
+          auto& typed_file_cursor) -> PointBuffer {
           PointBuffer point_buffer;
           try {
-            typed_file_cursor =
-              pc::read_points(typed_file_cursor, count, metadata, attributes, point_buffer);
+            typed_file_cursor = pc::read_points(
+              typed_file_cursor, count, metadata, attributes, point_buffer);
           } catch (const std::exception& ex) {
             if (_errors_to_ignore & util::IgnoreErrors::CorruptedFiles) {
               // Drop this file, move on to next file
@@ -42,7 +44,8 @@ PointSource::read_next(size_t count, const PointAttributes& attributes)
             } else {
               throw util::chain_error(
                 ex,
-                (boost::format("Could not read points from file %1%") % _file_cursor->string())
+                (boost::format("Could not read points from file %1%") %
+                 _file_cursor->string())
                   .str());
             }
           }
@@ -90,8 +93,9 @@ PointSource::try_open_file(std::vector<fs::path>::const_iterator file_cursor)
     })
     .or_else([this](const util::ErrorChain& error_chain) {
       if (_errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-        util::write_log(
-          (boost::format("Opening next point file failed: %1%") % error_chain.what()).str());
+        util::write_log((boost::format("Opening next point file failed: %1%") %
+                         error_chain.what())
+                          .str());
         return;
       }
 
@@ -116,13 +120,19 @@ PointSource::move_to_next_file()
 }
 
 #pragma region MultiReaderPointSource
-MultiReaderPointSource::MultiReaderPointSource(std::vector<fs::path> files,
-                                               util::IgnoreErrors errors_to_ignore)
+MultiReaderPointSource::MultiReaderPointSource(
+  std::vector<fs::path> files,
+  util::IgnoreErrors errors_to_ignore)
   : _files(std::move(files))
   , _next_files(std::begin(_files), std::end(_files))
   , _errors_to_ignore(errors_to_ignore)
   , _open_files_lock(std::make_unique<std::mutex>())
-{}
+{
+  std::cout << "Input files:\n";
+  for (auto& file : _files) {
+    std::cout << file << "\n";
+  }
+}
 
 std::optional<MultiReaderPointSource::PointSourceHandle>
 MultiReaderPointSource::lock_source()
@@ -166,7 +176,9 @@ MultiReaderPointSource::lock_specific_source(const fs::path& file_name)
   const auto reason_for_failure = open_file_record_or_failure.error();
   switch (reason_for_failure) {
     case GetSpecificOpenFileFailure::NotAvailable:
-      throw std::runtime_error{ "Requested file source is already locked by another thread!" };
+      throw std::runtime_error{
+        "Requested file source is already locked by another thread!"
+      };
     case GetSpecificOpenFileFailure::NotYetOpened: {
       auto opened_file = try_open_specific_file(file_name);
       if (!opened_file) {
@@ -181,7 +193,9 @@ MultiReaderPointSource::lock_specific_source(const fs::path& file_name)
       return handle;
     }
     default:
-      throw std::runtime_error{ "Unrecognized GetSpecificOpenFileFailure constant" };
+      throw std::runtime_error{
+        "Unrecognized GetSpecificOpenFileFailure constant"
+      };
   }
 }
 
@@ -191,12 +205,16 @@ MultiReaderPointSource::release_source(const PointSourceHandle& source_handle)
   std::lock_guard guard{ *_open_files_lock };
 
   // Find matching PointFileEntry
-  const auto matching_entry_iter = std::find_if(
-    std::begin(_open_files), std::end(_open_files), [&source_handle](const auto& entry) {
-      return entry.get() == source_handle._point_file_entry;
-    });
+  const auto matching_entry_iter =
+    std::find_if(std::begin(_open_files),
+                 std::end(_open_files),
+                 [&source_handle](const auto& entry) {
+                   return entry.get() == source_handle._point_file_entry;
+                 });
   if (matching_entry_iter == std::end(_open_files)) {
-    throw std::invalid_argument{ "source_handle does not refer to an open file!" };
+    throw std::invalid_argument{
+      "source_handle does not refer to an open file!"
+    };
   }
 
   auto& matching_entry = **matching_entry_iter;
@@ -214,9 +232,10 @@ size_t
 MultiReaderPointSource::max_concurrent_reads()
 {
   std::lock_guard guard{ *_open_files_lock };
-  const auto open_files = std::count_if(std::begin(_open_files),
-                                        std::end(_open_files),
-                                        [](const auto& open_file) { return open_file->available; });
+  const auto open_files =
+    std::count_if(std::begin(_open_files),
+                  std::end(_open_files),
+                  [](const auto& open_file) { return open_file->available; });
   const auto remaining_files = _next_files.size();
   return open_files + remaining_files;
 }
@@ -255,14 +274,20 @@ MultiReaderPointSource::do_open_file(
   const auto file_path = *file_iter;
   _next_files.erase(file_iter);
 
+  const auto file_index = static_cast<size_t>(
+    std::distance(std::begin(_files),
+                  std::find(std::begin(_files), std::end(_files), file_path)));
+
   return open_point_file(file_path)
-    .map([this, &file_path](PointFile point_file) mutable {
-      return std::make_unique<PointFileEntry>(std::move(point_file), file_path);
+    .map([this, &file_path, file_index](PointFile point_file) mutable {
+      return std::make_unique<PointFileEntry>(
+        std::move(point_file), file_path, file_index);
     })
     .or_else([this](const util::ErrorChain& error_chain) {
       if (_errors_to_ignore & util::IgnoreErrors::InaccessibleFiles) {
-        util::write_log(
-          (boost::format("Opening next point file failed: %1%") % error_chain.what()).str());
+        util::write_log((boost::format("Opening next point file failed: %1%") %
+                         error_chain.what())
+                          .str());
         return;
       }
 
@@ -274,10 +299,10 @@ MultiReaderPointSource::do_open_file(
 MultiReaderPointSource::PointFileEntry*
 MultiReaderPointSource::find_next_available_open_file()
 {
-  const auto next_available_file_iter =
-    std::find_if(std::begin(_open_files), std::end(_open_files), [](const auto& point_file_entry) {
-      return point_file_entry->available;
-    });
+  const auto next_available_file_iter = std::find_if(
+    std::begin(_open_files),
+    std::end(_open_files),
+    [](const auto& point_file_entry) { return point_file_entry->available; });
   if (next_available_file_iter == std::end(_open_files)) {
     return nullptr;
   }
@@ -289,10 +314,12 @@ tl::expected<MultiReaderPointSource::PointFileEntry*,
              MultiReaderPointSource::GetSpecificOpenFileFailure>
 MultiReaderPointSource::get_specific_open_file(const fs::path& file) const
 {
-  const auto is_open_iter = std::find_if(
-    std::begin(_open_files), std::end(_open_files), [&file](const auto& point_file_entry) {
-      return point_file_entry->file_path == file;
-    });
+  const auto is_open_iter =
+    std::find_if(std::begin(_open_files),
+                 std::end(_open_files),
+                 [&file](const auto& point_file_entry) {
+                   return point_file_entry->file_path == file;
+                 });
 
   if (is_open_iter == std::end(_open_files)) {
     return tl::make_unexpected(GetSpecificOpenFileFailure::NotYetOpened);
@@ -306,20 +333,24 @@ MultiReaderPointSource::get_specific_open_file(const fs::path& file) const
 }
 
 bool
-MultiReaderPointSource::point_file_entry_is_at_end(const PointFileEntry& point_file_entry) const
+MultiReaderPointSource::point_file_entry_is_at_end(
+  const PointFileEntry& point_file_entry) const
 {
   return std::visit(
     [&point_file_entry](const auto& typed_file) {
       return std::visit(
-        [&typed_file](const auto& cursor) { return cursor == std::cend(typed_file); },
+        [&typed_file](const auto& cursor) {
+          return cursor == std::cend(typed_file);
+        },
         point_file_entry.cursor);
     },
     point_file_entry.point_file);
 }
 
 std::optional<PointBuffer>
-MultiReaderPointSource::PointSourceHandle::read_next(size_t count,
-                                                     const PointAttributes& point_attributes)
+MultiReaderPointSource::PointSourceHandle::read_next(
+  size_t count,
+  const PointAttributes& point_attributes)
 {
   // The std::visit syntax makes me want to cry
   return std::visit(
@@ -329,10 +360,14 @@ MultiReaderPointSource::PointSourceHandle::read_next(size_t count,
           auto& typed_file) -> std::optional<PointBuffer> {
           PointBuffer point_buffer;
           try {
-            typed_cursor = pc::read_points(
-              typed_cursor, count, pc::metadata(typed_file), point_attributes, point_buffer);
+            typed_cursor = pc::read_points(typed_cursor,
+                                           count,
+                                           pc::metadata(typed_file),
+                                           point_attributes,
+                                           point_buffer);
           } catch (const std::exception& ex) {
-            if (_multi_reader_source->_errors_to_ignore & util::IgnoreErrors::CorruptedFiles) {
+            if (_multi_reader_source->_errors_to_ignore &
+                util::IgnoreErrors::CorruptedFiles) {
               // Log error and move this file to end, we assume that the file is
               // dead now
               util::write_log((boost::format("Could not read points from "
@@ -344,13 +379,15 @@ MultiReaderPointSource::PointSourceHandle::read_next(size_t count,
             } else {
               throw util::chain_error(
                 ex,
-                (boost::format("Could not read points from file %1%") % pc::source(typed_file))
+                (boost::format("Could not read points from file %1%") %
+                 pc::source(typed_file))
                   .str());
             }
           }
 
           for (auto& transformation : _multi_reader_source->_transformations) {
-            transformation({ std::begin(point_buffer), std::end(point_buffer) });
+            transformation(
+              { std::begin(point_buffer), std::end(point_buffer) });
           }
 
           return { std::move(point_buffer) };
@@ -370,17 +407,26 @@ MultiReaderPointSource::PointSourceHandle::read_next_into(
       return std::visit(
         [point_range, &point_attributes, &typed_cursor, this](
           auto& typed_file) -> PointBuffer::PointIterator {
-          PointBuffer::PointIterator new_end_of_point_range = std::begin(point_range);
+          PointBuffer::PointIterator new_end_of_point_range =
+            std::begin(point_range);
           try {
-            auto [_new_file_iter, _new_out_iter] = pc::read_points_into(typed_cursor,
-                                                                        std::cend(typed_file),
-                                                                        pc::metadata(typed_file),
-                                                                        point_attributes,
-                                                                        point_range);
+            auto [_new_file_iter, _new_out_iter] =
+              pc::read_points_into(typed_cursor,
+                                   std::cend(typed_file),
+                                   pc::metadata(typed_file),
+                                   point_attributes,
+                                   point_range);
+
+            for (auto point_ref : point_range) {
+              *point_ref.point_source_id() =
+                static_cast<uint16_t>(_point_file_entry->file_index);
+            }
+
             typed_cursor = _new_file_iter;
             new_end_of_point_range = _new_out_iter;
           } catch (const std::exception& ex) {
-            if (_multi_reader_source->_errors_to_ignore & util::IgnoreErrors::CorruptedFiles) {
+            if (_multi_reader_source->_errors_to_ignore &
+                util::IgnoreErrors::CorruptedFiles) {
               // Log error and move this file to end, we assume that the file is
               // dead now
               util::write_log((boost::format("Could not read points from "
@@ -392,7 +438,8 @@ MultiReaderPointSource::PointSourceHandle::read_next_into(
             } else {
               throw util::chain_error(
                 ex,
-                (boost::format("Could not read points from file %1%") % pc::source(typed_file))
+                (boost::format("Could not read points from file %1%") %
+                 pc::source(typed_file))
                   .str());
             }
           }
@@ -415,16 +462,21 @@ MultiReaderPointSource::PointSourceHandle::PointSourceHandle(
   , _multi_reader_source(multi_reader_source)
 {}
 
-MultiReaderPointSource::PointFileEntry::PointFileEntry(PointFile file, const fs::path& file_path)
+MultiReaderPointSource::PointFileEntry::PointFileEntry(
+  PointFile file,
+  const fs::path& file_path,
+  size_t file_index)
   : point_file(std::move(file))
   , available(true)
   , file_path(file_path)
+  , file_index(file_index)
 {
   // Get an iterator to the start of the file and store it
   //( std::variant syntax is so nasty :( )
   std::visit(
     [this](auto& typed_file_cursor) {
-      std::visit([&typed_file_cursor](const auto& file) { typed_file_cursor = std::begin(file); },
+      std::visit([&typed_file_cursor](
+                   const auto& file) { typed_file_cursor = std::begin(file); },
                  point_file);
     },
     cursor);
