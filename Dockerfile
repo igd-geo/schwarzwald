@@ -32,6 +32,8 @@ RUN apt-get update && apt-get -y install sqlite3 curl
 COPY --from=build /data/LAStools/LASzip/build/src/liblaszip.so /usr/lib/liblaszip.so
 COPY --from=build /tmp/libproj.so* /usr/lib/
 COPY --from=build /data/Schwarzwald/build/_deps/proj-build/data/proj.db /proj.db
+COPY --from=build /usr/local/lib64/libstdc++.so* /usr/local/lib64/
+ENV LD_LIBRARY_PATH=/usr/local/lib64
 
 # copy binary
 COPY --from=build /data/Schwarzwald/build/Release/Schwarzwald /pointcloud-tiler/Schwarzwald/build/Release/Schwarzwald
