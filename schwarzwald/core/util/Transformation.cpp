@@ -8,7 +8,7 @@
 using namespace std::string_literals;
 
 static void
-transformAABBWithProj4(AABB& aabb, projPJ sourceProjection, projPJ targetProjection)
+transformAABBWithProj4(AABB& aabb, PJ* transformation)
 {
   // Construct the 8 corner vertices
   std::array<Vector3<double>, 8> aabbVertices;
@@ -30,17 +30,16 @@ transformAABBWithProj4(AABB& aabb, projPJ sourceProjection, projPJ targetProject
   // positions
   std::for_each(aabbVertices.begin(),
                 aabbVertices.end(),
-                [&aabb, sourceProjection, targetProjection](auto& vertex) {
-                  pj_transform(
-                    sourceProjection, targetProjection, 1, 1, &vertex.x, &vertex.y, &vertex.z);
+                [&aabb, transformation](auto& vertex) {
+                  PJ_COORD transformed = proj_trans(transformation, PJ_FWD, proj_coord(vertex.x, vertex.y, vertex.z, 0.0));
+                  
+                  aabb.min.x = std::min(aabb.min.x, transformed.xyz.x);
+                  aabb.min.y = std::min(aabb.min.y, transformed.xyz.y);
+                  aabb.min.z = std::min(aabb.min.z, transformed.xyz.z);
 
-                  aabb.min.x = std::min(aabb.min.x, vertex.x);
-                  aabb.min.y = std::min(aabb.min.y, vertex.y);
-                  aabb.min.z = std::min(aabb.min.z, vertex.z);
-
-                  aabb.max.x = std::max(aabb.max.x, vertex.x);
-                  aabb.max.y = std::max(aabb.max.y, vertex.y);
-                  aabb.max.z = std::max(aabb.max.z, vertex.z);
+                  aabb.max.x = std::max(aabb.max.x, transformed.xyz.x);
+                  aabb.max.y = std::max(aabb.max.y, transformed.xyz.y);
+                  aabb.max.z = std::max(aabb.max.z, transformed.xyz.z);
                 });
 }
 
@@ -74,28 +73,32 @@ IdentityTransform::transformAABBsTo(TargetSRS targetSRS, gsl::span<AABB> aabbs) 
 
 Proj4Transform::Proj4Transform(const std::string& sourceProjection)
 {
-  _sourceTransformation = pj_init_plus(sourceProjection.c_str());
-
-  if (_sourceTransformation == nullptr) {
+  _source_to_wgs84 = proj_create_crs_to_crs(PJ_DEFAULT_CTX, sourceProjection.c_str(), "+proj=longlat +datum=WGS84 +no_defs ", nullptr);
+  if (_source_to_wgs84 == nullptr) {
     throw std::runtime_error{ "Source projection "s + sourceProjection + " not recognized!" };
   }
 
-  _wgs84 = pj_init_plus("+proj=longlat +datum=WGS84 +no_defs ");
-  _cesiumWorld = pj_init_plus("+proj=geocent +datum=WGS84 +no_defs ");
+  _source_to_cesiumWorld = proj_create_crs_to_crs(PJ_DEFAULT_CTX, sourceProjection.c_str(), "+proj=geocent +datum=WGS84 +no_defs ", nullptr);
+  if (_source_to_cesiumWorld == nullptr) {
+    throw std::runtime_error{ "Source projection "s + sourceProjection + " not recognized!" };
+  }
 }
 
-Proj4Transform::~Proj4Transform() {}
+Proj4Transform::~Proj4Transform() {
+  proj_destroy(_source_to_wgs84);
+  proj_destroy(_source_to_cesiumWorld);
+}
 
 void
 Proj4Transform::transformAABBsTo(TargetSRS targetSRS, gsl::span<AABB> aabbs) const
 {
-  const auto targetTransformation = getTargetTransformation(targetSRS);
-  if (!targetTransformation) {
+  const auto transformation = getTargetTransformation(targetSRS);
+  if (!transformation) {
     throw std::invalid_argument{ "Unrecognized TargetSRS parameter!" };
   }
 
   for (auto& aabb : aabbs) {
-    transformAABBWithProj4(aabb, _sourceTransformation, targetTransformation);
+    transformAABBWithProj4(aabb, transformation);
   }
 }
 
@@ -106,35 +109,24 @@ Proj4Transform::transformPositionsTo(TargetSRS targetSRS,
   if (!positions.size())
     return;
 
-  const auto targetTransformation = getTargetTransformation(targetSRS);
-  if (!targetTransformation) {
+  const auto transformation = getTargetTransformation(targetSRS);
+  if (!transformation) {
     throw std::invalid_argument{ "Unrecognized TargetSRS parameter!" };
   }
 
-  // This is a bit dangerous as it assumes that Vector3 is layed out linearily
-  // and packed tightly, so we have some compile-time checks here to ensure this
-  static_assert(sizeof(Vector3<double>) == (3 * sizeof(double)),
-                "Revise the Proj4Transform::transformPositionsTo method. It assumes that "
-                "the binary layout of Vector3<double> if [x:double;y:double;z:double]");
-  static_assert(offsetof(Vector3<double>, x) == 0,
-                "Revise the Proj4Transform::transformPositionsTo method. It assumes that "
-                "the binary layout of Vector3<double> if [x:double;y:double;z:double]");
-  static_assert(offsetof(Vector3<double>, y) == sizeof(double),
-                "Revise the Proj4Transform::transformPositionsTo method. It assumes that "
-                "the binary layout of Vector3<double> if [x:double;y:double;z:double]");
-  static_assert(offsetof(Vector3<double>, z) == (2 * sizeof(double)),
-                "Revise the Proj4Transform::transformPositionsTo method. It assumes that "
-                "the binary layout of Vector3<double> if [x:double;y:double;z:double]");
-
   auto positionsPtr = positions.data();
-  auto xPtr = reinterpret_cast<double*>(positionsPtr);
-  auto yPtr = xPtr + 1;
-  auto zPtr = xPtr + 2;
+  auto xPtr = &positionsPtr[0].x;
+  auto yPtr = &positionsPtr[0].y;
+  auto zPtr = &positionsPtr[0].z;
   const auto positionsCount = static_cast<long>(positions.size());
-  const auto stride = 3; // 3 doubles per Vector3<double>
+  const auto stride = sizeof(Vector3<double>); // 3 doubles per Vector3<double>
 
-  pj_transform(
-    _sourceTransformation, targetTransformation, positionsCount, stride, xPtr, yPtr, zPtr);
+  proj_trans_generic(transformation, PJ_FWD, 
+    xPtr, stride, positionsCount,
+    yPtr, stride, positionsCount,
+    zPtr, stride, positionsCount,
+    0, 0, 0
+  );
 }
 
 void
@@ -144,20 +136,23 @@ Proj4Transform::transformPositionToSourceFrom(TargetSRS currentSRS,
   if (!positions.size())
     return;
 
-  const auto targetTransformation = getTargetTransformation(currentSRS);
-  if (!targetTransformation) {
+  const auto transformation = getTargetTransformation(currentSRS);
+  if (!transformation) {
     throw std::invalid_argument{ "Unrecognized TargetSRS parameter!" };
   }
-
   auto positionsPtr = positions.data();
-  auto xPtr = reinterpret_cast<double*>(positionsPtr);
-  auto yPtr = xPtr + 1;
-  auto zPtr = xPtr + 2;
+  auto xPtr = &positionsPtr[0].x;
+  auto yPtr = &positionsPtr[0].y;
+  auto zPtr = &positionsPtr[0].z;
   const auto positionsCount = static_cast<long>(positions.size());
-  const auto stride = 3; // 3 doubles per Vector3<double>
+  const auto stride = sizeof(Vector3<double>); // 3 doubles per Vector3<double>
 
-  pj_transform(
-    targetTransformation, _sourceTransformation, positionsCount, stride, xPtr, yPtr, zPtr);
+  proj_trans_generic(transformation, PJ_INV, 
+    xPtr, stride, positionsCount,
+    yPtr, stride, positionsCount,
+    zPtr, stride, positionsCount,
+    0, 0, 0
+  );
 }
 
 void
@@ -167,14 +162,18 @@ Proj4Transform::transformPointsTo(TargetSRS targetSRS,
   if (!points.size())
     return;
 
-  const auto targetTransformation = getTargetTransformation(targetSRS);
-  if (!targetTransformation) {
+  const auto transformation = getTargetTransformation(targetSRS);
+  if (!transformation) {
     throw std::invalid_argument{ "Unrecognized TargetSRS parameter!" };
   }
 
   for (auto& point_ref : points) {
     auto& pos = point_ref.position();
-    pj_transform(_sourceTransformation, targetTransformation, 1, 3, &pos.x, &pos.y, &pos.z);
+    
+    PJ_COORD new_pos = proj_trans(transformation, PJ_FWD, proj_coord(pos.x, pos.y, pos.z, 0.0));
+    pos.x = new_pos.xyz.x;
+    pos.y = new_pos.xyz.y;
+    pos.z = new_pos.xyz.z;
   }
 }
 
@@ -185,25 +184,27 @@ Proj4Transform::transformPointsTo(TargetSRS targetSRS,
   if (!points.size())
     return;
 
-  const auto targetTransformation = getTargetTransformation(targetSRS);
-  if (!targetTransformation) {
+  const auto transformation = getTargetTransformation(targetSRS);
+  if (!transformation) {
     throw std::invalid_argument{ "Unrecognized TargetSRS parameter!" };
   }
 
   for (auto point_ref : points) {
     auto& pos = point_ref.position();
-    pj_transform(_sourceTransformation, targetTransformation, 1, 3, &pos.x, &pos.y, &pos.z);
+    PJ_COORD new_pos = proj_trans(transformation, PJ_FWD, proj_coord(pos.x, pos.y, pos.z, 0.0));
+    pos.x = new_pos.xyz.x;
+    pos.y = new_pos.xyz.y;
+    pos.z = new_pos.xyz.z;
   }
 }
 
-projPJ
-Proj4Transform::getTargetTransformation(TargetSRS targetSRS) const
+PJ* Proj4Transform::getTargetTransformation(TargetSRS targetSRS) const
 {
   switch (targetSRS) {
     case TargetSRS::WGS84:
-      return _wgs84;
+      return _source_to_wgs84;
     case TargetSRS::CesiumWorld:
-      return _cesiumWorld;
+      return _source_to_cesiumWorld;
     default:
       return nullptr;
   }

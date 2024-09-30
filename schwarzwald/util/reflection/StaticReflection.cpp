@@ -1,6 +1,7 @@
 #include "reflection/StaticReflection.h"
 
 #include <ostream>
+#include <cstdint>
 #include <utility>
 
 refl::TypeDescriptor::TypeDescriptor(const char* name, size_t size)

@@ -1,4 +1,4 @@
-#include "catch.hpp"
+#include <catch2/catch_all.hpp>
 
 #include "io/BinaryPersistence.h"
 #include "math/AABB.h"

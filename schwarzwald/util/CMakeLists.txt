@@ -3,7 +3,7 @@ project(util)
 FetchContent_Declare(
 	cpp-taskflow
 	GIT_REPOSITORY https://github.com/taskflow/taskflow.git
-	GIT_TAG v2.5.0
+	GIT_TAG v3.7.0
 )
 set(TF_BUILD_EXAMPLES FALSE)
 set(TF_BUILD_TESTS FALSE)

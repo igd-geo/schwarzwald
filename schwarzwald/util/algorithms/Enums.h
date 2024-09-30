@@ -2,6 +2,7 @@
 
 #include <expected.hpp>
 #include <string>
+#include <stdexcept>
 
 #include "types/type_util.h"
 

@@ -88,9 +88,27 @@ set(SOURCE_FILES
 )
 set(lib_tl_expected_files ${TL_EXPECTED_INCLUDE_DIRS}/expected.hpp)
 
-#external dependencies through hunter
-hunter_add_package(PROJ4)
-find_package(PROJ4 CONFIG REQUIRED)
+#external dependencies
+
+include(FetchContent)
+FetchContent_Declare(proj
+  URL https://github.com/OSGeo/PROJ/releases/download/9.5.0/proj-9.5.0.tar.gz
+  URL_HASH SHA1=77782c889ca727eaf4696055604634b4d253f9a0
+)
+cmake_policy(PUSH)
+cmake_policy(SET CMP0077 NEW)
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(BUILD_TESTING_OLD ${BUILD_TESTING})
+set(ENABLE_TIFF_OLD ${ENABLE_TIFF})
+set(BUILD_APPS_OLD ${BUILD_APPS})
+set(BUILD_TESTING OFF)
+set(ENABLE_TIFF OFF)
+set(BUILD_APPS OFF)
+FetchContent_MakeAvailable(proj)
+set(BUILD_TESTING ${BUILD_TESTING_OLD})
+set(ENABLE_TIFF ${ENABLE_TIFF_OLD})
+set(BUILD_APPS ${BUILD_APPS_OLD})
+cmake_policy(POP)
 
 hunter_add_package(Microsoft.GSL)
 find_package(Microsoft.GSL CONFIG REQUIRED)
@@ -103,6 +121,8 @@ find_package(Boost CONFIG REQUIRED system program_options iostreams)
 
 hunter_add_package(RapidJSON)
 find_package(RapidJSON CONFIG REQUIRED)
+
+find_package(Threads REQUIRED)
 
 add_library(SchwarzwaldCore STATIC ${SOURCE_FILES} ${lib_tl_expected_files})
 
@@ -120,6 +140,7 @@ if(UNIX)
                 RapidJSON::rapidjson
 		PRIVATE 
 				glm 
+                Threads::Threads
 				-lstdc++fs)
 else()
 	target_link_libraries(SchwarzwaldCore 
@@ -133,5 +154,6 @@ else()
                 Boost::iostreams
                 RapidJSON::rapidjson
 		PRIVATE 
-				glm)
+				glm
+                Threads::Threads)
 endif()

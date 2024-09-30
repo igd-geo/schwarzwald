@@ -1,4 +1,4 @@
-#include "catch.hpp"
+#include <catch2/catch_all.hpp>
 
 #include <datastructures/LRUCache.h>
 
@@ -43,7 +43,7 @@ SCENARIO("LRUCache (simple type)") {
         REQUIRE(cache.capacity() == (capacity - (32 * byte)));
       }
       THEN("The item can be retrieved") {
-        FixedSize28 retrieved_item;
+        FixedSize28 retrieved_item{};
         REQUIRE(cache.try_get(a.id, retrieved_item));
         REQUIRE(retrieved_item.id == a.id);
       }
@@ -56,7 +56,7 @@ SCENARIO("LRUCache (simple type)") {
           REQUIRE(cache.capacity() == (capacity - (32 * byte)));
         }
         THEN("The new item can be retrieved") {
-          FixedSize28 retrieved_item;
+          FixedSize28 retrieved_item{};
           REQUIRE(cache.try_get(a.id, retrieved_item));
           REQUIRE(retrieved_item.id == d.id); // !We did change to d after all!
         }
@@ -85,7 +85,7 @@ SCENARIO("LRUCache (simple type)") {
         REQUIRE(!cache.try_get(a.id, tmp));
       }
       THEN("The second and third items can be retrieved") {
-        FixedSize28 retrieved;
+        FixedSize28 retrieved{};
         REQUIRE(cache.try_get(c.id, retrieved));
         REQUIRE(retrieved.id == c.id);
 

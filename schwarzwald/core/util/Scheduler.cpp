@@ -15,9 +15,9 @@ FixedThreadsScheduler::FixedThreadsScheduler(FixedThreadsSchedulerArgs args)
     return;
 
   _read_executor_observer =
-    _read_executor.make_observer<tf::ExecutorObserver>();
+    _read_executor.make_observer<tf::ChromeObserver>();
   _indexing_executor_observer =
-    _indexing_executor.make_observer<tf::ExecutorObserver>();
+    _indexing_executor.make_observer<tf::ChromeObserver>();
 }
 
 FixedThreadsScheduler::~FixedThreadsScheduler()
@@ -81,7 +81,7 @@ AdaptiveScheduler::AdaptiveScheduler(
   , _indexing_throughput_sampler(indexing_throughput_sampler)
 {
   if (global_config().is_journaling_enabled) {
-    _executor_observer = _executor.make_observer<tf::ExecutorObserver>();
+    _executor_observer = _executor.make_observer<tf::ChromeObserver>();
   }
 }
 

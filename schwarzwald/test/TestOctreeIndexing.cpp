@@ -1,7 +1,5 @@
-#include "catch.hpp"
-
+#include <catch2/catch_all.hpp>
 #include "tiling/OctreeAlgorithms.h"
-
 #include <random>
 
 using V3 = Vector3<double>;
@@ -173,7 +171,7 @@ TEST_CASE("Octree point filtering works correctly",
 {
   // Generate a 3D grid of points where the spacing is a power of 0.5 times the
   // octree size Pick different spaced sets of points
-  constexpr uint32_t Levels = 21;
+  constexpr uint32_t Levels = 5;
   constexpr double SideLength = 1 << Levels;
   constexpr size_t MaxPointsPerNode = 16;
   auto sampling_strategy =

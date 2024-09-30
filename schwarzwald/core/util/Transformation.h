@@ -2,12 +2,9 @@
 
 #include "datastructures/PointBuffer.h"
 #include "math/Vector3.h"
-#include "proj_api.h"
-
+#include <proj.h>
 #include <containers/Range.h>
-
 #include <string>
-
 #include <gsl/gsl>
 
 class Point;
@@ -102,11 +99,10 @@ struct Proj4Transform : SRSTransformHelper
   void transformAABBsTo(TargetSRS targetSRS, gsl::span<AABB> aabbs) const override;
 
 private:
-  projPJ getTargetTransformation(TargetSRS targetSRS) const;
+  PJ* getTargetTransformation(TargetSRS targetSRS) const;
 
-  projPJ _sourceTransformation;
-  projPJ _wgs84;
-  projPJ _cesiumWorld;
+  PJ* _source_to_wgs84;
+  PJ* _source_to_cesiumWorld;
 };
 
 /// <summary>

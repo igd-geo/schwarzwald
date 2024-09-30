@@ -17,8 +17,8 @@ Schwarzwald is very fast, supporting machines with dozens of logical cores.
 **Windows build is not tested!**
 
 Requirements:
-*  [CMake >= 3.11](https://cmake.org/)
-*  [gcc >= 7.5](https://gcc.gnu.org/) or another C++17-compliant compiler
+*  [CMake >= 3.22](https://cmake.org/)
+*  [gcc >= 11.4](https://gcc.gnu.org/) or another C++17-compliant compiler
 *  (Optional) [Docker >= 18](https://www.docker.com/) 
 
 ### Dependencies

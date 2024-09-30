@@ -1,4 +1,4 @@
-#include "catch.hpp"
+#include <catch2/catch_all.hpp>
 
 #include "datastructures/OctreeNodeIndex.h"
 
@@ -287,7 +287,7 @@ SCENARIO("OctreeNodeIndex - Parent index", "[OctreeNodeIndex]")
   }
 }
 
-SCENARIO("OctreeNodeIndex - Siblings", "[OctreeNodeIndex")
+SCENARIO("OctreeNodeIndex - Siblings", "[OctreeNodeIndex]")
 {
   GIVEN("An OctreeNodeIndex somewhere in the tree")
   {

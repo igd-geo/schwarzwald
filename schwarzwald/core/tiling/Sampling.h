@@ -462,8 +462,6 @@ struct PoissonDiskSampling
         return true;
       });
 
-    std::cout << to_string(node_key) << " - "
-              << sparse_grid.dbg_num_comparisons() << " comparisons\n";
     return ret;
   }
 

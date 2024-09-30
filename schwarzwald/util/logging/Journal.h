@@ -11,6 +11,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <optional>
 
 #include <boost/format.hpp>
 #include <boost/hana.hpp>

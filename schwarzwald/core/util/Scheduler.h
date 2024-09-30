@@ -35,8 +35,8 @@ struct FixedThreadsScheduler : TilingScheduler
 
 private:
   tf::Executor _read_executor, _indexing_executor;
-  std::shared_ptr<tf::ExecutorObserver> _read_executor_observer;
-  std::shared_ptr<tf::ExecutorObserver> _indexing_executor_observer;
+  std::shared_ptr<tf::ChromeObserver> _read_executor_observer;
+  std::shared_ptr<tf::ChromeObserver> _indexing_executor_observer;
 };
 
 struct AdaptiveScheduler : TilingScheduler
@@ -58,7 +58,7 @@ private:
   uint32_t _num_index_threads;
 
   tf::Executor _executor;
-  std::shared_ptr<tf::ExecutorObserver> _executor_observer;
+  std::shared_ptr<tf::ChromeObserver> _executor_observer;
 
   ThroughputSampler& _read_throughput_sampler;
   ThroughputSampler& _indexing_throughput_sampler;
