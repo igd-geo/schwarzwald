@@ -418,8 +418,10 @@ MultiReaderPointSource::PointSourceHandle::read_next_into(
                                    point_range);
 
             for (auto point_ref : point_range) {
-              *point_ref.point_source_id() =
-                static_cast<uint16_t>(_point_file_entry->file_index);
+              auto point_src_id = point_ref.point_source_id();
+              if (point_src_id != nullptr) {
+                *point_src_id = static_cast<uint16_t>(_point_file_entry->file_index);
+              }
             }
 
             typed_cursor = _new_file_iter;
