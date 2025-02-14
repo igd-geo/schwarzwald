@@ -1,6 +1,6 @@
 FROM gcc:14.2 AS build
 
-RUN apt-get update && apt-get -y install cmake sqlite3
+RUN apt-get update && apt-get -y install cmake sqlite3 libboost-system-dev libboost-iostreams-dev libboost-program-options-dev
 
 RUN mkdir /data
 WORKDIR /data
@@ -16,7 +16,7 @@ RUN mkdir Schwarzwald
 WORKDIR /data/Schwarzwald
 ADD . /data/Schwarzwald
 RUN rm -rf build && mkdir build
-RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so .. 
+RUN cd build && cmake -DCMAKE_BUILD_TYPE=Release -DLASZIP_INCLUDE_DIRS=/data/LAStools/LASzip/dll -DLASZIP_LIBRARY=/data/LAStools/LASzip/build/src/liblaszip.so ..
 RUN cd build && make -j`nproc`
 
 # copy libproj.so dependency to a temporary directory

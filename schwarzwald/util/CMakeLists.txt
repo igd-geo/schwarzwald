@@ -26,7 +26,7 @@ if(NOT cista_POPULATED)
 	add_subdirectory(${cista_SOURCE_DIR} ${cista_BINARY_DIR})
 endif()
 
-set(files 
+set(files
 	algorithms/Algorithm.h
 	algorithms/Enums.h
 	algorithms/Hash.h
@@ -36,7 +36,7 @@ set(files
 	concepts/MemoryIntrospection.h
 
 	containers/DestructuringIterator.h
-	
+
 	debug/Journal.h
 	debug/Journal.cpp
 	debug/ProgressReporter.h
@@ -46,7 +46,7 @@ set(files
 
 	io/io_util.h
 	io/io_util.cpp
-	
+
 	logging/Journal.h
 	logging/Journal.cpp
 
@@ -83,7 +83,7 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/Release)
 hunter_add_package(Microsoft.GSL)
 find_package(Microsoft.GSL CONFIG REQUIRED)
 
-hunter_add_package(Boost COMPONENTS system program_options iostreams)
+#hunter_add_package(Boost COMPONENTS system program_options iostreams)
 find_package(Boost CONFIG REQUIRED system program_options iostreams)
 
 add_library(util STATIC ${files} ${lib_tl_expected_files})
@@ -91,21 +91,21 @@ add_library(util STATIC ${files} ${lib_tl_expected_files})
 target_include_directories(util PUBLIC . ${TL_EXPECTED_INCLUDE_DIRS} ${cpp-taskflow_SOURCE_DIR} ${cista_include_files})
 
 if(UNIX)
-	target_link_libraries(util 
-		PUBLIC 	
-				Microsoft.GSL::GSL 
+	target_link_libraries(util
+		PUBLIC
+				Microsoft.GSL::GSL
 				Boost::program_options
 				Boost::system
 				Boost::iostreams
 				cista
-		PRIVATE 
+		PRIVATE
 				-lstdc++fs)
 else()
-	target_link_libraries(PointcloudTiler 
-		PUBLIC 
-				Microsoft.GSL::GSL 
+	target_link_libraries(PointcloudTiler
+		PUBLIC
+				Microsoft.GSL::GSL
 				Boost::program_options
-				Boost::system 
+				Boost::system
 				Boost::iostreams
 				cista)
 endif()
