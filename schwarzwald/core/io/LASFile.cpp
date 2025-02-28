@@ -418,7 +418,12 @@ las_file_has_attribute(laszip_header const& header, PointAttribute const& attrib
     case PointAttribute::Position:
       return true; // LAS always has positions
     case PointAttribute::RGB:
-      return header.point_data_format == 2 || header.point_data_format == 3;
+    return  header.point_data_format == 2 || // - Format 2: Core-0 + RGB
+            header.point_data_format == 3 || // - Format 3: Core-0 + GPS + RGB
+            header.point_data_format == 5 || // - Format 5: Format 3 + wave packets
+            header.point_data_format == 7 || // - Format 7: Core-6 + RGB
+            header.point_data_format == 8 || // - Format 8: Format 7 + NIR
+            header.point_data_format == 10;  // - Format 10: Format 9 + RGB + NIR
     case PointAttribute::Intensity:
       return true;
     case PointAttribute::Normal:

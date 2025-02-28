@@ -4,8 +4,8 @@ include(FetchContent)
 include("cmake/HunterGate.cmake")
 
 HunterGate(
-    URL "https://github.com/cpp-pm/hunter/archive/v0.25.7.tar.gz"
-    SHA1 "99f05ff154c682f7349546d66294d2f69f7193bc"
+    URL "https://github.com/cpp-pm/hunter/archive/ead00a62a9a05d36f3d376889360b379d9046ba1.tar.gz"
+    SHA1 "7456937b43b9071498ba521fda9daafd931baa4a"
 )
 
 project(SchwarzwaldRoot)
