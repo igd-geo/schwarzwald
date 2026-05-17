@@ -101,7 +101,7 @@ if(UNIX)
 		PRIVATE 
 				-lstdc++fs)
 else()
-	target_link_libraries(PointcloudTiler 
+	target_link_libraries(util 
 		PUBLIC 
 				Microsoft.GSL::GSL 
 				Boost::program_options
