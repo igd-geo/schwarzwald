@@ -26,3 +26,8 @@ CMakeFiles/
 PointcloudTiler/Makefile
 CMakeCache.txt
 cmake_install.cmake
+/cmake-3.28.3/cmake-3.28.3-windows-x86_64
+/out
+/.gitignore
+/hunter-0.26.12.tar.gz
+/cmake-3.28.3.zip
