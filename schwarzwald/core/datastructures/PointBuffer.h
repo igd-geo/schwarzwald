@@ -310,6 +310,10 @@ struct iterator_traits<::PointBuffer::PointIterator>
 {
   using difference_type = std::ptrdiff_t;
   using value_type = ::PointBuffer::PointReference;
+#ifdef _WIN32
+  using reference = ::PointBuffer::PointReference;
+  using pointer = ::PointBuffer::PointReference*;
+#endif
   using iterator_category = std::random_access_iterator_tag;
 };
 
@@ -318,6 +322,10 @@ struct iterator_traits<::PointBuffer::PointConstIterator>
 {
   using difference_type = std::ptrdiff_t;
   using value_type = ::PointBuffer::PointConstReference;
+#ifdef _WIN32
+  using reference = ::PointBuffer::PointConstReference;
+  using pointer = ::PointBuffer::PointConstReference*;
+#endif
   using iterator_category = std::random_access_iterator_tag;
 };
 } // namespace std

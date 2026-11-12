@@ -70,7 +70,11 @@ void
 Cesium3DTilesPersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
 {
   const auto file_path = concat(_work_dir, "/", node_name, ".pnts");
+#ifdef _WIN32
+  if (!std::filesystem::exists(file_path))
+#else
   if (!std::experimental::filesystem::exists(file_path))
+#endif
     return;
 
   auto pnts_content = readPNTSFile(file_path, _input_attributes);
@@ -195,15 +199,27 @@ Cesium3DTilesPersistence::write_tilesets() const
   }
 
   tf::Taskflow taskflow;
-  parallel::for_each(
-    std::begin(roots),
-    std::end(roots),
-    [this](Tileset const* root) {
-      const auto filepath = concat(_work_dir, "/", root->name, ".json");
-      writeTilesetJSON(filepath, *root, MAX_DEPTH + 1);
-    },
-    taskflow,
-    std::thread::hardware_concurrency());
+  #ifdef _WIN32
+    parallel::for_each(
+      std::begin(roots),
+      std::end(roots),
+      [this, MAX_DEPTH](Tileset const* root) {
+        const auto filepath = concat(_work_dir, "/", root->name, ".json");
+        writeTilesetJSON(filepath, *root, MAX_DEPTH + 1);
+      },
+      taskflow,
+      std::thread::hardware_concurrency());
+  #else
+    parallel::for_each(
+      std::begin(roots),
+      std::end(roots),
+      [this](Tileset const* root) {
+        const auto filepath = concat(_work_dir, "/", root->name, ".json");
+        writeTilesetJSON(filepath, *root, MAX_DEPTH + 1);
+      },
+      taskflow,
+      std::thread::hardware_concurrency());
+  #endif
 
   tf::Executor executor{ std::thread::hardware_concurrency() };
   executor.run(taskflow).wait();

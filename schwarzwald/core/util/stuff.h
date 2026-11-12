@@ -15,7 +15,11 @@
 #include <sys/types.h>
 #include <unordered_map>
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 
 #include "datastructures/GridCell.h"
 #include "datastructures/SparseGrid.h"

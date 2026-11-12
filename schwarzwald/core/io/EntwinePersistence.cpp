@@ -59,14 +59,25 @@ create_hierarchy_files(const fs::path& root_dir,
 
   std::unordered_map<OctreeNodeIndex64, Hierarchy> split_hierarchies;
 
-  const auto get_parent_index_in_hierarchy =
-    [](const OctreeNodeIndex64& index) -> OctreeNodeIndex64 {
-    auto parent_index = index;
-    while (parent_index.levels() % SPLIT_DEPTH != 0) {
-      parent_index = parent_index.parent();
-    }
-    return parent_index;
-  };
+  #ifdef _WIN32
+    const auto get_parent_index_in_hierarchy =
+      [SPLIT_DEPTH](const OctreeNodeIndex64& index) -> OctreeNodeIndex64 {
+      auto parent_index = index;
+      while (parent_index.levels() % SPLIT_DEPTH != 0) {
+        parent_index = parent_index.parent();
+      }
+      return parent_index;
+    };
+  #else
+    const auto get_parent_index_in_hierarchy =
+      [](const OctreeNodeIndex64& index) -> OctreeNodeIndex64 {
+      auto parent_index = index;
+      while (parent_index.levels() % SPLIT_DEPTH != 0) {
+        parent_index = parent_index.parent();
+      }
+      return parent_index;
+    };
+  #endif
 
   const auto write_hierarchy_json = [&root_dir](const OctreeNodeIndex64& parent,
                                                 const Hierarchy& hierarchy) {

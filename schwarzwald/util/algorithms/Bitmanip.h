@@ -22,6 +22,21 @@ struct UndefinedBitsError
  * Expands to an unsigned integer datatype that can store at least 'MaxBits' bits
  */
 template<unsigned int MaxBits>
+#ifdef _WIN32
+using UnsignedBits = std::conditional_t<
+  MaxBits <= 8,
+  uint8_t,
+  std::conditional_t<
+    MaxBits <= 16,
+    uint16_t,
+    std::conditional_t<
+      MaxBits <= 32,
+      uint32_t,
+      std::conditional_t<
+        MaxBits <= 64,
+        uint64_t,
+        detail::UndefinedBitsError<MaxBits>>>>>;
+#else
 using UnsignedBits = std::conditional_t<
   MaxBits <= 8,
   uint8_t,
@@ -35,6 +50,7 @@ using UnsignedBits = std::conditional_t<
         MaxBits <= 64,
         uint64_t,
         std::conditional_t<MaxBits <= 128, __uint128_t, detail::UndefinedBitsError<MaxBits>>>>>>;
+#endif
 
 namespace detail {
 

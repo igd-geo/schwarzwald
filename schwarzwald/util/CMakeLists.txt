@@ -79,12 +79,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/build/Debug)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO ${CMAKE_SOURCE_DIR}/build/RelWithDebInfo)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/build/Release)
 
-#external dependencies through hunter
-hunter_add_package(Microsoft.GSL)
-find_package(Microsoft.GSL CONFIG REQUIRED)
+#external dependencies
+if(WIN32)
+    find_package(Microsoft.GSL CONFIG REQUIRED)
+    find_package(Boost CONFIG REQUIRED system program_options iostreams)
+else()
+    hunter_add_package(Microsoft.GSL)
+    find_package(Microsoft.GSL CONFIG REQUIRED)
 
-hunter_add_package(Boost COMPONENTS system program_options iostreams)
-find_package(Boost CONFIG REQUIRED system program_options iostreams)
+    hunter_add_package(Boost COMPONENTS system program_options iostreams)
+    find_package(Boost CONFIG REQUIRED system program_options iostreams)
+endif()
 
 add_library(util STATIC ${files} ${lib_tl_expected_files})
 
@@ -101,7 +106,7 @@ if(UNIX)
 		PRIVATE 
 				-lstdc++fs)
 else()
-	target_link_libraries(PointcloudTiler 
+	target_link_libraries(util 
 		PUBLIC 
 				Microsoft.GSL::GSL 
 				Boost::program_options

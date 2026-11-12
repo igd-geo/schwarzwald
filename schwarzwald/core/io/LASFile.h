@@ -3,7 +3,9 @@
 #include "io/PointcloudFile.h"
 #include "util/Definitions.h"
 
-#include <experimental/filesystem>
+#ifdef _WIN32
+#include <filesystem>
+#endif
 #include <iterator>
 #include <laszip_api.h>
 

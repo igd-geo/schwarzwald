@@ -6,7 +6,11 @@
 #include <rapidjson/writer.h>
 #include <types/type_util.h>
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 #include <fstream>
 
 using namespace rapidjson;

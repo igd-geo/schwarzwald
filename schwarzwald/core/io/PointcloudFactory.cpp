@@ -3,8 +3,13 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/format.hpp>
 
+#ifdef _WIN32
+tl::expected<PointFile, util::ErrorChain>
+open_point_file(const std::filesystem::path &path) {
+#else
 tl::expected<PointFile, util::ErrorChain>
 open_point_file(const std::experimental::filesystem::path &path) {
+#endif
   const auto extension_as_lower =
       boost::algorithm::to_lower_copy(path.extension().string());
 

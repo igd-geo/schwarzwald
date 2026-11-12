@@ -2,7 +2,11 @@
 
 #include "util/Transformation.h"
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 
 namespace bio = boost::iostreams;
 
@@ -212,7 +216,11 @@ void
 BinaryPersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
 {
   const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
+#ifdef _WIN32
+  if (!std::filesystem::exists(file_path))
+#else
   if (!std::experimental::filesystem::exists(file_path))
+#endif
     return;
 
   bio::file_source fs{ file_path, std::ios::in | std::ios::binary };

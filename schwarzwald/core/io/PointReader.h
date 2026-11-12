@@ -1,6 +1,10 @@
 #pragma once
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 
 #include "datastructures/PointBuffer.h"
 #include "math/AABB.h"

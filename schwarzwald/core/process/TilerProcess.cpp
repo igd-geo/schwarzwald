@@ -1,6 +1,10 @@
 #include "TilerProcess.h"
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 
 #include <rapidjson/document.h>
 #include <rapidjson/filewritestream.h>
@@ -179,8 +183,12 @@ static bool
 check_if_file_format_is_supported(const fs::path& file,
                                   util::IgnoreErrors errors_to_ignore)
 {
-  if (file_format_is_supported(file.extension()))
-    return true;
+  #ifdef _WIN32
+    if (file_format_is_supported(file.extension().string()))
+  #else
+    if (file_format_is_supported(file.extension()))
+  #endif
+      return true;
 
   if (errors_to_ignore & util::IgnoreErrors::UnsupportedFileFormat) {
     std::cout << "Ignoring file " << file.string()
@@ -247,7 +255,11 @@ TilerProcess::prepare()
   util::write_log(concat(
     "Writing the following point attributes: ", attributesDescription, "\n"));
 
-  prepare_output_directory(_args.output_directory);
+  #ifdef _WIN32
+    prepare_output_directory(_args.output_directory.string());
+  #else
+    prepare_output_directory(_args.output_directory);
+  #endif
 }
 
 void
@@ -661,8 +673,13 @@ TilerProcess::run()
   stats.indexing_duration = indexing_duration;
   stats.points_processed = total_points_count;
 
-  write_properties_json(
-    _args.output_directory, cubic_bounds, _args.spacing, stats);
+  #ifdef _WIN32
+    write_properties_json(
+      _args.output_directory.string(), cubic_bounds, _args.spacing, stats);
+  #else
+    write_properties_json(
+      _args.output_directory, cubic_bounds, _args.spacing, stats);
+  #endif
 
   if (_args.output_format == OutputFormat::ENTWINE_LAS ||
       _args.output_format == OutputFormat::ENTWINE_LAZ) {

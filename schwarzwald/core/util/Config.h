@@ -1,6 +1,10 @@
 #pragma once
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 
 /**
  * Global configuration options of the tiler. This is stuff that is useful to have
@@ -9,9 +13,17 @@
  */
 struct TilerConfig
 {
+#ifdef _WIN32
+  std::filesystem::path root_directory;
+#else
   std::experimental::filesystem::path root_directory;
+#endif
   bool is_journaling_enabled;
+#ifdef _WIN32
+  std::filesystem::path journal_directory;
+#else
   std::experimental::filesystem::path journal_directory;
+#endif
 };
 
 /**

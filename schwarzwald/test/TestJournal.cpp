@@ -3,11 +3,15 @@
 #include "logging/Journal.h"
 #include "reflection/StaticReflection.h"
 
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
 #include <fstream>
 #include <streambuf>
-
-namespace fs = std::experimental::filesystem;
 
 [[maybe_unused]] static std::string
 read_file_to_string(const fs::path& path)

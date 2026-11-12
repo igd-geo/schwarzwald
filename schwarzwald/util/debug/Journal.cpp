@@ -1,13 +1,17 @@
 #include "debug/Journal.h"
 
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
 #include <fstream>
 #include <iostream>
 #include <sstream>
 
 #include <boost/format.hpp>
-
-namespace fs = std::experimental::filesystem;
 
 constexpr static size_t MaxJournalEntries = 10'000'000;
 
@@ -35,8 +39,13 @@ debug::Journal::enable(bool enable)
   _enabled = enable;
 }
 
+#ifdef _WIN32
+void
+debug::Journal::set_root_folder(const std::filesystem::path& root_folder)
+#else
 void
 debug::Journal::set_root_folder(const std::experimental::filesystem::path& root_folder)
+#endif
 {
   _root_folder = root_folder;
 
@@ -47,7 +56,11 @@ debug::Journal::set_root_folder(const std::experimental::filesystem::path& root_
   }
 }
 
+#ifdef _WIN32
+const std::filesystem::path&
+#else
 const std::experimental::filesystem::path&
+#endif
 debug::Journal::get_root_folder() const
 {
   return _root_folder;

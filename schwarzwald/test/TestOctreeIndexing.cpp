@@ -399,7 +399,11 @@ TEST_CASE(
 {
   // Use multiple levels so that we can test the 'parent_node_level' parameter
   // of 'partition_points_into_child_octants'
+#ifdef _WIN32
+  static constexpr uint32_t Levels = 5;
+#else
   constexpr uint32_t Levels = 5;
+#endif
 
   AABB bounds{ V3{ 0, 0, 0 }, V3{ 32, 32, 32 } };
 

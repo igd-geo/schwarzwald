@@ -79,6 +79,113 @@ struct StringMaker<laszip_header>
 };
 }
 
+#ifdef _WIN32
+static PointBuffer
+generate_random_points(size_t count, const AABB& bounds)
+{
+  std::mt19937 mt;
+  std::uniform_real_distribution<double> x_dist{ bounds.min.x, bounds.max.x };
+  std::uniform_real_distribution<double> y_dist{ bounds.min.y, bounds.max.y };
+  std::uniform_real_distribution<double> z_dist{ bounds.min.z, bounds.max.z };
+
+  std::vector<Vector3<double>> positions;
+  positions.reserve(count);
+  std::generate_n(std::back_inserter(positions), count, [&]() -> Vector3<double> {
+    return { x_dist(mt), y_dist(mt), z_dist(mt) };
+  });
+
+  std::uniform_int_distribution<unsigned short> color_dist;
+  std::vector<Vector3<uint8_t>> colors;
+  colors.reserve(count);
+  std::generate_n(std::back_inserter(colors), count, [&]() -> Vector3<uint8_t> {
+    return { static_cast<uint8_t>(color_dist(mt)), static_cast<uint8_t>(color_dist(mt)), static_cast<uint8_t>(color_dist(mt)) };
+  });
+
+  std::uniform_int_distribution<uint16_t> intensity_dist;
+  std::vector<uint16_t> intensities;
+  intensities.reserve(count);
+  std::generate_n(
+    std::back_inserter(intensities), count, [&]() -> uint16_t { return intensity_dist(mt); });
+
+  // The seemingly random values for the following distributions are part of the LAS specification
+  // For example, while classifications are stored in 8 bits, only 5 of those bits are used for the
+  // actual classification value, while the upper three bits store flags
+
+  std::uniform_int_distribution<unsigned short> classification_dist{ 0, 31 };
+  std::vector<uint8_t> classifications;
+  classifications.reserve(count);
+  std::generate_n(std::back_inserter(classifications), count, [&]() -> uint8_t {
+    return classification_dist(mt);
+  });
+
+  std::uniform_int_distribution<unsigned short> eof_dist{ 0, 1 };
+  std::vector<uint8_t> eof_lines;
+  eof_lines.reserve(count);
+  std::generate_n(std::back_inserter(eof_lines), count, [&]() -> uint8_t { return eof_dist(mt); });
+
+  std::uniform_real_distribution<double> gps_time_dist;
+  std::vector<double> gps_times;
+  gps_times.reserve(count);
+  std::generate_n(
+    std::back_inserter(gps_times), count, [&]() -> double { return gps_time_dist(mt); });
+
+  std::uniform_int_distribution<unsigned short> number_of_returns_dist{ 1, 5 };
+  std::vector<uint8_t> number_of_returns;
+  number_of_returns.reserve(count);
+  std::generate_n(std::back_inserter(number_of_returns), count, [&]() -> uint8_t {
+    return number_of_returns_dist(mt);
+  });
+
+  std::uniform_int_distribution<unsigned short> return_numbers_dist{ 1, 5 };
+  std::vector<uint8_t> return_numbers;
+  return_numbers.reserve(count);
+  std::generate_n(std::back_inserter(return_numbers), count, [&]() -> uint8_t {
+    return return_numbers_dist(mt);
+  });
+
+  std::uniform_int_distribution<uint16_t> point_source_ids_dist;
+  std::vector<uint16_t> point_source_ids;
+  point_source_ids.reserve(count);
+  std::generate_n(std::back_inserter(point_source_ids), count, [&]() -> uint8_t {
+    return point_source_ids_dist(mt);
+  });
+
+  std::uniform_int_distribution<short> scan_angle_ranks_dist;
+  std::vector<int8_t> scan_angle_ranks;
+  scan_angle_ranks.reserve(count);
+  std::generate_n(std::back_inserter(scan_angle_ranks), count, [&]() -> uint8_t {
+    return scan_angle_ranks_dist(mt);
+  });
+
+  std::uniform_int_distribution<unsigned short> scan_direction_flags_dist{ 0, 1 };
+  std::vector<uint8_t> scan_direction_flags;
+  scan_direction_flags.reserve(count);
+  std::generate_n(std::back_inserter(scan_direction_flags), count, [&]() -> uint8_t {
+    return scan_direction_flags_dist(mt);
+  });
+
+  std::uniform_int_distribution<unsigned short> user_data_dist;
+  std::vector<uint8_t> user_data;
+  user_data.reserve(count);
+  std::generate_n(
+    std::back_inserter(user_data), count, [&]() -> uint8_t { return user_data_dist(mt); });
+
+  return { count,
+           std::move(positions),
+           std::move(colors),
+           {}, // No normals, LAS doesn't support normals
+           std::move(intensities),
+           std::move(classifications),
+           std::move(eof_lines),
+           std::move(gps_times),
+           std::move(number_of_returns),
+           std::move(return_numbers),
+           std::move(point_source_ids),
+           std::move(scan_direction_flags),
+           std::move(scan_angle_ranks),
+           std::move(user_data) };
+}
+#else
 static PointBuffer
 generate_random_points(size_t count, const AABB& bounds)
 {
@@ -184,6 +291,7 @@ generate_random_points(size_t count, const AABB& bounds)
            std::move(scan_angle_ranks),
            std::move(user_data) };
 }
+#endif
 
 static void
 compare_points(const PointBuffer& source, const PointBuffer& target)

@@ -324,7 +324,11 @@ write_json_to_file(const rapidjson::Document& doc, const fs::path& file_path)
     void Flush() {}
   };
 
+  #ifdef _WIN32
+  Stream fs{ file_path.string() };
+#else
   Stream fs{ file_path };
+#endif
   if (!fs.of.is_open()) {
     throw util::chain_error({ concat("Can't open file ", file_path.string()) });
   }

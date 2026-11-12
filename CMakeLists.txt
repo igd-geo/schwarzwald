@@ -1,17 +1,39 @@
 cmake_minimum_required(VERSION 3.13)
 
-include(FetchContent)
-include("cmake/HunterGate.cmake")
+if(WIN32)
+    # Auto-detect vcpkg toolchain if not explicitly specified
+    if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND EXISTS "C:/vcpkg/scripts/buildsystems/vcpkg.cmake")
+        set(CMAKE_TOOLCHAIN_FILE "C:/vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING "vcpkg toolchain file")
+    endif()
 
-HunterGate(
-    URL "https://github.com/cpp-pm/hunter/archive/ead00a62a9a05d36f3d376889360b379d9046ba1.tar.gz"
-    SHA1 "7456937b43b9071498ba521fda9daafd931baa4a"
-)
+    include(FetchContent)
 
-project(SchwarzwaldRoot)
+    project(SchwarzwaldRoot)
 
-set(LASZIP_INCLUDE_DIRS "" CACHE STRING "Include directory for LASzip")
-set(LASZIP_LIBRARY "" CACHE STRING "Path to LASzip library file")
+    # Find LASzip via vcpkg
+    find_path(LASZIP_INCLUDE_DIRS laszip_api.h
+        PATHS "C:/vcpkg/installed/x64-windows/include/laszip"
+        PATH_SUFFIXES laszip
+    )
+    find_library(LASZIP_LIBRARY laszip3
+        PATHS "C:/vcpkg/installed/x64-windows/lib"
+    )
+    message(STATUS "LASZIP_INCLUDE_DIRS: ${LASZIP_INCLUDE_DIRS}")
+    message(STATUS "LASZIP_LIBRARY: ${LASZIP_LIBRARY}")
+else()
+    include(FetchContent)
+    include("cmake/HunterGate.cmake")
+
+    HunterGate(
+        URL "https://github.com/cpp-pm/hunter/archive/ead00a62a9a05d36f3d376889360b379d9046ba1.tar.gz"
+        SHA1 "7456937b43b9071498ba521fda9daafd931baa4a"
+    )
+
+    project(SchwarzwaldRoot)
+
+    set(LASZIP_INCLUDE_DIRS "" CACHE STRING "Include directory for LASzip")
+    set(LASZIP_LIBRARY "" CACHE STRING "Path to LASzip library file")
+endif()
 
 set(TL_EXPECTED_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/lib/tl_expected")
 
