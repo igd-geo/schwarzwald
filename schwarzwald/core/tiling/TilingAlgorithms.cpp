@@ -934,7 +934,11 @@ TilingAlgorithmV2::merge_selected_start_nodes(
     // appropriate child nodes
     for (auto& range : *node) {
       if (range.size() == 0) {
+#ifdef _WIN32
+        abort();
+#else
         __builtin_trap();
+#endif
       }
       const auto split_ranges = partition_points_into_child_octants(
         std::begin(range), std::end(range), node.index().levels());

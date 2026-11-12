@@ -110,17 +110,24 @@ set(ENABLE_TIFF ${ENABLE_TIFF_OLD})
 set(BUILD_APPS ${BUILD_APPS_OLD})
 cmake_policy(POP)
 
-hunter_add_package(Microsoft.GSL)
-find_package(Microsoft.GSL CONFIG REQUIRED)
+if(WIN32)
+    find_package(Microsoft.GSL CONFIG REQUIRED)
+    find_package(glm REQUIRED)
+    find_package(Boost CONFIG REQUIRED system program_options iostreams)
+    find_package(RapidJSON CONFIG REQUIRED)
+else()
+    hunter_add_package(Microsoft.GSL)
+    find_package(Microsoft.GSL CONFIG REQUIRED)
 
-hunter_add_package(glm)
-find_package(glm REQUIRED)
+    hunter_add_package(glm)
+    find_package(glm REQUIRED)
 
-hunter_add_package(Boost COMPONENTS system program_options iostreams)
-find_package(Boost CONFIG REQUIRED system program_options iostreams)
+    hunter_add_package(Boost COMPONENTS system program_options iostreams)
+    find_package(Boost CONFIG REQUIRED system program_options iostreams)
 
-hunter_add_package(RapidJSON)
-find_package(RapidJSON CONFIG REQUIRED)
+    hunter_add_package(RapidJSON)
+    find_package(RapidJSON CONFIG REQUIRED)
+endif()
 
 find_package(Threads REQUIRED)
 
@@ -128,32 +135,48 @@ add_library(SchwarzwaldCore STATIC ${SOURCE_FILES} ${lib_tl_expected_files})
 
 target_include_directories(SchwarzwaldCore PUBLIC . include ${LASZIP_INCLUDE_DIRS} ${TL_EXPECTED_INCLUDE_DIRS})
 
-if(UNIX)
+if(WIN32)
 	target_link_libraries(SchwarzwaldCore 
-        PUBLIC 	util
-                ${LASZIP_LIBRARY} 
-				proj 
-				Microsoft.GSL::GSL 
-				Boost::program_options
-				Boost::system
-                Boost::iostreams
-                RapidJSON::rapidjson
-		PRIVATE 
-				glm 
-                Threads::Threads
-				-lstdc++fs)
-else()
-	target_link_libraries(SchwarzwaldCore 
-        PUBLIC 
-                util
+		PUBLIC 
+				util
 				${LASZIP_LIBRARY} 
 				proj 
 				Microsoft.GSL::GSL 
 				Boost::program_options
 				Boost::system 
-                Boost::iostreams
-                RapidJSON::rapidjson
-		PRIVATE 
-				glm
-                Threads::Threads)
+				Boost::iostreams
+				RapidJSON
+		PUBLIC 
+				glm::glm-header-only
+				Threads::Threads)
+else()
+	if(UNIX)
+		target_link_libraries(SchwarzwaldCore 
+			PUBLIC 	util
+					${LASZIP_LIBRARY} 
+					proj 
+					Microsoft.GSL::GSL 
+					Boost::program_options
+					Boost::system
+					Boost::iostreams
+					RapidJSON::rapidjson
+			PRIVATE 
+					glm 
+					Threads::Threads
+					-lstdc++fs)
+	else()
+		target_link_libraries(SchwarzwaldCore 
+			PUBLIC 
+					util
+					${LASZIP_LIBRARY} 
+					proj 
+					Microsoft.GSL::GSL 
+					Boost::program_options
+					Boost::system 
+					Boost::iostreams
+					RapidJSON::rapidjson
+			PRIVATE 
+					glm
+					Threads::Threads)
+	endif()
 endif()

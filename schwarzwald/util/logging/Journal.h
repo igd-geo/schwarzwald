@@ -3,9 +3,16 @@
 #include "containers/Range.h"
 #include "reflection/StaticReflection.h"
 #include "types/MembersOf.h"
+#include "types/Typelist.h"
+
+using meta::all_of;
 
 #include <any>
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 #include <fstream>
 #include <memory>
 #include <string>
@@ -195,56 +202,96 @@ private:
 
 struct BinaryWriter
 {
+#ifdef _WIN32
+  explicit BinaryWriter(const std::filesystem::path& base_path);
+#else
   explicit BinaryWriter(const std::experimental::filesystem::path& base_path);
+#endif
 
   template<typename RecordIterator>
   void write_records(util::Range<RecordIterator> records, const std::string& file_name);
 
 private:
+#ifdef _WIN32
+  std::filesystem::path _base_path;
+#else
   std::experimental::filesystem::path _base_path;
+#endif
 };
 
 struct CSVWriter
 {
   template<typename T>
+#ifdef _WIN32
+  static CSVWriter make_writer_for_type(const std::filesystem::path& base_path);
+#else
   static CSVWriter make_writer_for_type(const std::experimental::filesystem::path& base_path);
+#endif
 
   template<typename RecordIterator>
   void write_records(util::Range<RecordIterator> records, const std::string& file_name);
 
 private:
   template<typename T>
+#ifdef _WIN32
+  explicit CSVWriter(const std::filesystem::path& base_path, T* dummy);
+#else
   explicit CSVWriter(const std::experimental::filesystem::path& base_path, T* dummy);
+#endif
 
+#ifdef _WIN32
+  std::filesystem::path _base_path;
+#else
   std::experimental::filesystem::path _base_path;
+#endif
   std::function<void(std::ostream&)> _header_writer;
   std::function<void(const std::any&, std::ostream&)> _record_writer;
 };
 
 struct JSONWriter
 {
+#ifdef _WIN32
+  explicit JSONWriter(const std::filesystem::path& base_path);
+#else
   explicit JSONWriter(const std::experimental::filesystem::path& base_path);
+#endif
 
   template<typename RecordIterator>
   void write_records(util::Range<RecordIterator> records, const std::string& file_name);
 
 private:
+#ifdef _WIN32
+  std::filesystem::path _base_path;
+#else
   std::experimental::filesystem::path _base_path;
+#endif
 };
 
 struct TextWriter
 {
   template<typename T>
+#ifdef _WIN32
+  static TextWriter make_writer_for_type(const std::filesystem::path& base_path);
+#else
   static TextWriter make_writer_for_type(const std::experimental::filesystem::path& base_path);
+#endif
 
   template<typename RecordIterator>
   void write_records(util::Range<RecordIterator> records, const std::string& file_name);
 
 private:
   template<typename T>
+#ifdef _WIN32
+  explicit TextWriter(const std::filesystem::path& base_path, T*);
+#else
   explicit TextWriter(const std::experimental::filesystem::path& base_path, T*);
+#endif
 
+#ifdef _WIN32
+  std::filesystem::path _base_path;
+#else
   std::experimental::filesystem::path _base_path;
+#endif
   std::function<void(const std::any&, std::ostream&)> _record_writer;
 };
 
@@ -369,7 +416,7 @@ struct IsJSONPrimitiveType
     } else if constexpr (std::is_aggregate_v<T>) {
       // All members of the aggregate must be JSON primitive types!
       constexpr auto const members = refl::members_of<T>();
-      return meta::all_of<IsJSONPrimitiveType>(members);
+      return meta::all_of<detail::IsJSONPrimitiveType>(members);
       // for (int idx = 0; idx < meta::size(members); ++idx) {
       //   if (!is_json_primitive_type<decltype(meta::type_at<idx>(members))>())
       //     return false;
@@ -417,13 +464,13 @@ is_flat_trivial_type()
   // operator<< for std::ostream'. For this, I have to explicitly check if the type T itself has
   // operator<<
 
-  if constexpr (IsConvertibleToString<T>{}()) {
+  if constexpr (detail::IsConvertibleToString<T>{}()) {
     return true;
   } else if constexpr (!std::is_aggregate_v<T>) {
     return false;
   } else {
     constexpr auto const members = refl::members_of<T>();
-    return meta::all_of<IsConvertibleToString>(members);
+    return meta::all_of<detail::IsConvertibleToString>(members);
   }
 }
 
@@ -445,7 +492,7 @@ struct IsNestedTrivialTypeImpl
 {
   constexpr bool operator()() const
   {
-    if constexpr (IsConvertibleToString<T>{}()) {
+    if constexpr (detail::IsConvertibleToString<T>{}()) {
       return true;
     } else {
       if constexpr (!refl::is_reflectable<T>()) {
@@ -795,23 +842,43 @@ struct JournalBuilderWithType
   /**
    * Stores Records in binary form
    */
+#ifdef _WIN32
+  JournalBuilderWithTypeAndFormat<RecordStorage, BinaryWriter> as_binary(
+    const std::filesystem::path& base_path);
+#else
   JournalBuilderWithTypeAndFormat<RecordStorage, BinaryWriter> as_binary(
     const std::experimental::filesystem::path& base_path);
+#endif
   /**
    * Store Records as CSV file(s)
    */
+#ifdef _WIN32
+  JournalBuilderWithTypeAndFormat<RecordStorage, CSVWriter> as_csv(
+    const std::filesystem::path& base_path);
+#else
   JournalBuilderWithTypeAndFormat<RecordStorage, CSVWriter> as_csv(
     const std::experimental::filesystem::path& base_path);
+#endif
   /**
    * Store Records in JSON notation
    */
+#ifdef _WIN32
+  JournalBuilderWithTypeAndFormat<RecordStorage, JSONWriter> as_json(
+    const std::filesystem::path& base_path);
+#else
   JournalBuilderWithTypeAndFormat<RecordStorage, JSONWriter> as_json(
     const std::experimental::filesystem::path& base_path);
+#endif
   /**
    * Store records in text form
    */
+#ifdef _WIN32
+  JournalBuilderWithTypeAndFormat<RecordStorage, TextWriter> as_text(
+    const std::filesystem::path& base_path);
+#else
   JournalBuilderWithTypeAndFormat<RecordStorage, TextWriter> as_text(
     const std::experimental::filesystem::path& base_path);
+#endif
 
 private:
   JournalBuilderWithType(JournalStore* store,
@@ -941,8 +1008,13 @@ JournalBuilder::with_indexed_nested_type()
 
 template<typename RecordStorage>
 inline JournalBuilderWithTypeAndFormat<RecordStorage, BinaryWriter>
+#ifdef _WIN32
+JournalBuilderWithType<RecordStorage>::as_binary(
+  const std::filesystem::path& base_path)
+#else
 JournalBuilderWithType<RecordStorage>::as_binary(
   const std::experimental::filesystem::path& base_path)
+#endif
 {
   static_assert(StorageAndWriterMatch<RecordStorage, BinaryWriter>,
                 "Can't use BinaryWriter with this RecordStorage type!");
@@ -953,7 +1025,11 @@ JournalBuilderWithType<RecordStorage>::as_binary(
 
 template<typename RecordStorage>
 inline JournalBuilderWithTypeAndFormat<RecordStorage, CSVWriter>
+#ifdef _WIN32
+JournalBuilderWithType<RecordStorage>::as_csv(const std::filesystem::path& base_path)
+#else
 JournalBuilderWithType<RecordStorage>::as_csv(const std::experimental::filesystem::path& base_path)
+#endif
 {
   static_assert(StorageAndWriterMatch<RecordStorage, CSVWriter>,
                 "Can't use CSVWriter with this RecordStorage type!");
@@ -968,7 +1044,11 @@ JournalBuilderWithType<RecordStorage>::as_csv(const std::experimental::filesyste
 
 template<typename RecordStorage>
 inline JournalBuilderWithTypeAndFormat<RecordStorage, JSONWriter>
+#ifdef _WIN32
+JournalBuilderWithType<RecordStorage>::as_json(const std::filesystem::path& base_path)
+#else
 JournalBuilderWithType<RecordStorage>::as_json(const std::experimental::filesystem::path& base_path)
+#endif
 {
   static_assert(StorageAndWriterMatch<RecordStorage, JSONWriter>,
                 "Can't use JSONWriter with this RecordStorage type!");
@@ -977,7 +1057,11 @@ JournalBuilderWithType<RecordStorage>::as_json(const std::experimental::filesyst
 
 template<typename RecordStorage>
 inline JournalBuilderWithTypeAndFormat<RecordStorage, TextWriter>
+#ifdef _WIN32
+JournalBuilderWithType<RecordStorage>::as_text(const std::filesystem::path& base_path)
+#else
 JournalBuilderWithType<RecordStorage>::as_text(const std::experimental::filesystem::path& base_path)
+#endif
 {
   static_assert(StorageAndWriterMatch<RecordStorage, TextWriter>,
                 "Can't use TextWriter with this RecordStorage type!");
@@ -1226,17 +1310,30 @@ BinaryWriter::write_records(util::Range<RecordIterator> records, const std::stri
 
 template<typename T>
 logging::CSVWriter
+#ifdef _WIN32
+logging::CSVWriter::make_writer_for_type(const std::filesystem::path& base_path)
+#else
 logging::CSVWriter::make_writer_for_type(const std::experimental::filesystem::path& base_path)
+#endif
 {
   return CSVWriter{ base_path, reinterpret_cast<T*>(0) };
 }
 
 template<typename T>
+#ifdef _WIN32
+logging::CSVWriter::CSVWriter(const std::filesystem::path& base_path, T*)
+#else
 logging::CSVWriter::CSVWriter(const std::experimental::filesystem::path& base_path, T*)
+#endif
   : _base_path(base_path)
 {
+#ifdef _WIN32
+  if (!std::filesystem::exists(_base_path)) {
+    if (!std::filesystem::create_directories(_base_path)) {
+#else
   if (!std::experimental::filesystem::exists(_base_path)) {
     if (!std::experimental::filesystem::create_directories(_base_path)) {
+#endif
       throw std::runtime_error{
         (boost::format("CSVWriter::CSVWriter: Could not create directory for base path %1%") %
          _base_path)
@@ -1338,17 +1435,30 @@ JSONWriter::write_records(util::Range<RecordIterator> records, const std::string
 
 template<typename T>
 logging::TextWriter
+#ifdef _WIN32
+logging::TextWriter::make_writer_for_type(const std::filesystem::path& base_path)
+#else
 logging::TextWriter::make_writer_for_type(const std::experimental::filesystem::path& base_path)
+#endif
 {
   return TextWriter{ base_path, reinterpret_cast<T*>(0) };
 }
 
 template<typename T>
+#ifdef _WIN32
+logging::TextWriter::TextWriter(const std::filesystem::path& base_path, T*)
+#else
 logging::TextWriter::TextWriter(const std::experimental::filesystem::path& base_path, T*)
+#endif
   : _base_path(base_path)
 {
+#ifdef _WIN32
+  if (!std::filesystem::exists(_base_path)) {
+    if (!std::filesystem::create_directories(_base_path)) {
+#else
   if (!std::experimental::filesystem::exists(_base_path)) {
     if (!std::experimental::filesystem::create_directories(_base_path)) {
+#endif
       throw std::runtime_error{
         (boost::format("TextWriter::TextWriter: Could not create directory for base path %1%") %
          _base_path)

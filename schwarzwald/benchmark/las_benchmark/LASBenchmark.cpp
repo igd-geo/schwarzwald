@@ -10,7 +10,11 @@
 #include <taskflow/taskflow.hpp>
 #include <unordered_map>
 
+#ifdef _WIN32
+namespace fs = std::filesystem;
+#else
 namespace fs = std::experimental::filesystem;
+#endif
 namespace bpo = boost::program_options;
 
 enum class TestType
@@ -98,7 +102,11 @@ parse_args(int argc, char** argv)
 static std::vector<fs::path>
 get_all_las_files_in_directory(const fs::path& directory)
 {
-  const auto all_files = get_all_files_in_directory(directory, Recursive::Yes);
+  #ifdef _WIN32
+    const auto all_files = get_all_files_in_directory(directory.string(), Recursive::Yes);
+  #else
+    const auto all_files = get_all_files_in_directory(directory, Recursive::Yes);
+  #endif
   const auto is_las_file = [](const fs::path& file) {
     return file.extension() == ".las" || file.extension() == ".laz";
   };

@@ -3,13 +3,18 @@
 #include "algorithms/Enums.h"
 #include "algorithms/Pairs.h"
 
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
+
 #include <string>
 #include <unordered_set>
 
 #include <boost/format.hpp>
-
-namespace fs = std::experimental::filesystem;
 
 /**
  * Different output formats

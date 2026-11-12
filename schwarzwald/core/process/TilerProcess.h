@@ -10,7 +10,11 @@
 #include <terminal/TerminalUI.h>
 
 #include <cstdint>
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 #include <optional>
 #include <string>
 #include <vector>

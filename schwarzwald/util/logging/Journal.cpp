@@ -35,11 +35,19 @@ logging::JournalStore::new_journal(const std::string& journal_name)
 
 #pragma region Writers
 
+#ifdef _WIN32
+logging::BinaryWriter::BinaryWriter(const std::filesystem::path& base_path)
+#else
 logging::BinaryWriter::BinaryWriter(const std::experimental::filesystem::path& base_path)
+#endif
   : _base_path(base_path)
 {}
 
+#ifdef _WIN32
+logging::JSONWriter::JSONWriter(const std::filesystem::path& base_path)
+#else
 logging::JSONWriter::JSONWriter(const std::experimental::filesystem::path& base_path)
+#endif
   : _base_path(base_path)
 {}
 

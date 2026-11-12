@@ -5,7 +5,11 @@
 #include "util/Transformation.h"
 #include "util/stuff.h"
 
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 
 #include <boost/scope_exit.hpp>
 
@@ -274,7 +278,11 @@ void
 LASPersistence::retrieve_points(const std::string& node_name, PointBuffer& points)
 {
   const auto file_path = concat(_work_dir, "/", node_name, _file_extension);
+#ifdef _WIN32
+  if (!std::filesystem::exists(file_path))
+#else
   if (!std::experimental::filesystem::exists(file_path))
+#endif
     return;
   LASFile las_file{ file_path, LASFile::OpenMode::Read };
   pc::read_points(

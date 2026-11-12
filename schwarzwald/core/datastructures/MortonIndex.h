@@ -7,6 +7,19 @@
 #include <type_traits>
 
 namespace detail {
+#ifdef _WIN32
+template<unsigned int MaxBits>
+using KeyDataType_t = std::conditional_t<
+  MaxBits <= 8,
+  uint8_t,
+  std::conditional_t<
+    MaxBits <= 16,
+    uint16_t,
+    std::conditional_t<
+      MaxBits <= 32,
+      uint32_t,
+      uint64_t>>>;
+#else
 template<unsigned int MaxBits>
 using KeyDataType_t = std::conditional_t<
   MaxBits <= 8,
@@ -18,6 +31,7 @@ using KeyDataType_t = std::conditional_t<
       MaxBits <= 32,
       uint32_t,
       std::conditional_t<MaxBits <= 64, uint64_t, __uint128_t>>>>;
+#endif
 
 /**
  * Returns a bitmask with the first 'Bits' set bits, e.g. calling
@@ -83,11 +97,20 @@ struct MortonIndex
   static constexpr auto MaxLevels = _MaxLevels;
 
   static constexpr auto BitsRequired = MaxLevels * 3;
+#ifdef _WIN32
+  static_assert(BitsRequired <= 64,
+                "MaxLevels is too large, only 21 levels are supported!");
+#else
   static_assert(BitsRequired <= 128,
                 "MaxLevels is too large, only 42 levels are supported!");
+#endif
   using Store_t = detail::KeyDataType_t<BitsRequired>;
 
+#ifdef _WIN32
+  static constexpr MortonIndex max_value() { return MortonIndex(~Store_t{ 0 }); }
+#else
   static constexpr MortonIndex MAX = { ~Store_t{ 0 } };
+#endif
 
   constexpr MortonIndex()
     : _store(0)

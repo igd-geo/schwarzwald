@@ -82,7 +82,11 @@ PointBuffer::PointBuffer(gsl::span<PointReference> points)
   if (!_count)
     return;
 
+#ifdef _WIN32
+  const auto& first_point = points[0];
+#else
   const auto& first_point = points.at(0);
+#endif
 
   _positions.reserve(_count);
   if (first_point.rgbColor() != nullptr) {
@@ -169,7 +173,11 @@ PointBuffer::PointBuffer(gsl::span<PointConstReference> points)
   if (!_count)
     return;
 
+#ifdef _WIN32
+  const auto& first_point = points[0];
+#else
   const auto& first_point = points.at(0);
+#endif
 
   _positions.reserve(_count);
   if (first_point.rgbColor() != nullptr) {

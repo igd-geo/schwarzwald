@@ -262,7 +262,11 @@ LASFile::set_metadata(laszip_header const& metadata)
   // HACK LASzip only writes the header when the writer is OPENED...
   laszip_close_writer(_laszip_handle);
   laszip_set_header(_laszip_handle, &metadata);
+#ifdef _WIN32
+  laszip_open_writer(_laszip_handle, _file_path.string().c_str(), las::is_compressed_las_file(_file_path));
+#else
   laszip_open_writer(_laszip_handle, _file_path.c_str(), las::is_compressed_las_file(_file_path));
+#endif
 }
 
 size_t
@@ -323,7 +327,11 @@ LASFile::open(fs::path const& path, OpenMode file_open_mode)
   switch (file_open_mode) {
     case OpenMode::Read: {
       laszip_BOOL is_compressed;
+#ifdef _WIN32
+      las::ctry(laszip_open_reader(_laszip_handle, path.string().c_str(), &is_compressed))
+#else
       las::ctry(laszip_open_reader(_laszip_handle, path.c_str(), &is_compressed))
+#endif
         .or_else([this, &path](auto ec) {
           laszip_destroy(_laszip_handle);
 
@@ -335,7 +343,11 @@ LASFile::open(fs::path const& path, OpenMode file_open_mode)
       _state = State::OpenRead;
     } break;
     case OpenMode::Write: {
+#ifdef _WIN32
+      las::ctry(laszip_open_writer(_laszip_handle, path.string().c_str(), las::is_compressed_las_file(path)))
+#else
       las::ctry(laszip_open_writer(_laszip_handle, path.c_str(), las::is_compressed_las_file(path)))
+#endif
         .or_else([this, &path](auto ec) {
           laszip_destroy(_laszip_handle);
 

@@ -11,7 +11,11 @@
 struct PointsPersistence
 {
   template<typename T>
+#ifdef _WIN32
+  PointsPersistence(T impl)
+#else
   explicit PointsPersistence(T impl)
+#endif
     : _impl(std::move(impl))
   {}
 

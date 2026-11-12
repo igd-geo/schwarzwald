@@ -1,6 +1,12 @@
 #pragma once
 
+#ifdef _WIN32
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
 #include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -11,8 +17,6 @@
 #include "io/PointcloudFactory.h"
 #include "pointcloud/PointAttributes.h"
 #include "util/Error.h"
-
-namespace fs = std::experimental::filesystem;
 
 struct PointSource
 {

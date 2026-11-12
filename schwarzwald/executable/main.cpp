@@ -1,7 +1,11 @@
 
 #include <chrono>
 #include <exception>
+#ifdef _WIN32
+#include <filesystem>
+#else
 #include <experimental/filesystem>
+#endif
 #include <fstream>
 #include <map>
 #include <optional>
@@ -475,7 +479,11 @@ parseArguments(int argc, char** argv)
         : std::nullopt;
 
     try {
+#ifdef _WIN32
+      auto absolutePath = fs::canonical(fs::absolute(argv[0]));
+#else
       auto absolutePath = fs::canonical(fs::system_complete(argv[0]));
+#endif
       tiler_args.executable_path = absolutePath.parent_path().string();
     } catch (const fs::filesystem_error& e) {
       // do nothing
